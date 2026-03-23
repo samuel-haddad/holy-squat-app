@@ -380,7 +380,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                 width: double.infinity,
                 errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Center(child: Text('Video Link Available', style: TextStyle(color: Colors.white70)))),
               ),
-              const Icon(Icons.play_circle_fill, color: Colors.amber, size: 60),
+              const Icon(Icons.play_circle_fill, color: Colors.red, size: 60),
             ],
           ),
         ),
