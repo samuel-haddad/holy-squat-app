@@ -313,11 +313,20 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
   void initState() {
     super.initState();
     try {
-      final RegExp regExp = RegExp(r'.*(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*', caseSensitive: false, multiLine: false);
-      final match = regExp.firstMatch(widget.videoLink);
-      if (match != null && match.groupCount >= 1) {
-        _videoId = match.group(1);
+      String url = widget.videoLink;
+      if (url.contains('youtu.be/')) {
+        _videoId = url.split('youtu.be/').last.split('?').first;
+      } else if (url.contains('shorts/')) {
+        _videoId = url.split('shorts/').last.split('?').first.split('/').first;
+      } else if (url.contains('v=')) {
+        _videoId = url.split('v=').last.split('&').first;
+      }
+      
+      if (_videoId != null && _videoId!.length >= 11) {
+        _videoId = _videoId!.substring(0, 11);
         _thumbUrl = 'https://img.youtube.com/vi/$_videoId/hqdefault.jpg';
+      } else {
+        _videoId = null;
       }
     } catch (_) {}
   }
