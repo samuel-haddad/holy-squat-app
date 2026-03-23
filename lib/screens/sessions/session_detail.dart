@@ -6,7 +6,9 @@ import 'package:holy_squat_app/screens/workout_result_form_screen.dart';
 import 'package:holy_squat_app/widgets/app_bottom_nav.dart';
 import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+import 'dart:ui_web' as ui_web;
 
 class SessionDetailScreen extends StatefulWidget {
   final Map<String, dynamic> sessionData;
@@ -305,8 +307,8 @@ class _VideoPlayerItem extends StatefulWidget {
 
 class _VideoPlayerItemState extends State<_VideoPlayerItem> {
   bool _isPlaying = false;
-  YoutubePlayerController? _controller;
   String? _videoId;
+  String? _uniqueViewId;
   String _thumbUrl = 'https://img.youtube.com/vi/placeholder/0.jpg';
 
   @override
@@ -331,21 +333,18 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
     } catch (_) {}
   }
 
-  @override
-  void dispose() {
-    _controller?.close();
-    super.dispose();
-  }
-
   void _startVideo() {
     setState(() {
       _isPlaying = true;
       if (_videoId != null) {
-        _controller = YoutubePlayerController.fromVideoId(
-          videoId: _videoId!,
-          autoPlay: true,
-          params: const YoutubePlayerParams(showFullscreenButton: true),
-        );
+        _uniqueViewId = 'yt_${_videoId!}_${DateTime.now().millisecondsSinceEpoch}';
+        ui_web.platformViewRegistry.registerViewFactory(_uniqueViewId!, (int id) {
+          return html.IFrameElement()
+            ..src = 'https://www.youtube.com/embed/${_videoId!}?autoplay=1&playsinline=1'
+            ..style.border = 'none'
+            ..allowFullscreen = true
+            ..allow = 'autoplay; fullscreen';
+        });
       }
     });
   }
@@ -353,10 +352,10 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
   @override
   Widget build(BuildContext context) {
     if (_isPlaying) {
-      if (_controller != null) {
+      if (_uniqueViewId != null) {
         return AspectRatio(
           aspectRatio: 16 / 9,
-          child: YoutubePlayer(controller: _controller!),
+          child: HtmlElementView(viewType: _uniqueViewId!),
         );
       } else {
         return AspectRatio(
@@ -381,11 +380,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                 width: double.infinity,
                 errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Center(child: Text('Video Link Available', style: TextStyle(color: Colors.white70)))),
               ),
-              const Icon(Icons.play_circle_fill, color: Colors.blueAccent, size: 60),
-              Positioned(
-                 bottom: 8, left: 8,
-                 child: Text('ID: ${_videoId ?? "NULL"} | Tapping here should morph this space!', style: const TextStyle(color: Colors.white, fontSize: 10, backgroundColor: Colors.black)),
-              )
+              const Icon(Icons.play_circle_fill, color: Colors.amber, size: 60),
             ],
           ),
         ),
