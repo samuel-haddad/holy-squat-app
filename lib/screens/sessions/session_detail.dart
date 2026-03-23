@@ -338,24 +338,32 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
   }
 
   void _startVideo() {
-    if (_videoId == null) return;
     setState(() {
       _isPlaying = true;
-      _controller = YoutubePlayerController.fromVideoId(
-        videoId: _videoId!,
-        autoPlay: true,
-        params: const YoutubePlayerParams(showFullscreenButton: true),
-      );
+      if (_videoId != null) {
+        _controller = YoutubePlayerController.fromVideoId(
+          videoId: _videoId!,
+          autoPlay: true,
+          params: const YoutubePlayerParams(showFullscreenButton: true),
+        );
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isPlaying && _controller != null) {
-      return AspectRatio(
-        aspectRatio: 16 / 9,
-        child: YoutubePlayer(controller: _controller!),
-      );
+    if (_isPlaying) {
+      if (_controller != null) {
+        return AspectRatio(
+          aspectRatio: 16 / 9,
+          child: YoutubePlayer(controller: _controller!),
+        );
+      } else {
+        return AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Container(color: Colors.red, child: Center(child: Text('URL Inválida: ${widget.videoLink}', style: const TextStyle(color: Colors.white)))),
+        );
+      }
     }
 
     return GestureDetector(
@@ -373,7 +381,11 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                 width: double.infinity,
                 errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Center(child: Text('Video Link Available', style: TextStyle(color: Colors.white70)))),
               ),
-              const Icon(Icons.play_circle_fill, color: Colors.red, size: 60),
+              const Icon(Icons.play_circle_fill, color: Colors.blueAccent, size: 60),
+              Positioned(
+                 bottom: 8, left: 8,
+                 child: Text('ID: ${_videoId ?? "NULL"} | Tapping here should morph this space!', style: const TextStyle(color: Colors.white, fontSize: 10, backgroundColor: Colors.black)),
+              )
             ],
           ),
         ),
