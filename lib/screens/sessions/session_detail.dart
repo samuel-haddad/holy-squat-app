@@ -269,66 +269,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             const SizedBox(height: 16),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Builder(
-                builder: (BuildContext context) {
-                  final String urlStr = videoLink.toString();
-                  String? videoId;
-                  try {
-                    final RegExp regExp = RegExp(r'.*(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*', caseSensitive: false, multiLine: false);
-                    final match = regExp.firstMatch(urlStr);
-                    if (match != null && match.groupCount >= 1) videoId = match.group(1);
-                  } catch (_) {}
-                  
-                  final String thumbUrl = videoId != null 
-                      ? 'https://img.youtube.com/vi/$videoId/hqdefault.jpg' 
-                      : 'https://img.youtube.com/vi/placeholder/0.jpg';
-
-                  return GestureDetector(
-                    onTap: () {
-                       if (videoId == null) return;
-                       showDialog(
-                         context: context,
-                         builder: (context) {
-                           final controller = YoutubePlayerController.fromVideoId(
-                             videoId: videoId!,
-                             autoPlay: true,
-                             params: const YoutubePlayerParams(showFullscreenButton: true),
-                           );
-                           return Dialog(
-                             backgroundColor: Colors.transparent,
-                             insetPadding: const EdgeInsets.all(16),
-                             child: AspectRatio(
-                               aspectRatio: 16 / 9,
-                               child: ClipRRect(
-                                 borderRadius: BorderRadius.circular(12),
-                                 child: YoutubePlayer(controller: controller),
-                               ),
-                             ),
-                           );
-                         },
-                       );
-                    },
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: Container(
-                        color: Colors.black,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Image.network(
-                              thumbUrl,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Center(child: Text('Video Link Available', style: TextStyle(color: Colors.white70)))),
-                            ),
-                            const Icon(Icons.play_circle_fill, color: Colors.red, size: 60),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
+              child: _VideoPlayerItem(videoLink: videoLink.toString()),
             ),
           ],
           const SizedBox(height: 16),
@@ -348,6 +289,85 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _VideoPlayerItem extends StatefulWidget {
+  final String videoLink;
+
+  const _VideoPlayerItem({required this.videoLink});
+
+  @override
+  State<_VideoPlayerItem> createState() => _VideoPlayerItemState();
+}
+
+class _VideoPlayerItemState extends State<_VideoPlayerItem> {
+  bool _isPlaying = false;
+  YoutubePlayerController? _controller;
+  String? _videoId;
+  String _thumbUrl = 'https://img.youtube.com/vi/placeholder/0.jpg';
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      final RegExp regExp = RegExp(r'.*(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*', caseSensitive: false, multiLine: false);
+      final match = regExp.firstMatch(widget.videoLink);
+      if (match != null && match.groupCount >= 1) {
+        _videoId = match.group(1);
+        _thumbUrl = 'https://img.youtube.com/vi/$_videoId/hqdefault.jpg';
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _controller?.close();
+    super.dispose();
+  }
+
+  void _startVideo() {
+    if (_videoId == null) return;
+    setState(() {
+      _isPlaying = true;
+      _controller = YoutubePlayerController.fromVideoId(
+        videoId: _videoId!,
+        autoPlay: true,
+        params: const YoutubePlayerParams(showFullscreenButton: true),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isPlaying && _controller != null) {
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: YoutubePlayer(controller: _controller!),
+      );
+    }
+
+    return GestureDetector(
+      onTap: _startVideo,
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Container(
+          color: Colors.black,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Image.network(
+                _thumbUrl,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Center(child: Text('Video Link Available', style: TextStyle(color: Colors.white70)))),
+              ),
+              const Icon(Icons.play_circle_fill, color: Colors.red, size: 60),
+            ],
+          ),
+        ),
       ),
     );
   }
