@@ -5,6 +5,7 @@ import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/screens/workout_result_form_screen.dart';
 import 'package:holy_squat_app/widgets/app_bottom_nav.dart';
 import 'package:holy_squat_app/services/supabase_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SessionDetailScreen extends StatefulWidget {
   final Map<String, dynamic> sessionData;
@@ -267,22 +268,30 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             const SizedBox(height: 16),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: AspectRatio(
-                aspectRatio: 16 / 9,
-                child: Container(
-                  color: Colors.black,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Video thumbnail logic ideally parses YouTube ID
-                      Image.network(
-                        'https://img.youtube.com/vi/placeholder/0.jpg',
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Center(child: Text('Video Link Exists', style: TextStyle(color: Colors.white70)))),
-                      ),
-                      const Icon(Icons.play_circle_fill, color: Colors.red, size: 60),
-                    ],
+              child: GestureDetector(
+                onTap: () async {
+                   final Uri url = Uri.parse(videoLink.toString());
+                   if (await canLaunchUrl(url)) {
+                     await launchUrl(url, mode: LaunchMode.externalApplication);
+                   }
+                },
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Container(
+                    color: Colors.black,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Video thumbnail
+                        Image.network(
+                          'https://img.youtube.com/vi/placeholder/0.jpg',
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Center(child: Text('Video Link Available', style: TextStyle(color: Colors.white70)))),
+                        ),
+                        const Icon(Icons.play_circle_fill, color: Colors.red, size: 60),
+                      ],
+                    ),
                   ),
                 ),
               ),

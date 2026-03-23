@@ -63,7 +63,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
                   }
                   
-                  final sessions = snapshot.data ?? [];
+                  final sessions = (snapshot.data ?? []).reversed.toList();
                   
                   final filteredSessions = sessions.where((s) {
                     try {
@@ -246,10 +246,22 @@ class _SessionsScreenState extends State<SessionsScreen> {
       formattedDate = DateFormat('yyyy-MM-dd').format(parsedDate);
     } catch (_) {}
 
-    final iconObj = session['icons'];
-    final imgSrc = (iconObj != null && iconObj['img'] != null)
-        ? iconObj['img']
-        : 'https://cdn-icons-png.flaticon.com/512/2964/2964514.png'; // Fallback mockup icon
+    String getSessionIcon(String? type) {
+       if (type == null) return 'assets/sessions_icons/crossfit_session_icon.png';
+       String t = type.toLowerCase();
+       if (t.contains('lpo')) return 'assets/sessions_icons/lpo_session_icon.png';
+       if (t.contains('força') || t.contains('strength')) return 'assets/sessions_icons/strengh_session_icon.png';
+       if (t.contains('mobilidade') || t.contains('prehab')) return 'assets/sessions_icons/mobility_session_icon.png';
+       if (t.contains('ginástica') || t.contains('calistenia')) return 'assets/sessions_icons/calistenia_session_icon.png';
+       if (t.contains('recuperação') || t.contains('recovery')) return 'assets/sessions_icons/recovery_session_icon.png';
+       if (t.contains('corrida') || t.contains('run')) return 'assets/sessions_icons/run_session_icon.png';
+       if (t.contains('core')) return 'assets/sessions_icons/core_session_icon.png';
+       if (t.contains('relax')) return 'assets/sessions_icons/relax_session_icon.png';
+       if (t.contains('swimming') || t.contains('natação') || t.contains('nataçao')) return 'assets/sessions_icons/swimming_session_icon.png';
+       return 'assets/sessions_icons/crossfit_session_icon.png';
+    }
+
+    final imgSrc = getSessionIcon(sessionType);
 
     return InkWell(
       onTap: () {
@@ -270,14 +282,8 @@ class _SessionsScreenState extends State<SessionsScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: imgSrc.startsWith('http') 
-                  ? Image.network(
+                child: Image.asset(
                       imgSrc,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.fitness_center),
-                    )
-                  : Image.asset(
-                      'assets/sessions_icons/$imgSrc',
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => const Icon(Icons.fitness_center),
                     ),
