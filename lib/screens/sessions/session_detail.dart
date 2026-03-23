@@ -6,6 +6,7 @@ import 'package:holy_squat_app/screens/workout_result_form_screen.dart';
 import 'package:holy_squat_app/widgets/app_bottom_nav.dart';
 import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 class SessionDetailScreen extends StatefulWidget {
   final Map<String, dynamic> sessionData;
@@ -268,32 +269,65 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             const SizedBox(height: 16),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: GestureDetector(
-                onTap: () async {
-                   final Uri url = Uri.parse(videoLink.toString());
-                   if (await canLaunchUrl(url)) {
-                     await launchUrl(url, mode: LaunchMode.externalApplication);
-                   }
-                },
-                child: AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Container(
-                    color: Colors.black,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Video thumbnail
-                        Image.network(
-                          'https://img.youtube.com/vi/placeholder/0.jpg',
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Center(child: Text('Video Link Available', style: TextStyle(color: Colors.white70)))),
+              child: Builder(
+                builder: (BuildContext context) {
+                  final String urlStr = videoLink.toString();
+                  String? videoId;
+                  try {
+                    final RegExp regExp = RegExp(r'.*(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*', caseSensitive: false, multiLine: false);
+                    final match = regExp.firstMatch(urlStr);
+                    if (match != null && match.groupCount >= 1) videoId = match.group(1);
+                  } catch (_) {}
+                  
+                  final String thumbUrl = videoId != null 
+                      ? 'https://img.youtube.com/vi/$videoId/hqdefault.jpg' 
+                      : 'https://img.youtube.com/vi/placeholder/0.jpg';
+
+                  return GestureDetector(
+                    onTap: () {
+                       if (videoId == null) return;
+                       showDialog(
+                         context: context,
+                         builder: (context) {
+                           final controller = YoutubePlayerController.fromVideoId(
+                             videoId: videoId!,
+                             autoPlay: true,
+                             params: const YoutubePlayerParams(showFullscreenButton: true),
+                           );
+                           return Dialog(
+                             backgroundColor: Colors.transparent,
+                             insetPadding: const EdgeInsets.all(16),
+                             child: AspectRatio(
+                               aspectRatio: 16 / 9,
+                               child: ClipRRect(
+                                 borderRadius: BorderRadius.circular(12),
+                                 child: YoutubePlayer(controller: controller),
+                               ),
+                             ),
+                           );
+                         },
+                       );
+                    },
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Container(
+                        color: Colors.black,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Image.network(
+                              thumbUrl,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Center(child: Text('Video Link Available', style: TextStyle(color: Colors.white70)))),
+                            ),
+                            const Icon(Icons.play_circle_fill, color: Colors.red, size: 60),
+                          ],
                         ),
-                        const Icon(Icons.play_circle_fill, color: Colors.red, size: 60),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
           ],
