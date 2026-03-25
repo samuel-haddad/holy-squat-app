@@ -11,17 +11,28 @@ class SupabaseService {
     final user = client.auth.currentUser;
     if (user == null) return;
     try {
-      final response = await client.from('profiles').select().eq('id', user.id).maybeSingle();
+      final response = await client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
       debugPrint("Fetched profile for ${user.email}: $response");
       if (response != null) {
-        if (response['avatar_url'] != null) UserState.avatarUrl.value = response['avatar_url'];
+        if (response['avatar_url'] != null)
+          UserState.avatarUrl.value = response['avatar_url'];
         if (response['name'] != null) UserState.name.value = response['name'];
-        if (response['email'] != null) UserState.email.value = response['email'];
-        if (response['birthdate'] != null) UserState.birthdate.value = response['birthdate'];
-        if (response['weight'] != null) UserState.weight.value = response['weight'].toString();
-        if (response['weight_unit'] != null) UserState.weightUnit.value = response['weight_unit'];
-        if (response['favorite_sport'] != null) UserState.sport.value = response['favorite_sport'];
-        if (response['training_goal'] != null) UserState.goal.value = response['training_goal'];
+        if (response['email'] != null)
+          UserState.email.value = response['email'];
+        if (response['birthdate'] != null)
+          UserState.birthdate.value = response['birthdate'];
+        if (response['weight'] != null)
+          UserState.weight.value = response['weight'].toString();
+        if (response['weight_unit'] != null)
+          UserState.weightUnit.value = response['weight_unit'];
+        if (response['favorite_sport'] != null)
+          UserState.sport.value = response['favorite_sport'];
+        if (response['training_goal'] != null)
+          UserState.goal.value = response['training_goal'];
       } else {
         UserState.email.value = user.email ?? 'No email';
       }
@@ -33,28 +44,31 @@ class SupabaseService {
   static Future<void> upsertProfile() async {
     final user = client.auth.currentUser;
     if (user == null) return;
-    
+
     String? finalAvatarUrl = UserState.avatarUrl.value;
-    
+
     if (UserState.avatarBytes.value != null) {
       final bytes = UserState.avatarBytes.value!;
       final path = '${user.id}/avatar.jpg';
-      await client.storage.from('avatars').uploadBinary(
-        path, 
-        bytes, 
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
-      );
+      await client.storage
+          .from('avatars')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
       finalAvatarUrl = client.storage.from('avatars').getPublicUrl(path);
-      finalAvatarUrl = '$finalAvatarUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+      finalAvatarUrl =
+          '$finalAvatarUrl?t=${DateTime.now().millisecondsSinceEpoch}';
       UserState.avatarUrl.value = finalAvatarUrl;
     }
 
     String? bdStr = UserState.birthdate.value;
     if (bdStr != null && bdStr.contains('/')) {
-       final spl = bdStr.split('/');
-       if (spl.length == 3) {
-          bdStr = '${spl[2]}-${spl[1]}-${spl[0]}';
-       }
+      final spl = bdStr.split('/');
+      if (spl.length == 3) {
+        bdStr = '${spl[2]}-${spl[1]}-${spl[0]}';
+      }
     }
 
     await client.from('profiles').upsert({
@@ -85,7 +99,7 @@ class SupabaseService {
   }) async {
     final user = client.auth.currentUser;
     if (user == null) return;
-    
+
     await client.from('workouts_logs').upsert({
       'user_email': user.email,
       'wod_exercise_id': wodExerciseId,
@@ -102,17 +116,19 @@ class SupabaseService {
     });
   }
 
-  static Future<Map<String, dynamic>?> getWorkoutResult(String wodExerciseId) async {
+  static Future<Map<String, dynamic>?> getWorkoutResult(
+    String wodExerciseId,
+  ) async {
     final user = client.auth.currentUser;
     if (user == null || user.email == null) return null;
-    
+
     final response = await client
         .from('workouts_logs')
         .select()
         .eq('wod_exercise_id', wodExerciseId)
         .eq('user_email', user.email!)
         .maybeSingle();
-        
+
     return response;
   }
 
@@ -126,37 +142,65 @@ class SupabaseService {
     debugPrint("Fetched ${response.length} sessions from Supabase");
     return List<Map<String, dynamic>>.from(response);
   }
-  
-  static Future<Map<String, dynamic>?> getSessionByDate(DateTime date) async {
+
+  static Future<List<Map<String, dynamic>>> getSessionsByDate(DateTime date) async {
     final dateStr = DateFormat('yyyy-MM-dd').format(date);
+    debugPrint("Querying sessions for date: '$dateStr'");
     final response = await client
         .from('sessions')
         .select('*, icons(img)')
         .eq('date', dateStr)
-        .maybeSingle();
-    return response;
+        .order('session', ascending: true);
+    
+    return List<Map<String, dynamic>>.from(response);
   }
 
   // Fetch all workouts for a specific session
-  static Future<Map<String, List<Map<String, dynamic>>>> getWorkoutsForSession(String sessionKey) async {
+  static Future<Map<String, List<Map<String, dynamic>>>> getWorkoutsForSession(
+    String sessionKey,
+  ) async {
+    final user = client.auth.currentUser;
+    final userEmail = user?.email ?? '';
+
     final response = await client
         .from('workouts')
         .select('*, workouts_logs(*)')
         .eq('date_session_sessiontype_key', sessionKey)
         .order('workout_idx', ascending: true);
-        
-    final List<Map<String, dynamic>> workoutsList = List<Map<String, dynamic>>.from(response);
-    
-  // Group workouts by 'stage' (e.g. WARMUP, EXERCISE, COOLDOWN)
+
+    final List<Map<String, dynamic>> workoutsList =
+        List<Map<String, dynamic>>.from(response);
+
+    // Group workouts and filter logs by user email and done status
     final Map<String, List<Map<String, dynamic>>> grouped = {};
     for (var workout in workoutsList) {
+      // Safely handle workouts_logs which may come as a List or Map from Supabase join
+      final rawLogs = workout['workouts_logs'];
+      final List<dynamic> allLogs;
+      if (rawLogs is List) {
+        allLogs = rawLogs;
+      } else if (rawLogs is Map) {
+        allLogs = [rawLogs];
+      } else {
+        allLogs = [];
+      }
+
+      // Filter logs to only include records done by the current user
+      final List<dynamic> logs = allLogs
+          .where((log) =>
+              log['user_email'] == userEmail &&
+              (log['done'] == 1 || log['done'] == true || log['done'] == '1'))
+          .toList();
+
+      workout['filtered_logs'] = logs;
+
       final stage = workout['stage']?.toString().toUpperCase() ?? 'EXERCISE';
       if (!grouped.containsKey(stage)) {
         grouped[stage] = [];
       }
       grouped[stage]!.add(workout);
     }
-    
+
     return grouped;
   }
 
@@ -166,8 +210,10 @@ class SupabaseService {
         .from('pr_log')
         .select()
         .order('id', ascending: false);
-    
-    final List<Map<String, dynamic>> logs = List<Map<String, dynamic>>.from(response);
+
+    final List<Map<String, dynamic>> logs = List<Map<String, dynamic>>.from(
+      response,
+    );
     final Map<String, Map<String, dynamic>> latestPrs = {};
 
     for (var log in logs) {
@@ -176,12 +222,14 @@ class SupabaseService {
         latestPrs[ex] = log;
       }
     }
-    
+
     return latestPrs.values.toList();
   }
 
   // Fetch PR logs for a specific exercise (for the chart)
-  static Future<List<Map<String, dynamic>>> getPrLogsForExercise(String exercise) async {
+  static Future<List<Map<String, dynamic>>> getPrLogsForExercise(
+    String exercise,
+  ) async {
     final response = await client
         .from('pr_log')
         .select()
@@ -194,15 +242,24 @@ class SupabaseService {
     await client.from('pr_log').delete().eq('id', id);
   }
 
-  static Future<void> updatePrLog(dynamic id, double pr, String unit, String date) async {
-    await client.from('pr_log').update({
-      'pr': pr,
-      'pr_unit': unit,
-      'date': date,
-    }).eq('id', id);
+  static Future<void> updatePrLog(
+    dynamic id,
+    double pr,
+    String unit,
+    String date,
+  ) async {
+    await client
+        .from('pr_log')
+        .update({'pr': pr, 'pr_unit': unit, 'date': date})
+        .eq('id', id);
   }
 
-  static Future<void> insertPrLog(String exercise, double pr, String unit, String date) async {
+  static Future<void> insertPrLog(
+    String exercise,
+    double pr,
+    String unit,
+    String date,
+  ) async {
     await client.from('pr_log').insert({
       'exercise': exercise,
       'pr': pr,
@@ -230,7 +287,11 @@ class SupabaseService {
   }
 
   // Upsert benchmark log
-  static Future<void> upsertBenchmarkLog(String exercise, double result, String? date) async {
+  static Future<void> upsertBenchmarkLog(
+    String exercise,
+    double result,
+    String? date,
+  ) async {
     final user = client.auth.currentUser;
     if (user == null) throw Exception('Not authenticated');
 
@@ -243,9 +304,10 @@ class SupabaseService {
 
   // Update benchmark global unit
   static Future<void> updateBenchmarkUnit(String exercise, String unit) async {
-    await client.from('benchmarks').update({
-      'result_unit': unit,
-    }).eq('bench_exercise', exercise);
+    await client
+        .from('benchmarks')
+        .update({'result_unit': unit})
+        .eq('bench_exercise', exercise);
   }
 
   // --- ANALYTICS ---
@@ -253,28 +315,33 @@ class SupabaseService {
   static Future<List<String>> getActiveWorkoutDates() async {
     final user = client.auth.currentUser;
     if (user == null || user.email == null) return [];
-    
+
+    // Filter server-side: only fetch completed workouts with valid dates
+    // This avoids Supabase's 1000-row default limit being filled with done=0 records
     final response = await client
         .from('workouts_logs')
-        .select('workout_date, done')
-        .eq('user_email', user.email!);
-    
-    debugPrint("Fetched ${response.length} workout logs for email: ${user.email}");
-    
-    // Extract strings and use a Set to uniquely count active days
+        .select('workout_date')
+        .eq('user_email', user.email!)
+        .eq('done', 1)
+        .not('workout_date', 'is', null)
+        .order('workout_date', ascending: false)
+        .limit(5000);
+
+    debugPrint("Dashboard: ${response.length} completed logs for ${user.email}");
+    if (response.isNotEmpty) {
+      debugPrint("Dashboard: Sample dates: ${response.take(3).map((r) => r['workout_date']).toList()}");
+    }
+
+    // Use a Set to get unique active days
     final Set<String> uniqueDates = {};
     for (var row in response) {
-      final doneVal = row['done'];
-      bool isDone = false;
-      if (doneVal == true || doneVal == 1 || doneVal == '1' || doneVal == 'true') isDone = true;
-      
-      if (!isDone) continue;
-
       final val = row['workout_date'];
       if (val != null) {
         uniqueDates.add(val.toString());
       }
     }
+
+    debugPrint("Dashboard: ${uniqueDates.length} unique active dates found.");
     return uniqueDates.toList();
   }
 }

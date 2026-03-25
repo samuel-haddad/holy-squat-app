@@ -79,8 +79,8 @@ class _WodScreenState extends State<WodScreen> {
                 child: ValueListenableBuilder<DateTime>(
                   valueListenable: AppState.selectedWodDate,
                   builder: (context, selectedDate, _) {
-                    return FutureBuilder<Map<String, dynamic>?>(
-                      future: SupabaseService.getSessionByDate(selectedDate),
+                    return FutureBuilder<List<Map<String, dynamic>>>(
+                      future: SupabaseService.getSessionsByDate(selectedDate),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return const Center(child: CircularProgressIndicator(color: AppTheme.primaryTeal));
@@ -89,15 +89,28 @@ class _WodScreenState extends State<WodScreen> {
                           return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
                         }
                         
-                        final session = snapshot.data;
-                        if (session == null) {
+                        final sessions = snapshot.data ?? [];
+                        if (sessions.isEmpty) {
                            return const Center(child: Padding(
                              padding: EdgeInsets.all(32.0),
                              child: Text('Nenhum WOD cadastrado para esta data.', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.secondaryTextColor)),
                            ));
                         }
 
-                        return _buildWodCard(context, session);
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 16,
+                            childAspectRatio: 0.8,
+                          ),
+                          itemCount: sessions.length,
+                          itemBuilder: (context, index) {
+                            return _buildWodCard(context, sessions[index]);
+                          },
+                        );
                       },
                     );
                   },
@@ -192,57 +205,49 @@ class _WodScreenState extends State<WodScreen> {
         ));
       },
       child: Container(
-        width: double.infinity,
         decoration: BoxDecoration(
           color: AppTheme.cardColor,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(12.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.asset(
-                        imgSrc,
-                        height: 120,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.fitness_center, size: 100, color: Colors.grey),
-                      ),
+              Expanded(
+                child: Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                          imgSrc,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.fitness_center, size: 60, color: Colors.grey),
+                        ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-              RichText(
-                text: TextSpan(
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  children: [
-                    TextSpan(
-                      text: '$dayName ',
-                      style: const TextStyle(color: AppTheme.primaryTeal),
-                    ),
-                    TextSpan(
-                      text: '| $formattedDate',
-                      style: const TextStyle(color: AppTheme.primaryTeal),
-                    ),
-                  ],
-                ),
+              const SizedBox(height: 8),
+              Text(
+                '$dayName | $formattedDate',
+                style: const TextStyle(color: AppTheme.primaryTeal, fontSize: 10, fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
                 sessionType,
                 style: const TextStyle(
-                  fontSize: 20,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 4),
               Text(
                 'Session: $sessionNum',
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 14,
                   color: AppTheme.secondaryTextColor,
                 ),
               ),

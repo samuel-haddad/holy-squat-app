@@ -255,7 +255,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 borderData: FlBorderData(show: false),
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor: const Color(0xFF111111),
+                    getTooltipColor: (touchedSpot) => const Color(0xFF111111),
                     getTooltipItems: (touchedSpots) {
                       return touchedSpots.map((spot) => LineTooltipItem(
                         "${spot.y.toInt()} treinos",
@@ -346,7 +346,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 barTouchData: BarTouchData(
                   touchTooltipData: BarTouchTooltipData(
-                    tooltipBgColor: const Color(0xFF111111),
+                    getTooltipColor: (group) => const Color(0xFF111111),
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       return BarTooltipItem(
                         "${rod.toY.toInt()} treinos",

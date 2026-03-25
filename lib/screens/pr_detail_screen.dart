@@ -161,8 +161,7 @@ class _PrDetailScreenState extends State<PrDetailScreen> {
                 lineTouchData: LineTouchData(
                   handleBuiltInTouches: true,
                   touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor: Colors.black87,
-                    tooltipRoundedRadius: 8,
+                    getTooltipColor: (touchedSpot) => Colors.black87,
                     getTooltipItems: (List<LineBarSpot> touchedSpots) {
                       return touchedSpots.map((LineBarSpot touchedSpot) {
                         String d = dates[touchedSpot.x.toInt()];
