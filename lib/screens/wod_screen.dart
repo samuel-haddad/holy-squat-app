@@ -15,14 +15,6 @@ class WodScreen extends StatefulWidget {
 }
 
 class _WodScreenState extends State<WodScreen> {
-  late Future<List<Map<String, dynamic>>> _sessionsFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _sessionsFuture = SupabaseService.getSessions();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -87,8 +79,8 @@ class _WodScreenState extends State<WodScreen> {
                 child: ValueListenableBuilder<DateTime>(
                   valueListenable: AppState.selectedWodDate,
                   builder: (context, selectedDate, _) {
-                    return FutureBuilder<List<Map<String, dynamic>>>(
-                      future: _sessionsFuture,
+                    return FutureBuilder<Map<String, dynamic>?>(
+                      future: SupabaseService.getSessionByDate(selectedDate),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return const Center(child: CircularProgressIndicator(color: AppTheme.primaryTeal));
@@ -97,33 +89,15 @@ class _WodScreenState extends State<WodScreen> {
                           return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
                         }
                         
-                        final sessions = snapshot.data ?? [];
-                        if (sessions.isEmpty) {
-                          return const Center(child: Text('No WOD available', style: TextStyle(color: AppTheme.secondaryTextColor)));
-                        }
-
-                        // Get matching session
-                        final targetDate = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-                        Map<String, dynamic>? matchingSession;
-                        for (var s in sessions) {
-                          try {
-                            final d = DateTime.parse(s['date']);
-                            final sessionDate = DateTime(d.year, d.month, d.day);
-                            if (sessionDate.isAtSameMomentAs(targetDate)) {
-                              matchingSession = s;
-                              break;
-                            }
-                          } catch (_) {}
-                        }
-                        
-                        if (matchingSession == null) {
+                        final session = snapshot.data;
+                        if (session == null) {
                            return const Center(child: Padding(
                              padding: EdgeInsets.all(32.0),
                              child: Text('Nenhum WOD cadastrado para esta data.', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.secondaryTextColor)),
                            ));
                         }
 
-                        return _buildWodCard(context, matchingSession);
+                        return _buildWodCard(context, session);
                       },
                     );
                   },

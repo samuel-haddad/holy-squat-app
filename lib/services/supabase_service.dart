@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:holy_squat_app/core/user_state.dart';
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 
 class SupabaseService {
   static final client = Supabase.instance.client;
@@ -11,6 +12,7 @@ class SupabaseService {
     if (user == null) return;
     try {
       final response = await client.from('profiles').select().eq('id', user.id).maybeSingle();
+      debugPrint("Fetched profile for ${user.email}: $response");
       if (response != null) {
         if (response['avatar_url'] != null) UserState.avatarUrl.value = response['avatar_url'];
         if (response['name'] != null) UserState.name.value = response['name'];
@@ -120,8 +122,19 @@ class SupabaseService {
         .from('sessions')
         .select('*, icons(img)')
         .order('date', ascending: false)
-        .limit(50);
+        .limit(2000);
+    debugPrint("Fetched ${response.length} sessions from Supabase");
     return List<Map<String, dynamic>>.from(response);
+  }
+  
+  static Future<Map<String, dynamic>?> getSessionByDate(DateTime date) async {
+    final dateStr = DateFormat('yyyy-MM-dd').format(date);
+    final response = await client
+        .from('sessions')
+        .select('*, icons(img)')
+        .eq('date', dateStr)
+        .maybeSingle();
+    return response;
   }
 
   // Fetch all workouts for a specific session
@@ -245,6 +258,8 @@ class SupabaseService {
         .from('workouts_logs')
         .select('workout_date, done')
         .eq('user_email', user.email!);
+    
+    debugPrint("Fetched ${response.length} workout logs for email: ${user.email}");
     
     // Extract strings and use a Set to uniquely count active days
     final Set<String> uniqueDates = {};
