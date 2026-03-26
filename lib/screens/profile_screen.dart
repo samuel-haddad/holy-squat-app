@@ -20,17 +20,32 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  String? _aiCoachName;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAiCoachName();
+  }
+
+  Future<void> _loadAiCoachName() async {
+    if (UserState.aiCoachId.value != null) {
+      final coaches = await SupabaseService.getAICoaches();
+      final coach = coaches.firstWhere(
+        (c) => c['ai_coach_id'] == UserState.aiCoachId.value,
+        orElse: () => {'ai_coach_name': 'Not selected'},
+      );
+      setState(() => _aiCoachName = coach['ai_coach_name']);
+    }
+  }
+
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
     if (image != null) {
       final bytes = await image.readAsBytes();
       UserState.avatarBytes.value = bytes;
-      
-      // Auto-save silently in the background
-      SupabaseService.upsertProfile().catchError((e) {
-        debugPrint('Auto-save profile image failed: $e');
-      });
+      SupabaseService.upsertProfile().catchError((e) => debugPrint('Image save error: $e'));
     }
   }
 
@@ -45,7 +60,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           IconButton(
             icon: const Icon(Icons.edit, color: AppTheme.primaryTeal),
             onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileFormScreen())).then((_) => setState((){}));
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileFormScreen())).then((_) => setState(() {
+                _loadAiCoachName();
+              }));
             },
           ),
         ],
@@ -54,102 +71,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Center(
-              child: ValueListenableBuilder<String?>(
-                valueListenable: UserState.avatarUrl,
-                builder: (context, avatarUrl, _) {
-                  return ValueListenableBuilder<Uint8List?>(
-                    valueListenable: UserState.avatarBytes,
-                    builder: (context, avatarBytes, child) {
-                      ImageProvider? provider;
-                      if (avatarBytes != null) {
-                        provider = MemoryImage(avatarBytes);
-                      } else if (avatarUrl != null && avatarUrl.isNotEmpty) {
-                        provider = NetworkImage(avatarUrl);
-                      }
-                      
-                      return GestureDetector(
-                        onTap: _pickImage,
-                        child: Stack(
-                          alignment: Alignment.bottomRight,
-                          children: [
-                            CircleAvatar(
-                              radius: 50,
-                              backgroundColor: Colors.transparent,
-                              backgroundImage: provider,
-                              child: provider == null
-                                  ? SvgPicture.asset(
-                                      Theme.of(context).brightness == Brightness.dark
-                                          ? 'assets/account_icons/account_icon_dark.svg'
-                                          : 'assets/account_icons/account_icon_light.svg',
-                                      width: 100,
-                                      height: 100,
-                                      fit: BoxFit.cover,
-                                    )
-                                  : null,
-                            ),
-                            const CircleAvatar(
-                              backgroundColor: AppTheme.primaryTeal,
-                              radius: 16,
-                              child: Icon(Icons.camera_alt, size: 16, color: Colors.black),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              UserState.name.value,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              UserState.email.value,
-              style: const TextStyle(fontSize: 16, color: AppTheme.secondaryTextColor),
-            ),
-            const SizedBox(height: 32),
-            _buildStatCard('Birthdate', UserState.birthdate.value),
-            _buildStatCard('Weight', '${UserState.weight.value} ${UserState.weightUnit.value}'),
-            _buildStatCard('Favorite Sport', UserState.sport.value),
-            _buildStatCard('Training goal', UserState.goal.value),
+            _buildProfileHeader(),
             const SizedBox(height: 24),
-            _buildConnectedAccountsSection(),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileFormScreen())).then((_) => setState((){}));
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.cardColor,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                child: const Text('Edit Profile', style: TextStyle(color: Colors.white)),
-              ),
+            _buildExpandableSection(
+              title: 'About',
+              icon: Icons.person_outline,
+              children: [
+                _buildInfoRow('Birthdate', UserState.birthdate.value),
+                _buildInfoRow('Weight', '${UserState.weight.value} ${UserState.weightUnit.value}'),
+                _buildInfoRow('Sport', UserState.sport.value),
+                _buildInfoRow('Goal', UserState.goal.value),
+              ],
             ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: () async {
-                  await Supabase.instance.client.auth.signOut();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.withOpacity(0.1),
-                  foregroundColor: Colors.red,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                child: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
+            const SizedBox(height: 12),
+            _buildExpandableSection(
+              title: 'Skills & Training',
+              icon: Icons.fitness_center,
+              children: [
+                _buildInfoRow('AI Coach', _aiCoachName ?? 'Loading...'),
+                _buildInfoRow('Hours/Session', '${UserState.activeHoursValue.value} ${UserState.activeHoursUnit.value}'),
+                _buildInfoRow('Sessions/Day', UserState.sessionsPerDay.value.toString()),
+                _buildInfoRow('Where', UserState.whereTrain.value.join(', ')),
+                const Divider(color: Colors.white10),
+                _buildLongTextRow('Anamnesis', UserState.anamnesis.value),
+                _buildLongTextRow('Additional Info', UserState.additionalInfo.value),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildExpandableSection(
+              title: 'Connections',
+              icon: Icons.link,
+              children: [
+                _buildStravaRow(),
+                const SizedBox(height: 12),
+                _buildGarminRow(),
+              ],
             ),
             const SizedBox(height: 32),
+            _buildSignOutButton(),
+            const SizedBox(height: 48),
           ],
         ),
       ),
@@ -157,73 +117,118 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildConnectedAccountsSection() {
+  Widget _buildProfileHeader() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 4.0, bottom: 12.0),
-          child: Text(
-            'Connected Accounts',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+        ValueListenableBuilder<String?>(
+          valueListenable: UserState.avatarUrl,
+          builder: (context, avatarUrl, _) => ValueListenableBuilder<Uint8List?>(
+            valueListenable: UserState.avatarBytes,
+            builder: (context, avatarBytes, _) {
+              ImageProvider? provider;
+              if (avatarBytes != null) provider = MemoryImage(avatarBytes);
+              else if (avatarUrl != null && avatarUrl.isNotEmpty) provider = NetworkImage(avatarUrl);
+              return GestureDetector(
+                onTap: _pickImage,
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundColor: Colors.transparent,
+                      backgroundImage: provider,
+                      child: provider == null ? SvgPicture.asset(
+                        Theme.of(context).brightness == Brightness.dark ? 'assets/account_icons/account_icon_dark.svg' : 'assets/account_icons/account_icon_light.svg',
+                        width: 100, height: 100, fit: BoxFit.cover,
+                      ) : null,
+                    ),
+                    const CircleAvatar(backgroundColor: AppTheme.primaryTeal, radius: 16, child: Icon(Icons.camera_alt, size: 16, color: Colors.black)),
+                  ],
+                ),
+              );
+            },
           ),
         ),
-        ValueListenableBuilder<bool>(
-          valueListenable: UserState.stravaConnected,
-          builder: (context, isConnected, _) {
-            return _buildAccountRow(
-              'Strava',
-              isConnected,
-              'assets/logo/strava_logo.png', // Fallback to icon if missing
-              isConnected ? _confirmDisconnectStrava : _handleStravaConnect,
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-        _buildAccountRow(
-          'Garmin',
-          false,
-          null, // Placeholder
-          () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Garmin import coming soon!'))
-            );
-          },
-        ),
+        const SizedBox(height: 16),
+        Text(UserState.name.value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+        Text(UserState.email.value, style: const TextStyle(color: AppTheme.secondaryTextColor)),
       ],
     );
   }
 
-  Widget _buildAccountRow(String name, bool isConnected, String? assetPath, VoidCallback onTap) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(8),
+  Widget _buildExpandableSection({required String title, required IconData icon, required List<Widget> children}) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: Container(
+        decoration: BoxDecoration(color: AppTheme.cardColor, borderRadius: BorderRadius.circular(12)),
+        child: ExpansionTile(
+          leading: Icon(icon, color: AppTheme.primaryTeal),
+          title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+          iconColor: AppTheme.primaryTeal,
+          collapsedIconColor: Colors.white,
+          childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+          children: children,
+        ),
       ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(
-                name == 'Strava' ? Icons.directions_run : Icons.watch,
-                color: name == 'Strava' ? Colors.orange : Colors.blueGrey,
-              ),
-              const SizedBox(width: 12),
-              Text(name, style: const TextStyle(color: Colors.white, fontSize: 16)),
-            ],
-          ),
-          TextButton(
-            onPressed: onTap,
-            child: Text(
-              isConnected ? 'Disconnect' : 'Connect',
-              style: TextStyle(
-                color: isConnected ? Colors.red : AppTheme.primaryTeal,
-                fontWeight: FontWeight.bold,
-              ),
+          Text(label, style: const TextStyle(color: AppTheme.secondaryTextColor, fontSize: 15)),
+          Text(value.isEmpty ? '-' : value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLongTextRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: AppTheme.secondaryTextColor, fontSize: 14)),
+          const SizedBox(height: 4),
+          Text(value.isEmpty ? 'N/A' : value, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStravaRow() {
+    return ValueListenableBuilder<bool>(
+      valueListenable: UserState.stravaConnected,
+      builder: (context, isConnected, _) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(children: const [Icon(Icons.directions_run, color: Colors.orange), SizedBox(width: 12), Text('Strava', style: TextStyle(color: Colors.white))]),
+            TextButton(
+              onPressed: isConnected ? _confirmDisconnectStrava : _handleStravaConnect,
+              child: Text(isConnected ? 'Disconnect' : 'Connect', style: TextStyle(color: isConnected ? Colors.red : AppTheme.primaryTeal, fontWeight: FontWeight.bold)),
             ),
-          ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGarminRow() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(children: const [Icon(Icons.watch, color: Colors.blueGrey), SizedBox(width: 12), Text('Garmin', style: TextStyle(color: Colors.white))]),
+          TextButton(onPressed: () {}, child: const Text('Soon', style: TextStyle(color: Colors.white24))),
         ],
       ),
     );
@@ -232,17 +237,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _handleStravaConnect() async {
     const stravaClientId = 216878;
     const redirectUri = 'https://samuel-haddad.github.io/holy-squat-app';
-    final url = Uri.parse(
-      'https://www.strava.com/oauth/authorize'
-      '?client_id=$stravaClientId'
-      '&response_type=code'
-      '&redirect_uri=$redirectUri'
-      '&approval_prompt=auto'
-      '&scope=read,activity:read_all',
-    );
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication);
-    }
+    final url = Uri.parse('https://www.strava.com/oauth/authorize?client_id=$stravaClientId&response_type=code&redirect_uri=$redirectUri&approval_prompt=auto&scope=read,activity:read_all');
+    if (await canLaunchUrl(url)) await launchUrl(url, mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication);
   }
 
   void _confirmDisconnectStrava() {
@@ -251,42 +247,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.cardColor,
         title: const Text('Disconnect Strava?', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'Your training data will no longer sync from Strava.',
-          style: TextStyle(color: AppTheme.secondaryTextColor),
-        ),
+        content: const Text('Your training data will no longer sync.', style: TextStyle(color: AppTheme.secondaryTextColor)),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white)),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await SupabaseService.disconnectStrava();
-              setState(() {});
-            },
-            child: const Text('Disconnect', style: TextStyle(color: Colors.red)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Colors.white))),
+          TextButton(onPressed: () async { Navigator.pop(context); await SupabaseService.disconnectStrava(); setState(() {}); }, child: const Text('Disconnect', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
   }
 
-  Widget _buildStatCard(String label, String value) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(color: AppTheme.secondaryTextColor, fontSize: 16)),
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-        ],
+  Widget _buildSignOutButton() {
+    return SizedBox(
+      width: double.infinity, height: 48,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.red.withOpacity(0.1), foregroundColor: Colors.red, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+        onPressed: () => Supabase.instance.client.auth.signOut(),
+        child: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
