@@ -115,7 +115,9 @@ class SupabaseService {
     if (user == null) return null;
 
     try {
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+      // Sanitize filename: remove special characters and replace spaces with underscores
+      String sanitizedName = file.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$sanitizedName';
       final path = '${user.id}/$fileName';
       
       if (kIsWeb) {
