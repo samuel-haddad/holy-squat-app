@@ -8,6 +8,8 @@ import 'package:holy_squat_app/core/app_state.dart';
 import 'package:holy_squat_app/screens/login_screen.dart';
 import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:holy_squat_app/screens/onboarding_screen.dart';
+import 'package:holy_squat_app/core/user_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -99,7 +101,13 @@ class _AuthGateState extends State<AuthGate> {
     final session = Supabase.instance.client.auth.currentSession;
     if (session != null) {
       SupabaseService.getProfile();
-      return const MainScreen();
+      return ValueListenableBuilder<bool>(
+        valueListenable: UserState.isProfileComplete,
+        builder: (context, isComplete, _) {
+          if (!isComplete) return const OnboardingScreen();
+          return const MainScreen();
+        },
+      );
     }
     return const LoginScreen();
   }
