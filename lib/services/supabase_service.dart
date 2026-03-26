@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:holy_squat_app/core/user_state.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
 
 class SupabaseService {
   static final client = Supabase.instance.client;
@@ -42,6 +43,7 @@ class SupabaseService {
         if (response['sessions_per_day'] != null) UserState.sessionsPerDay.value = response['sessions_per_day'];
         if (response['where_train'] != null) UserState.whereTrain.value = List<String>.from(response['where_train']);
         if (response['additional_info'] != null) UserState.additionalInfo.value = response['additional_info'];
+        if (response['background_file_url'] != null) UserState.backgroundFileUrl.value = response['background_file_url'];
 
         UserState.stravaConnected.value = response['strava_athlete_id'] != null;
         // Profile is complete if birthdate is set (standard for our app)
@@ -103,7 +105,38 @@ class SupabaseService {
       'sessions_per_day': UserState.sessionsPerDay.value,
       'where_train': UserState.whereTrain.value,
       'additional_info': UserState.additionalInfo.value,
+      'background_file_url': UserState.backgroundFileUrl.value,
     });
+  }
+
+  static Future<String?> uploadTrainingBackground(PlatformFile file) async {
+    final user = client.auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+      final path = 'backgrounds/${user.id}/$fileName';
+      
+      if (file.bytes != null) {
+        await client.storage.from('backgrounds').uploadBinary(
+          path, 
+          file.bytes!,
+          fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+        );
+      } else if (file.path != null) {
+        // Fallback for native if bytes are null but path is available
+        // Note: For web, file.bytes is usually available.
+      } else {
+        return null;
+      }
+
+      final url = client.storage.from('backgrounds').getPublicUrl(path);
+      UserState.backgroundFileUrl.value = url;
+      return url;
+    } catch (e) {
+      debugPrint("Error uploading training background: $e");
+      return null;
+    }
   }
 
   static Future<List<Map<String, dynamic>>> getAICoaches() async {

@@ -215,6 +215,14 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
   }
 
   Widget _buildTrainingBackgroundField() {
+    String? currentFileName;
+    if (UserState.backgroundFileUrl.value != null) {
+      currentFileName = UserState.backgroundFileUrl.value!.split('/').last;
+      if (currentFileName.contains('_')) {
+        currentFileName = currentFileName.split('_').sublist(1).join('_');
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -235,8 +243,10 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    _backgroundFile != null ? _backgroundFile!.name : 'Upload PDF or Text file',
-                    style: TextStyle(color: _backgroundFile != null ? Colors.white : AppTheme.secondaryTextColor),
+                    _backgroundFile != null 
+                      ? _backgroundFile!.name 
+                      : (currentFileName != null ? '📄 $currentFileName' : 'Upload PDF or Text file'),
+                    style: TextStyle(color: (_backgroundFile != null || currentFileName != null) ? Colors.white : AppTheme.secondaryTextColor),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -377,7 +387,9 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
             UserState.additionalInfo.value = _additionalInfoController.text;
 
             try {
-              // Note: File upload would happen here in a full implementation
+              if (_backgroundFile != null) {
+                await SupabaseService.uploadTrainingBackground(_backgroundFile!);
+              }
               await SupabaseService.upsertProfile();
               if (mounted) Navigator.pop(context);
             } catch (e) {

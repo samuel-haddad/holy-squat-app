@@ -121,9 +121,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     try {
       if (_backgroundFile != null) {
-        // Upload file logic would go here, for now we can append info to anamnesis or store filename
-        // In a real app we'd upload to Supabase Storage
-        debugPrint("File selected: ${_backgroundFile!.name}");
+        await SupabaseService.uploadTrainingBackground(_backgroundFile!);
       }
       
       await SupabaseService.upsertProfile();

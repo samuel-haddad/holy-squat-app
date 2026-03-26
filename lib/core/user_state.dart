@@ -21,5 +21,6 @@ class UserState {
   static final ValueNotifier<int> sessionsPerDay = ValueNotifier(1);
   static final ValueNotifier<List<String>> whereTrain = ValueNotifier([]);
   static final ValueNotifier<String> additionalInfo = ValueNotifier('');
+  static final ValueNotifier<String?> backgroundFileUrl = ValueNotifier(null);
   static final ValueNotifier<bool> isProfileComplete = ValueNotifier(true); // Default to true to avoid flicker
 }

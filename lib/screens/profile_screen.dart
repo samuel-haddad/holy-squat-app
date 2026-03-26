@@ -94,6 +94,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _buildInfoRow('Where', UserState.whereTrain.value.join(', ')),
                 const Divider(color: Colors.white10),
                 _buildLongTextRow('Training Background', UserState.anamnesis.value),
+                if (UserState.backgroundFileUrl.value != null) 
+                  _buildFileRow(UserState.backgroundFileUrl.value!),
                 _buildLongTextRow('Additional Info', UserState.additionalInfo.value),
               ],
             ),
@@ -196,6 +198,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 4),
           Text(value.isEmpty ? 'N/A' : value, style: const TextStyle(color: Colors.white70, fontSize: 14)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFileRow(String url) {
+    String fileName = url.split('/').last;
+    if (fileName.contains('_')) {
+      fileName = fileName.split('_').sublist(1).join('_'); // Remove timestamp prefix
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: InkWell(
+        onTap: () => launchUrl(Uri.parse(url)),
+        child: Row(
+          children: [
+            const Icon(Icons.description, color: AppTheme.primaryTeal, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '📄 $fileName',
+                style: const TextStyle(color: AppTheme.primaryTeal, decoration: TextDecoration.underline),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
