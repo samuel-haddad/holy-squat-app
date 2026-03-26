@@ -321,31 +321,33 @@ class SupabaseService {
     final user = client.auth.currentUser;
     if (user == null || user.email == null) return [];
 
-    // Fetch all completed workouts with valid dates.
-    // Order ASC so the LIMIT doesn't cut off the oldest months.
-    // We select only workout_date to minimize payload size.
-    final response = await client
-        .from('workouts_logs')
-        .select('workout_date')
-        .eq('user_email', user.email!)
-        .eq('done', 1)
-        .not('workout_date', 'is', null)
-        .order('workout_date', ascending: true)
-        .limit(50000);
-
-    debugPrint("Dashboard: ${response.length} completed logs for ${user.email}");
-
-    // Normalize every value to 'YYYY-MM-DD' BEFORE deduplication so that
-    // timestamps like '2025-07-01T10:00:00' and '2025-07-01' both collapse
-    // to the same string '2025-07-01'.
+    // Supabase caps each request at 1000 rows server-side, regardless of .limit().
+    // We paginate with .range() to collect ALL records across multiple requests.
     final Set<String> uniqueDates = {};
-    for (var row in response) {
-      final val = row['workout_date'];
-      if (val != null) {
-        // Truncate to date-only (handles date, datetime, and ISO-8601 strings)
-        final normalized = val.toString().split('T').first.split(' ').first;
-        uniqueDates.add(normalized);
+    const pageSize = 1000;
+    int offset = 0;
+
+    while (true) {
+      final response = await client
+          .from('workouts_logs')
+          .select('workout_date')
+          .eq('user_email', user.email!)
+          .eq('done', 1)
+          .not('workout_date', 'is', null)
+          .order('workout_date', ascending: true)
+          .range(offset, offset + pageSize - 1);
+
+      for (var row in response) {
+        final val = row['workout_date'];
+        if (val != null) {
+          // Normalize to 'YYYY-MM-DD' before dedup to handle timestamps
+          final normalized = val.toString().split('T').first.split(' ').first;
+          uniqueDates.add(normalized);
+        }
       }
+
+      if (response.length < pageSize) break; // Last page reached
+      offset += pageSize;
     }
 
     debugPrint("Dashboard: ${uniqueDates.length} unique active dates found.");
