@@ -86,7 +86,13 @@ class _LoginScreenState extends State<LoginScreen> {
       '&scope=read,activity:read_all',
     );
     if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+      // On web: stay in the same window so the token redirect is handled
+      // by the same Flutter app instance (new tab = session is lost).
+      // On mobile: externalApplication opens the system browser.
+      await launchUrl(
+        url,
+        mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
+      );
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
