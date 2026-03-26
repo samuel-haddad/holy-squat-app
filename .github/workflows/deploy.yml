@@ -31,7 +31,7 @@ jobs:
         run: flutter pub get
 
       - name: Build Flutter Web
-        run: flutter build web --release --base-href /
+        run: flutter build web --release --base-href /holy-squat-app/
 
       - name: Upload artifact to GitHub Pages
         uses: actions/upload-pages-artifact@v3
