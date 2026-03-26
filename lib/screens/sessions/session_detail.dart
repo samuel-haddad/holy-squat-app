@@ -43,10 +43,22 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         widget.sessionData['session_num']?.toString() ?? '1';
     final String formattedDate = DateFormat('dd/MM/yyyy').format(date);
 
-    final iconObj = widget.sessionData['icons'];
-    final String imgSrc = (iconObj != null && iconObj['img'] != null)
-        ? iconObj['img']
-        : 'https://cdn-icons-png.flaticon.com/512/2964/2964514.png';
+    String getSessionIcon(String? type) {
+      if (type == null) return 'assets/sessions_icons/crossfit_session_icon.png';
+      String t = type.toLowerCase();
+      if (t.contains('lpo')) return 'assets/sessions_icons/lpo_session_icon.png';
+      if (t.contains('força') || t.contains('strength')) return 'assets/sessions_icons/strengh_session_icon.png';
+      if (t.contains('mobilidade') || t.contains('prehab')) return 'assets/sessions_icons/mobility_session_icon.png';
+      if (t.contains('ginástica') || t.contains('calistenia')) return 'assets/sessions_icons/calistenia_session_icon.png';
+      if (t.contains('recuperação') || t.contains('recovery')) return 'assets/sessions_icons/recovery_session_icon.png';
+      if (t.contains('corrida') || t.contains('run')) return 'assets/sessions_icons/run_session_icon.png';
+      if (t.contains('core')) return 'assets/sessions_icons/core_session_icon.png';
+      if (t.contains('relax')) return 'assets/sessions_icons/relax_session_icon.png';
+      if (t.contains('swimming') || t.contains('natação') || t.contains('nataçao')) return 'assets/sessions_icons/swimming_session_icon.png';
+      return 'assets/sessions_icons/crossfit_session_icon.png';
+    }
+
+    final String imgSrc = getSessionIcon(title);
 
     return Scaffold(
       appBar: AppBar(
@@ -80,22 +92,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     child: Center(
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: imgSrc.startsWith('http')
-                            ? Image.network(
-                                imgSrc,
-                                width: 80,
-                                height: 80,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    const Icon(Icons.fitness_center, size: 40),
-                              )
-                            : Image.asset(
-                                'assets/sessions_icons/$imgSrc',
-                                width: 80,
-                                height: 80,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    const Icon(Icons.fitness_center, size: 40),
+                        child: Image.asset(
+                            imgSrc,
+                            width: 80,
+                            height: 80,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(Icons.fitness_center, size: 40),
                               ),
                       ),
                     ),

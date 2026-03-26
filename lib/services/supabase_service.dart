@@ -321,28 +321,30 @@ class SupabaseService {
     final user = client.auth.currentUser;
     if (user == null || user.email == null) return [];
 
-    // Filter server-side: only fetch completed workouts with valid dates
-    // This avoids Supabase's 1000-row default limit being filled with done=0 records
+    // Fetch all completed workouts with valid dates.
+    // Order ASC so the LIMIT doesn't cut off the oldest months.
+    // We select only workout_date to minimize payload size.
     final response = await client
         .from('workouts_logs')
         .select('workout_date')
         .eq('user_email', user.email!)
         .eq('done', 1)
         .not('workout_date', 'is', null)
-        .order('workout_date', ascending: false)
-        .limit(5000);
+        .order('workout_date', ascending: true)
+        .limit(50000);
 
     debugPrint("Dashboard: ${response.length} completed logs for ${user.email}");
-    if (response.isNotEmpty) {
-      debugPrint("Dashboard: Sample dates: ${response.take(3).map((r) => r['workout_date']).toList()}");
-    }
 
-    // Use a Set to get unique active days
+    // Normalize every value to 'YYYY-MM-DD' BEFORE deduplication so that
+    // timestamps like '2025-07-01T10:00:00' and '2025-07-01' both collapse
+    // to the same string '2025-07-01'.
     final Set<String> uniqueDates = {};
     for (var row in response) {
       final val = row['workout_date'];
       if (val != null) {
-        uniqueDates.add(val.toString());
+        // Truncate to date-only (handles date, datetime, and ISO-8601 strings)
+        final normalized = val.toString().split('T').first.split(' ').first;
+        uniqueDates.add(normalized);
       }
     }
 
