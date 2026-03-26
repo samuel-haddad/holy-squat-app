@@ -74,8 +74,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleStravaLogin() async {
     // Strava is not a native Supabase provider — we launch the OAuth URL manually.
     // A Supabase Edge Function will handle the token exchange and session creation.
-    const stravaClientId = 216878; // Replace after Strava app registration
-    const redirectUri = 'https://samuel-haddad.github.io/holy-squat-app/';
+    const stravaClientId = 216878;
+    // Must point to the Edge Function so it can exchange the code for a session
+    const redirectUri = 'https://clgipzmxnchwucxwkgzn.supabase.co/functions/v1/strava-auth';
     final url = Uri.parse(
       'https://www.strava.com/oauth/authorize'
       '?client_id=$stravaClientId'
@@ -193,10 +194,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 _buildSocialButton(Icons.g_mobiledata, 'Continue with Google', Colors.white, Colors.black, () => _handleOAuth(OAuthProvider.google)),
                 const SizedBox(height: 12),
                 _buildSocialButton(Icons.directions_run, 'Continue with Strava', Colors.orange, Colors.white, _handleStravaLogin),
-                const SizedBox(height: 12),
-                _buildSocialButton(Icons.watch, 'Continue with Garmin', Colors.blueGrey, Colors.white, () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Garmin OAuth integration pending API keys.')));
-                }),
                 const SizedBox(height: 32),
               ],
             ),
