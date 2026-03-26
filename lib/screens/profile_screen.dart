@@ -231,7 +231,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _handleStravaConnect() async {
     const stravaClientId = 216878;
-    const redirectUri = 'https://samuel-haddad.github.io/holy-squat-app/';
+    const redirectUri = 'https://samuel-haddad.github.io/holy-squat-app';
     final url = Uri.parse(
       'https://www.strava.com/oauth/authorize'
       '?client_id=$stravaClientId'
