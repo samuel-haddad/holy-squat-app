@@ -115,10 +115,16 @@ class SupabaseService {
     if (user == null) return null;
 
     try {
-      // Sanitize filename: remove special characters and replace spaces with underscores
-      String sanitizedName = file.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$sanitizedName';
+      // Very aggressive sanitization: remove EVERYTHING that is not a letter or number
+      // We keep the extension by splitting it first
+      final extension = file.extension ?? 'pdf';
+      final baseName = file.name.split('.').first;
+      String sanitizedName = baseName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$sanitizedName.$extension';
       final path = '${user.id}/$fileName';
+      
+      debugPrint("Uploading storage file to path: backgrounds/$path");
       
       if (kIsWeb) {
         if (file.bytes != null) {
