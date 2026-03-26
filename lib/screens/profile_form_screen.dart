@@ -100,6 +100,7 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'txt', 'doc', 'docx'],
+      withData: true,
     );
     if (result != null) {
       setState(() => _backgroundFile = result.files.first);
@@ -388,7 +389,11 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
 
             try {
               if (_backgroundFile != null) {
-                await SupabaseService.uploadTrainingBackground(_backgroundFile!);
+                final url = await SupabaseService.uploadTrainingBackground(_backgroundFile!);
+                if (url == null) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to upload file. Check storage bucket & policies.')));
+                  return;
+                }
               }
               await SupabaseService.upsertProfile();
               if (mounted) Navigator.pop(context);

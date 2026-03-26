@@ -3,6 +3,7 @@ import 'package:holy_squat_app/core/user_state.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
+import 'dart:io' show File;
 
 class SupabaseService {
   static final client = Supabase.instance.client;
@@ -117,17 +118,24 @@ class SupabaseService {
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
       final path = 'backgrounds/${user.id}/$fileName';
       
-      if (file.bytes != null) {
-        await client.storage.from('backgrounds').uploadBinary(
+      if (kIsWeb) {
+        if (file.bytes != null) {
+          await client.storage.from('backgrounds').uploadBinary(
+            path, 
+            file.bytes!,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
+        } else {
+          return null;
+        }
+      } else {
+        // Native platform
+        final fileToUpload = File(file.path!);
+        await client.storage.from('backgrounds').upload(
           path, 
-          file.bytes!,
+          fileToUpload,
           fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
         );
-      } else if (file.path != null) {
-        // Fallback for native if bytes are null but path is available
-        // Note: For web, file.bytes is usually available.
-      } else {
-        return null;
       }
 
       final url = client.storage.from('backgrounds').getPublicUrl(path);

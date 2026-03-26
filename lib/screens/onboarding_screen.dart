@@ -97,6 +97,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'txt', 'doc', 'docx'],
+      withData: true, // Important for web and some native cases
     );
     if (result != null) {
       setState(() => _backgroundFile = result.files.first);
@@ -121,7 +122,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     try {
       if (_backgroundFile != null) {
-        await SupabaseService.uploadTrainingBackground(_backgroundFile!);
+        final url = await SupabaseService.uploadTrainingBackground(_backgroundFile!);
+        if (url == null) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to upload file. Please check your storage settings.')));
+          return; // Stop if upload fails to avoid inconsistent state
+        }
       }
       
       await SupabaseService.upsertProfile();

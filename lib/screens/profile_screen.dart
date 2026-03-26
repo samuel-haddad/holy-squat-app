@@ -94,8 +94,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _buildInfoRow('Where', UserState.whereTrain.value.join(', ')),
                 const Divider(color: Colors.white10),
                 _buildLongTextRow('Training Background', UserState.anamnesis.value),
-                if (UserState.backgroundFileUrl.value != null) 
-                  _buildFileRow(UserState.backgroundFileUrl.value!),
+                ValueListenableBuilder<String?>(
+                  valueListenable: UserState.backgroundFileUrl,
+                  builder: (context, url, _) => url != null ? _buildFileRow(url) : const SizedBox.shrink(),
+                ),
                 _buildLongTextRow('Additional Info', UserState.additionalInfo.value),
               ],
             ),
