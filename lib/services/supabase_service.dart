@@ -100,19 +100,24 @@ class SupabaseService {
     final user = client.auth.currentUser;
     if (user == null) return;
 
+    final String? durationVal = duration.isEmpty ? null : duration;
+    final String? pseVal = pse.isEmpty ? null : pse;
+    final String? repsVal = reps.isEmpty ? null : reps;
+    final String? annotationsVal = annotations.isEmpty ? null : annotations;
+
     await client.from('workouts_logs').upsert({
       'user_email': user.email,
       'wod_exercise_id': wodExerciseId,
       'workout_date': workoutDate.toIso8601String().split('T').first,
       'done': 1,
-      'duration_done': duration,
-      'pse': pse,
-      'reps_done': reps,
-      'weight': weight,
-      'weight_unit': weightUnit,
-      'cardio_result': cardioResult,
-      'cardio_unit': cardioUnit,
-      'annotations': annotations,
+      if (durationVal != null) 'duration_done': durationVal,
+      if (pseVal != null) 'pse': pseVal,
+      if (repsVal != null) 'reps_done': repsVal,
+      if (weight != null) 'weight': weight,
+      if (weight != null) 'weight_unit': weightUnit,
+      if (cardioResult != null) 'cardio_result': cardioResult,
+      if (cardioResult != null) 'cardio_unit': cardioUnit,
+      if (annotationsVal != null) 'annotations': annotationsVal,
     });
   }
 
