@@ -33,10 +33,23 @@ class SupabaseService {
           UserState.sport.value = response['favorite_sport'];
         if (response['training_goal'] != null)
           UserState.goal.value = response['training_goal'];
+        
+        // New Skill & Training fields (defensive checks)
+        if (response['ai_coach_id'] != null) UserState.aiCoachId.value = response['ai_coach_id'];
+        if (response['anamnesis'] != null) UserState.anamnesis.value = response['anamnesis'];
+        if (response['active_hours_value'] != null) UserState.activeHoursValue.value = (response['active_hours_value'] as num).toDouble();
+        if (response['active_hours_unit'] != null) UserState.activeHoursUnit.value = response['active_hours_unit'];
+        if (response['sessions_per_day'] != null) UserState.sessionsPerDay.value = response['sessions_per_day'];
+        if (response['where_train'] != null) UserState.whereTrain.value = List<String>.from(response['where_train']);
+        if (response['additional_info'] != null) UserState.additionalInfo.value = response['additional_info'];
+
         UserState.stravaConnected.value = response['strava_athlete_id'] != null;
+        // Profile is complete if birthdate is set (standard for our app)
+        UserState.isProfileComplete.value = response['birthdate'] != null;
       } else {
         UserState.email.value = user.email ?? 'No email';
         UserState.stravaConnected.value = false;
+        UserState.isProfileComplete.value = false;
       }
     } catch (e) {
       debugPrint("Error fetching profile: $e");
@@ -83,7 +96,24 @@ class SupabaseService {
       'weight_unit': UserState.weightUnit.value,
       'favorite_sport': UserState.sport.value,
       'training_goal': UserState.goal.value,
+      'ai_coach_id': UserState.aiCoachId.value,
+      'anamnesis': UserState.anamnesis.value,
+      'active_hours_value': UserState.activeHoursValue.value,
+      'active_hours_unit': UserState.activeHoursUnit.value,
+      'sessions_per_day': UserState.sessionsPerDay.value,
+      'where_train': UserState.whereTrain.value,
+      'additional_info': UserState.additionalInfo.value,
     });
+  }
+
+  static Future<List<Map<String, dynamic>>> getAICoaches() async {
+    try {
+      final response = await client.from('ai_coach').select().order('ai_coach_name');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint("Error fetching AI coaches: $e");
+      return [];
+    }
   }
 
   static Future<void> saveWorkoutResult({
