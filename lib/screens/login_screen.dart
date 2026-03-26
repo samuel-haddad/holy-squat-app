@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/widgets/theme_toggle_button.dart';
 
@@ -67,36 +66,6 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OAuth Error: $e')));
-      }
-    }
-  }
-
-  Future<void> _handleStravaLogin() async {
-    // Strava is not a native Supabase provider — we launch the OAuth URL manually.
-    // A Supabase Edge Function will handle the token exchange and session creation.
-    const stravaClientId = 216878;
-    // Must point to the Edge Function so it can exchange the code for a session
-    const redirectUri = 'https://clgipzmxnchwucxwkgzn.supabase.co/functions/v1/strava-auth';
-    final url = Uri.parse(
-      'https://www.strava.com/oauth/authorize'
-      '?client_id=$stravaClientId'
-      '&response_type=code'
-      '&redirect_uri=$redirectUri'
-      '&approval_prompt=auto'
-      '&scope=read,activity:read_all',
-    );
-    if (await canLaunchUrl(url)) {
-      // On web: stay in the same window so the token redirect is handled
-      // by the same Flutter app instance (new tab = session is lost).
-      // On mobile: externalApplication opens the system browser.
-      await launchUrl(
-        url,
-        mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
-      );
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open Strava login.')));
       }
     }
   }
@@ -198,8 +167,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 
                 _buildSocialButton(Icons.g_mobiledata, 'Continue with Google', Colors.white, Colors.black, () => _handleOAuth(OAuthProvider.google)),
-                const SizedBox(height: 12),
-                _buildSocialButton(Icons.directions_run, 'Continue with Strava', Colors.orange, Colors.white, _handleStravaLogin),
                 const SizedBox(height: 32),
               ],
             ),
