@@ -116,7 +116,7 @@ class SupabaseService {
 
     try {
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
-      final path = 'backgrounds/${user.id}/$fileName';
+      final path = '${user.id}/$fileName';
       
       if (kIsWeb) {
         if (file.bytes != null) {
@@ -143,7 +143,7 @@ class SupabaseService {
       return url;
     } catch (e) {
       debugPrint("Error uploading training background: $e");
-      return null;
+      rethrow; // Rethrow so the UI can catch it and show the error message
     }
   }
 
