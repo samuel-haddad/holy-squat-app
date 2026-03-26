@@ -11,4 +11,5 @@ class UserState {
   static final ValueNotifier<String> weightUnit = ValueNotifier('Kg');
   static final ValueNotifier<String> sport = ValueNotifier('Crossfit');
   static final ValueNotifier<String> goal = ValueNotifier('Hypertrophy');
+  static final ValueNotifier<bool> stravaConnected = ValueNotifier(false);
 }

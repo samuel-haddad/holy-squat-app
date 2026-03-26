@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/screens/profile_form_screen.dart';
@@ -9,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:typed_data';
 import 'package:holy_squat_app/services/supabase_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -115,6 +117,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildStatCard('Favorite Sport', UserState.sport.value),
             _buildStatCard('Training goal', UserState.goal.value),
             const SizedBox(height: 24),
+            _buildConnectedAccountsSection(),
+            const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,
               height: 48,
@@ -150,6 +154,122 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
       bottomNavigationBar: const AppBottomNav(activeIndex: null),
+    );
+  }
+
+  Widget _buildConnectedAccountsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4.0, bottom: 12.0),
+          child: Text(
+            'Connected Accounts',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: UserState.stravaConnected,
+          builder: (context, isConnected, _) {
+            return _buildAccountRow(
+              'Strava',
+              isConnected,
+              'assets/logo/strava_logo.png', // Fallback to icon if missing
+              isConnected ? _confirmDisconnectStrava : _handleStravaConnect,
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildAccountRow(
+          'Garmin',
+          false,
+          null, // Placeholder
+          () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Garmin import coming soon!'))
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountRow(String name, bool isConnected, String? assetPath, VoidCallback onTap) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(
+                name == 'Strava' ? Icons.directions_run : Icons.watch,
+                color: name == 'Strava' ? Colors.orange : Colors.blueGrey,
+              ),
+              const SizedBox(width: 12),
+              Text(name, style: const TextStyle(color: Colors.white, fontSize: 16)),
+            ],
+          ),
+          TextButton(
+            onPressed: onTap,
+            child: Text(
+              isConnected ? 'Disconnect' : 'Connect',
+              style: TextStyle(
+                color: isConnected ? Colors.red : AppTheme.primaryTeal,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleStravaConnect() async {
+    const stravaClientId = 216878;
+    const redirectUri = 'https://samuel-haddad.github.io/holy-squat-app/';
+    final url = Uri.parse(
+      'https://www.strava.com/oauth/authorize'
+      '?client_id=$stravaClientId'
+      '&response_type=code'
+      '&redirect_uri=$redirectUri'
+      '&approval_prompt=auto'
+      '&scope=read,activity:read_all',
+    );
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication);
+    }
+  }
+
+  void _confirmDisconnectStrava() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.cardColor,
+        title: const Text('Disconnect Strava?', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Your training data will no longer sync from Strava.',
+          style: TextStyle(color: AppTheme.secondaryTextColor),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await SupabaseService.disconnectStrava();
+              setState(() {});
+            },
+            child: const Text('Disconnect', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
   }
 

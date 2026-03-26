@@ -33,8 +33,10 @@ class SupabaseService {
           UserState.sport.value = response['favorite_sport'];
         if (response['training_goal'] != null)
           UserState.goal.value = response['training_goal'];
+        UserState.stravaConnected.value = response['strava_athlete_id'] != null;
       } else {
         UserState.email.value = user.email ?? 'No email';
+        UserState.stravaConnected.value = false;
       }
     } catch (e) {
       debugPrint("Error fetching profile: $e");
@@ -352,5 +354,34 @@ class SupabaseService {
 
     debugPrint("Dashboard: ${uniqueDates.length} unique active dates found.");
     return uniqueDates.toList();
+  }
+
+  static Future<void> saveStravaTokens(
+      String athleteId, String accessToken, String refreshToken) async {
+    final user = client.auth.currentUser;
+    if (user == null) return;
+
+    await client.from('profiles').update({
+      'strava_athlete_id': athleteId,
+      'strava_access_token': accessToken,
+      'strava_refresh_token': refreshToken,
+      'strava_connected_at': DateTime.now().toIso8601String(),
+    }).eq('id', user.id);
+
+    UserState.stravaConnected.value = true;
+  }
+
+  static Future<void> disconnectStrava() async {
+    final user = client.auth.currentUser;
+    if (user == null) return;
+
+    await client.from('profiles').update({
+      'strava_athlete_id': null,
+      'strava_access_token': null,
+      'strava_refresh_token': null,
+      'strava_connected_at': null,
+    }).eq('id', user.id);
+
+    UserState.stravaConnected.value = false;
   }
 }
