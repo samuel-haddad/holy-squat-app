@@ -5,6 +5,7 @@ import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 
 class ProfileFormScreen extends StatefulWidget {
   const ProfileFormScreen({super.key});
@@ -34,6 +35,7 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
   late TextEditingController _sessionsPerDayController;
   List<String> _selectedWhere = [];
   late TextEditingController _additionalInfoController;
+  PlatformFile? _backgroundFile;
 
   final List<String> _whereOptions = ['box', 'academia', 'corrida de rua'];
 
@@ -94,6 +96,16 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     }
   }
 
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'txt', 'doc', 'docx'],
+    );
+    if (result != null) {
+      setState(() => _backgroundFile = result.files.first);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -126,7 +138,7 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
               _buildSectionHeader('Skills & Training'),
               _buildCoachDropdown(),
               const SizedBox(height: 16),
-              _buildTextField('Anamnesis (Medical history)', _anamnesisController, maxLines: 3),
+              _buildTrainingBackgroundField(),
               const SizedBox(height: 16),
               _buildActiveHoursField(),
               const SizedBox(height: 16),
@@ -136,7 +148,7 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
               const SizedBox(height: 8),
               _buildWhereCheckboxes(),
               const SizedBox(height: 16),
-              _buildTextField('Additional Info', _additionalInfoController, maxLines: 2),
+              _buildTextField('Additional Info (Optional)', _additionalInfoController, maxLines: 2, required: false),
 
               const SizedBox(height: 48),
               _buildSaveButton(),
@@ -202,6 +214,47 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     );
   }
 
+  Widget _buildTrainingBackgroundField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildTextField('Training Background (Optional)', _anamnesisController, maxLines: 3, required: false),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: _pickFile,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppTheme.cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.primaryTeal.withOpacity(0.3), width: 1),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.attach_file, color: AppTheme.primaryTeal, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _backgroundFile != null ? _backgroundFile!.name : 'Upload PDF or Text file',
+                    style: TextStyle(color: _backgroundFile != null ? Colors.white : AppTheme.secondaryTextColor),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (_backgroundFile != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.red, size: 18),
+                    onPressed: () => setState(() => _backgroundFile = null),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildWhereCheckboxes() {
     return Wrap(
       spacing: 8,
@@ -224,7 +277,7 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
   Widget _buildActiveHoursField() {
     return Row(
       children: [
-        Expanded(flex: 2, child: _buildTextField('Active Hours', _activeHoursController, keyboardType: const TextInputType.numberWithOptions(decimal: true))),
+        Expanded(flex: 2, child: _buildTextField('Active hours per session', _activeHoursController, keyboardType: const TextInputType.numberWithOptions(decimal: true))),
         const SizedBox(width: 8),
         Expanded(
           child: DropdownButtonFormField<String>(
@@ -240,14 +293,14 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType}) {
+  Widget _buildTextField(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType, bool required = true}) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
       style: const TextStyle(color: Colors.white),
       decoration: _inputDecoration(label),
-      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+      validator: required ? (v) => v == null || v.isEmpty ? 'Required' : null : null,
     );
   }
 
@@ -324,6 +377,7 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
             UserState.additionalInfo.value = _additionalInfoController.text;
 
             try {
+              // Note: File upload would happen here in a full implementation
               await SupabaseService.upsertProfile();
               if (mounted) Navigator.pop(context);
             } catch (e) {

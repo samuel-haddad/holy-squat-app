@@ -89,11 +89,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.fitness_center,
               children: [
                 _buildInfoRow('AI Coach', _aiCoachName ?? 'Loading...'),
-                _buildInfoRow('Hours/Session', '${UserState.activeHoursValue.value} ${UserState.activeHoursUnit.value}'),
+                _buildInfoRow('Active hours per session', '${UserState.activeHoursValue.value} ${UserState.activeHoursUnit.value}'),
                 _buildInfoRow('Sessions/Day', UserState.sessionsPerDay.value.toString()),
                 _buildInfoRow('Where', UserState.whereTrain.value.join(', ')),
                 const Divider(color: Colors.white10),
-                _buildLongTextRow('Anamnesis', UserState.anamnesis.value),
+                _buildLongTextRow('Training Background', UserState.anamnesis.value),
                 _buildLongTextRow('Additional Info', UserState.additionalInfo.value),
               ],
             ),

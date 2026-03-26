@@ -3,6 +3,7 @@ import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/core/user_state.dart';
 import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:holy_squat_app/screens/main_screen.dart';
+import 'package:file_picker/file_picker.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -33,6 +34,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   late TextEditingController _sessionsPerDayController;
   List<String> _selectedWhere = [];
   late TextEditingController _additionalInfoController;
+  PlatformFile? _backgroundFile;
 
   final List<String> _whereOptions = ['box', 'academia', 'corrida de rua'];
 
@@ -91,6 +93,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'txt', 'doc', 'docx'],
+    );
+    if (result != null) {
+      setState(() => _backgroundFile = result.files.first);
+    }
+  }
+
   Future<void> _finish() async {
     // Save everything to UserState
     UserState.name.value = _nameController.text;
@@ -108,6 +120,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     UserState.additionalInfo.value = _additionalInfoController.text;
 
     try {
+      if (_backgroundFile != null) {
+        // Upload file logic would go here, for now we can append info to anamnesis or store filename
+        // In a real app we'd upload to Supabase Storage
+        debugPrint("File selected: ${_backgroundFile!.name}");
+      }
+      
       await SupabaseService.upsertProfile();
       if (mounted) {
         Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen()), (route) => false);
@@ -204,7 +222,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 32),
             _buildCoachDropdown(),
             const SizedBox(height: 16),
-            _buildTextField('Anamnesis (Medical history)', _anamnesisController, maxLines: 3),
+            _buildTrainingBackgroundField(),
             const SizedBox(height: 16),
             _buildActiveHoursField(),
             const SizedBox(height: 16),
@@ -214,7 +232,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 8),
             _buildWhereCheckboxes(),
             const SizedBox(height: 16),
-            _buildTextField('Additional Info', _additionalInfoController, maxLines: 2),
+            _buildTextField('Additional Info (Optional)', _additionalInfoController, maxLines: 2, required: false),
             const SizedBox(height: 48),
             _buildNextButton(),
           ],
@@ -273,6 +291,47 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
+  Widget _buildTrainingBackgroundField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildTextField('Training Background (Optional)', _anamnesisController, maxLines: 3, required: false),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: _pickFile,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppTheme.cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.primaryTeal.withOpacity(0.3), width: 1),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.attach_file, color: AppTheme.primaryTeal, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _backgroundFile != null ? _backgroundFile!.name : 'Upload PDF or Text file',
+                    style: TextStyle(color: _backgroundFile != null ? Colors.white : AppTheme.secondaryTextColor),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (_backgroundFile != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.red, size: 18),
+                    onPressed: () => setState(() => _backgroundFile = null),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildWhereCheckboxes() {
     return Wrap(
       spacing: 8,
@@ -304,7 +363,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       children: [
         Expanded(
           flex: 2,
-          child: _buildTextField('Active Hours', _activeHoursController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+          child: _buildTextField('Active hours per session', _activeHoursController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -321,14 +380,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType}) {
+  Widget _buildTextField(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType, bool required = true}) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
       style: const TextStyle(color: Colors.white),
       decoration: _inputDecoration(label),
-      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+      validator: required ? (v) => v == null || v.isEmpty ? 'Required' : null : null,
     );
   }
 
