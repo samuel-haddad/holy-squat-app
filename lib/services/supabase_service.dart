@@ -463,4 +463,38 @@ class SupabaseService {
 
     UserState.stravaConnected.value = false;
   }
+
+  static Future<Map<String, dynamic>?> fetchLatestTrainingPlan() async {
+    final user = client.auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final response = await client
+          .from('training_plans')
+          .select()
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      return response;
+    } catch (e) {
+      debugPrint("Error fetching latest training plan: $e");
+      return null;
+    }
+  }
+
+  static Future<void> saveTrainingPlan(Map<String, dynamic> planData) async {
+    final user = client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      await client.from('training_plans').insert({
+        ...planData,
+        'user_id': user.id,
+      });
+    } catch (e) {
+      debugPrint("Error saving training plan: $e");
+      rethrow;
+    }
+  }
 }

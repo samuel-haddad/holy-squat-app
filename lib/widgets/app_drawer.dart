@@ -4,6 +4,7 @@ import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/screens/calendar_screen.dart';
 import 'package:holy_squat_app/screens/main_screen.dart';
 import 'package:holy_squat_app/screens/profile_screen.dart';
+import 'package:holy_squat_app/screens/planning/planning_screen.dart';
 import 'package:holy_squat_app/core/user_state.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -47,6 +48,10 @@ class AppDrawer extends StatelessWidget {
             _buildDrawerItem('Calendar', () {
               Navigator.pop(context); // close drawer
               Navigator.push(context, MaterialPageRoute(builder: (_) => const CalendarScreen()));
+            }),
+            _buildDrawerItem('Planning', () {
+              Navigator.pop(context); // close drawer
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const PlanningScreen()));
             }),
             _buildDrawerItem('Sessions', () {
               Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 1)), (route) => false);
