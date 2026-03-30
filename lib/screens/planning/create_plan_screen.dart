@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:holy_squat_app/theme/app_theme.dart';
-import 'package:holy_squat_app/services/supabase_service.dart';
+import 'package:holy_squat_app/controllers/workout_controller.dart';
+import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 class CreatePlanScreen extends StatefulWidget {
@@ -14,12 +15,13 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
   final _formKey = GlobalKey<FormState>();
   DateTime? _startDate;
   DateTime? _endDate;
+  final _objetivoController = TextEditingController();
   final _notesController = TextEditingController();
   final List<Map<String, dynamic>> _competitions = [];
-  bool _isSaving = false;
 
   @override
   void dispose() {
+    _objetivoController.dispose();
     _notesController.dispose();
     for (var comp in _competitions) {
       comp['nameController'].dispose();
@@ -104,33 +106,42 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
       return;
     }
 
-    setState(() => _isSaving = true);
-    try {
-      final List<Map<String, dynamic>> competitionsData = _competitions.map((comp) {
-        return {
-          'name': comp['nameController'].text,
-          'date': comp['date']?.toIso8601String(),
-        };
-      }).toList();
+    final controller = context.read<WorkoutController>();
 
-      await SupabaseService.saveTrainingPlan({
-        'start_date': _startDate!.toIso8601String(),
-        'end_date': _endDate?.toIso8601String(),
-        'notes': _notesController.text,
-        'competitions': competitionsData,
-      });
+    final List<String> competicoesFormatadas = _competitions
+        .map((comp) => comp['nameController'].text as String)
+        .where((name) => name.isNotEmpty)
+        .toList();
 
-      if (mounted) {
+    final startDateFormatted = DateFormat('yyyy-MM-dd').format(_startDate!);
+    final endDateFormatted = _endDate != null ? DateFormat('yyyy-MM-dd').format(_endDate!) : '';
+
+    await controller.criarNovoPlano(
+      emailUtilizador: 'samuelhsm@gmail.com', // Mocked as requested
+      objetivoGeral: _objetivoController.text,
+      dataInicio: startDateFormatted,
+      dataFim: endDateFormatted,
+      competicoes: competicoesFormatadas,
+      notasAdicionais: _notesController.text,
+    );
+
+    if (mounted) {
+      if (controller.state == WorkoutState.error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(controller.errorMessage),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      } else if (controller.state == WorkoutState.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Plano gerado com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.pop(context, true);
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving plan: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -150,6 +161,25 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const Text(
+                'Objetivo do Macrociclo *',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _objetivoController,
+                maxLines: 3,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Ex: Ganho de força e condicionamento focado no Open...',
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                  fillColor: AppTheme.cardColor,
+                  filled: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+                validator: (value) => value == null || value.isEmpty ? 'Campo obrigatório' : null,
+              ),
+              const SizedBox(height: 20),
               _buildDatePicker('Start date *', _startDate, () => _selectDate(context, true), true),
               const SizedBox(height: 20),
               _buildDatePicker('End date', _endDate, () => _selectDate(context, false), false),
@@ -187,20 +217,37 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 ),
               ),
-              const SizedBox(height: 48),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryTeal,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _isSaving ? null : _savePlan,
-                child: _isSaving
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                    : const Text(
-                        '3, 2, 1... GO!',
-                        style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+              Consumer<WorkoutController>(
+                builder: (context, controller, child) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (controller.isLoading && controller.loadingMessage.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16.0),
+                          child: Text(
+                            controller.loadingMessage,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryTeal,
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: controller.isLoading ? null : _savePlan,
+                        child: controller.isLoading
+                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                            : const Text(
+                                '3, 2, 1... GO!',
+                                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+                              ),
                       ),
+                    ],
+                  );
+                },
               ),
             ],
           ),

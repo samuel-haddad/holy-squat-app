@@ -281,6 +281,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                               actualId,
                               isCompleted,
                               resultText,
+                              w['adaptacaoLesao'],
                             ),
                           );
                         });
@@ -331,6 +332,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     String wodExerciseId,
     bool isCompleted,
     String? resultText,
+    String? adaptacaoLesao,
   ) {
     return Container(
       decoration: BoxDecoration(
@@ -363,6 +365,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             'Reps/Details: $reps',
             style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
+          if (adaptacaoLesao != null && adaptacaoLesao.toString().trim().isNotEmpty && adaptacaoLesao.toString().toLowerCase() != 'string (opcional)') ...[
+            const SizedBox(height: 8),
+            Text(
+              'Adaptação/Lesão: $adaptacaoLesao',
+              style: const TextStyle(
+                color: Colors.orangeAccent, 
+                fontSize: 16, 
+                fontWeight: FontWeight.bold
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           const Text(
             'Time:',

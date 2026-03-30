@@ -43,3 +43,21 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ==========================================
+# REGRAS DO PIPELINE DE DADOS (ETL)
+# ==========================================
+
+# 1. Ignorar os dados brutos e PDFs (evita repositórios pesados)
+data_pipeline/raw_data/
+*.pdf
+
+# 2. Ignorar chaves de API e credenciais de banco de dados
+data_pipeline/.env
+.env
+
+# 3. Ignorar ambientes virtuais e cache do Python
+data_pipeline/venv/
+data_pipeline/.venv/
+__pycache__/
+*.pyc

@@ -483,17 +483,27 @@ class SupabaseService {
     }
   }
 
-  static Future<void> saveTrainingPlan(Map<String, dynamic> planData) async {
+  static Future<String> saveTrainingPlan(Map<String, dynamic> planData) async {
     final user = client.auth.currentUser;
-    if (user == null) return;
+    if (user == null) return '';
 
     try {
-      await client.from('training_plans').insert({
+      final response = await client.from('training_plans').insert({
         ...planData,
         'user_id': user.id,
-      });
+      }).select('id').single();
+      return response['id'] as String;
     } catch (e) {
       debugPrint("Error saving training plan: $e");
+      rethrow;
+    }
+  }
+
+  static Future<void> updateTrainingPlan(String id, Map<String, dynamic> updates) async {
+    try {
+      await client.from('training_plans').update(updates).eq('id', id);
+    } catch (e) {
+      debugPrint("Error updating training plan: $e");
       rethrow;
     }
   }
