@@ -11,9 +11,29 @@ const corsHeaders = {
 const workoutSchemaTemplate = `
 Você DEVE retornar APENAS um JSON válido seguindo a estrutura exata (sem markdown como \`\`\`json):
 {
-  "analiseMacro": { "analise": "string (opcional)" },
+  "analiseMacro": { 
+    "analise": "string",
+    "historico": {
+      "texto": "string",
+      "graficos": [
+        { "tipo": "linha|barra|pizza", "titulo": "string", "dados": [{ "x": "string", "y": 0 }] }
+      ]
+    }
+  },
   "analiseMesocicloAnterior": { "aderencia": "string", "evolucao": "string" },
-  "visaoGeralPlano": { "objetivoPrincipal": "string", "duracaoSemanas": 0 },
+  "visaoGeralPlano": { 
+    "objetivoPrincipal": "string", 
+    "duracaoSemanas": 0,
+    "fases": [
+      { "nome": "string", "duracao": "string", "foco": "string" }
+    ],
+    "blocos": [
+      { "mesociclo": "string", "duracaoSemanas": 0, "foco": "string" }
+    ],
+    "mesociclo1_consolidado": [
+       { "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }
+    ]
+  },
   "visaoSemanal": [
     { "date": "YYYY-MM-DD", "day": "Segunda-feira", "session_type": "string", "focoPrincipal": "string", "isDescansoAtivo": false }
   ],
@@ -98,16 +118,26 @@ serve(async (req) => {
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } })
 
     if (acao === 'criar_plano_macro') {
-      // 1. Fetch User Context from DB
-      const [profileRes, prRes, benchRes] = await Promise.all([
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      const dateStr = sixMonthsAgo.toISOString().split('T')[0];
+
+      // 1. Fetch User Context from DB (Reduced payload: only last 6 months + limited rows)
+      const [profileRes, prRes, benchRes, benchDefRes, workoutsRes, logsRes] = await Promise.all([
         supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single(),
         supabaseClient.from('pr_log').select('*').eq('user_email', email_utilizador),
-        supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador)
+        supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador),
+        supabaseClient.from('benchmarks').select('*'),
+        supabaseClient.from('workouts').select('date, exercise, exercise_title, sets, details').eq('user_email', email_utilizador).gte('date', dateStr).order('date', { ascending: false }).limit(200),
+        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, cardio_result, cardio_unit').eq('user_email', email_utilizador).gte('workout_date', dateStr).order('workout_date', { ascending: false }).limit(200)
       ]);
 
       const profile = profileRes.data || {};
       const prs = prRes.data || [];
       const benchmarks = benchRes.data || [];
+      const benchmarkDefs = benchDefRes.data || [];
+      const workoutHistory = workoutsRes.data || [];
+      const workoutLogs = logsRes.data || [];
 
       // 2. Try fetching the Background PDF if it exists
       let pdfPart = null;
@@ -134,30 +164,36 @@ serve(async (req) => {
         Crie um planejamento Macro para o atleta com base nos seguintes dados:
 
         [PERFIL E HISTÓRICO]
-        - Nome/Email: ${profile.name} / ${email_utilizador}
-        - Treina em: ${JSON.stringify(profile.where_train)}
-        - Treinos semanais p/ dia: ${profile.sessions_per_day} | Duração: ${profile.active_hours_value} ${profile.active_hours_unit}
-        - PRs Recentes: ${JSON.stringify(prs)}
-        - Benchmarks: ${JSON.stringify(benchmarks)}
+        - Nome: ${profile.name}
+        - Onde treina: ${JSON.stringify(profile.where_train)}
+        - Treinos/dia: ${profile.sessions_per_day} | Duração: ${profile.active_hours_value} ${profile.active_hours_unit}
+        - Dados 'About': ${profile.about_me || 'Não informado'}
+        - Dados 'Skills & Training': ${profile.skills_training || 'Não informado'}
+        - PRs: ${JSON.stringify(prs)}
+        - Benchmarks realizados: ${JSON.stringify(benchmarks)}
+        - Definições de Benchmarks: ${JSON.stringify(benchmarkDefs)}
+        - Histórico de Treinos (12 meses): ${JSON.stringify(workoutHistory)}
+        - Logs de Performance (12 meses): ${JSON.stringify(workoutLogs)}
 
         [DIRETRIZES DO NOVO PLANO]
         - Objetivo: ${diretrizes_plano?.objetivo}
-        - Início do plano: ${diretrizes_plano?.data_inicio}
-        - Fim do plano: ${diretrizes_plano?.data_fim}
-        - Competições alvo: ${JSON.stringify(diretrizes_plano?.competicoes)}
-        - Notas adicionais: ${diretrizes_plano?.notas}
+        - Início: ${diretrizes_plano?.data_inicio} | Fim: ${diretrizes_plano?.data_fim}
+        - Competições: ${JSON.stringify(diretrizes_plano?.competicoes)}
+        - Notas: ${diretrizes_plano?.notas}
         
         ${await queryKnowledgeBase(diretrizes_plano?.objetivo || "", genAI, supabaseClient)}
         
-        [INSTRUÇÕES]
-        Gere uma 'analiseMacro' sobre o atleta baseada nos dados.
-        Gere a 'visaoGeralPlano'. É OBRIGATÓRIO preencher o array "blocos" com TODOS os mesociclos que compõem o plano inteiro (ex: Adaptação 4 sem, Hipertrofia 4 sem, etc). O array "blocos" não pode estar vazio!
-        ATENÇÃO: Devido a limites técnicos (Tokens), para a "visaoSemanal" e "exerciciosDetalhados", 
-        GERE EXCLUSIVAMENTE A SEMANA 1 (microciclo 1)! Retorne os 7 dias exatos. Não tente gerar as 4 semanas aqui.
-        
-        OBRIGATÓRIO: O campo "session_type" (em visaoSemanal e exerciciosDetalhados) DEVE SER EXATAMENTE um dos seguintes valores (respeite maiúsculas e minúsculas):
-        [${allowedSessionTypes}]
+        [MISSÕES (OUTPUTS ESPERADOS)]
+        1. TOPICO 1 (Histórico): Faça uma análise profunda do histórico (volume, consistência, evolução). 
+           Gere dados para gráficos (ex: "Volume Semanal", "Evolução de PRs", "Frequência").
+        2. TOPICO 2 (Planejamento Macro/Meso): Estruture o plano completo. Objetivo do macro, períodos e descrição de cada mesociclo.
+        3. TOPICO 3 (Consolidado Meso 1): Planeje todos os microciclos do primeiro mesociclo (visão consolidada por dia da semana).
+        4. TOPICO 4 (Execução Semana 1): Detalhe todos os exercícios apenas da primeira semana (microciclo 1).
 
+        [REGRAS]
+        - session_type OBRIGATÓRIO: [${allowedSessionTypes}]
+        - Retorne EXCLUSIVAMENTE o JSON no formato solicitado.
+        
         ${workoutSchemaTemplate}
       `;
 

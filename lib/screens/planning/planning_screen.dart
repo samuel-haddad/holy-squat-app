@@ -9,6 +9,10 @@ import 'package:holy_squat_app/repositories/workout_repository.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:share_plus/share_plus.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 class PlanningScreen extends StatefulWidget {
   const PlanningScreen({super.key});
@@ -115,79 +119,233 @@ class _PlanningScreenState extends State<PlanningScreen> {
     );
   }
 
-  Widget _buildActualPlanSection(String? content, String? textAnalysis) {
-    if ((content == null || content.isEmpty) && (textAnalysis == null || textAnalysis.isEmpty)) {
-      content = 'Nenhum plano ativo no momento.';
+  Widget _buildActualPlanSection(String? actualPlanSummary, String? workoutsPlanText) {
+    if ((actualPlanSummary == null || actualPlanSummary.isEmpty) && (workoutsPlanText == null || workoutsPlanText.isEmpty)) {
+      return _buildContainer(
+        title: 'Actual Planning',
+        shareText: '',
+        children: [const Text('Nenhum plano ativo no momento.', style: TextStyle(color: AppTheme.secondaryTextColor))],
+      );
+    }
+
+    Map<String, dynamic>? macroJson;
+    Map<String, dynamic>? summaryJson;
+
+    try {
+      if (workoutsPlanText != null) macroJson = jsonDecode(workoutsPlanText);
+    } catch (_) {}
+    try {
+      if (actualPlanSummary != null) summaryJson = jsonDecode(actualPlanSummary);
+    } catch (_) {}
+
+    return Column(
+      children: [
+        _buildContainer(
+          title: 'Histórico',
+          shareText: _formatHistoricoForShare(macroJson),
+          children: [_buildHistoricoContent(macroJson)],
+        ),
+        const SizedBox(height: 16),
+        _buildContainer(
+          title: 'Visão Geral',
+          shareText: _formatActualPlanForShare(summaryJson ?? {}, ""),
+          children: [_buildVisaoGeralContent(summaryJson)],
+        ),
+        const SizedBox(height: 16),
+        _buildPDFExportButton(macroJson, summaryJson),
+      ],
+    );
+  }
+
+  Widget _buildHistoricoContent(Map<String, dynamic>? json) {
+    if (json == null) return const Text('Dados de histórico não disponíveis.', style: TextStyle(color: AppTheme.secondaryTextColor));
+    
+    final historico = json['historico'];
+    if (historico == null) return Text(json['analise'] ?? '', style: const TextStyle(color: AppTheme.secondaryTextColor));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(historico['texto'] ?? '', style: const TextStyle(color: AppTheme.secondaryTextColor)),
+        const SizedBox(height: 20),
+        if (historico['graficos'] is List)
+          ...((historico['graficos'] as List).map((g) => _buildChartSection(g)).toList()),
+      ],
+    );
+  }
+
+  Widget _buildChartSection(Map<String, dynamic> chart) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(chart['titulo'] ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 150,
+          child: _renderChart(chart),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _renderChart(Map<String, dynamic> chart) {
+    final List dados = chart['dados'] ?? [];
+    if (dados.isEmpty) return const Center(child: Text('Sem dados', style: TextStyle(color: Colors.grey)));
+
+    if (chart['tipo'] == 'linha') {
+      return LineChart(
+        LineChartData(
+          gridData: const FlGridData(show: false),
+          titlesData: const FlTitlesData(show: false),
+          borderData: FlBorderData(show: false),
+          lineBarsData: [
+            LineChartBarData(
+              spots: List.generate(dados.length, (i) => FlSpot(i.toDouble(), (dados[i]['y'] as num).toDouble())),
+              isCurved: true,
+              color: AppTheme.primaryTeal,
+              barWidth: 3,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(show: true, color: AppTheme.primaryTeal.withOpacity(0.1)),
+            ),
+          ],
+        ),
+      );
     }
     
-    Widget bodyWidget = Text(content ?? '', style: const TextStyle(color: AppTheme.secondaryTextColor));
-    String shareText = content ?? '';
-
-    // Lógica para Visão Geral
-    String analiseExtra = '';
-    try {
-      if (textAnalysis != null && textAnalysis.isNotEmpty) {
-        final json = jsonDecode(textAnalysis);
-        if (json is Map && json['analise'] != null) {
-          analiseExtra = json['analise'].toString();
-        } else {
-          try {
-            // Caso seja texto puro mas por algum motivo decode funcionou (números, etc)
-            analiseExtra = textAnalysis; 
-          } catch (_) {}
-        }
-      }
-    } catch (_) {
-      analiseExtra = textAnalysis ?? '';
-    }
-
-    try {
-      if (content != null && content.isNotEmpty) {
-        final json = jsonDecode(content);
-        if (json is Map) {
-          shareText = _formatActualPlanForShare(json, analiseExtra);
-          bodyWidget = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (analiseExtra.isNotEmpty) ...[
-                const Text('Visão Geral:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 8),
-                Text(analiseExtra, style: const TextStyle(color: AppTheme.secondaryTextColor)),
-                const SizedBox(height: 16),
-              ],
-              if (json['objetivoPrincipal'] != null)
-                _buildRichText('Objetivo Principal: ', json['objetivoPrincipal'].toString()),
-              const SizedBox(height: 8),
-              if (json['duracaoSemanas'] != null)
-                _buildRichText('Duração: ', '${json['duracaoSemanas']} semanas'),
-              const SizedBox(height: 16),
-              const Text('Mesociclos:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 8),
-              if (json['blocos'] is List)
-                ...((json['blocos'] as List).map((b) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0, left: 8.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('• ${b['mesociclo']} (${b['duracaoSemanas']} sem)', style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text('${b['foco']}', style: const TextStyle(color: AppTheme.secondaryTextColor)),
-                    ],
-                  ),
-                )).toList()),
-            ],
-          );
-        }
-      }
-    } catch (_) {
-      // Falha ao parsear
-    }
-
-    return _buildContainer(
-      title: 'Actual Plan',
-      shareText: shareText,
-      children: [bodyWidget],
+    return BarChart(
+      BarChartData(
+        gridData: const FlGridData(show: false),
+        titlesData: const FlTitlesData(show: false),
+        borderData: FlBorderData(show: false),
+        barGroups: List.generate(dados.length, (i) => BarChartGroupData(
+          x: i,
+          barRods: [BarChartRodData(toY: (dados[i]['y'] as num).toDouble(), color: AppTheme.primaryTeal, width: 12)],
+        )),
+      ),
     );
+  }
+
+  Widget _buildVisaoGeralContent(Map<String, dynamic>? json) {
+    if (json == null) return const Text('Plano não disponível.', style: TextStyle(color: AppTheme.secondaryTextColor));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (json['objetivoPrincipal'] != null)
+          _buildRichText('Objetivo Principal: ', json['objetivoPrincipal'].toString()),
+        const SizedBox(height: 8),
+        if (json['duracaoSemanas'] != null)
+          _buildRichText('Duração: ', '${json['duracaoSemanas']} semanas'),
+        
+        if (json['fases'] is List) ...[
+          const SizedBox(height: 16),
+          const Text('Fases do Macro:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 8),
+          ...((json['fases'] as List).map((f) => Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Text('• ${f['nome']} (${f['duracao']}): ${f['foco']}', style: const TextStyle(color: AppTheme.secondaryTextColor, fontSize: 13)),
+          ))),
+        ],
+
+        const SizedBox(height: 16),
+        const Text('Mesociclos:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+        if (json['blocos'] is List)
+          ...((json['blocos'] as List).map((b) {
+            if (b is! Map) return Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(b.toString(), style: const TextStyle(color: AppTheme.secondaryTextColor)));
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12.0, left: 8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('• ${b['mesociclo'] ?? 'Mesociclo'} (${b['duracaoSemanas'] ?? '?'} sem)', style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text('${b['foco'] ?? ''}', style: const TextStyle(color: AppTheme.secondaryTextColor)),
+                ],
+              ),
+            );
+          }).toList()),
+      ],
+    );
+  }
+
+  Widget _buildPDFExportButton(Map<String, dynamic>? macroJson, Map<String, dynamic>? summaryJson) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white.withOpacity(0.05),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.primaryTeal)),
+      ),
+      onPressed: () => _generateAndSharePDF(macroJson, summaryJson),
+      icon: const Icon(Icons.picture_as_pdf, color: AppTheme.primaryTeal),
+      label: const Text('Exportar Plano (PDF)', style: TextStyle(color: Colors.white)),
+    );
+  }
+
+  String _formatHistoricoForShare(Map<String, dynamic>? json) {
+    if (json == null) return "";
+    final hist = json['historico'];
+    if (hist == null) return json['analise'] ?? "";
+    return "📈 *Análise de Histórico*\n\n${hist['texto']}";
+  }
+
+  Future<void> _generateAndSharePDF(Map<String, dynamic>? macro, Map<String, dynamic>? summary) async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return [
+            pw.Header(level: 0, child: pw.Text('Holy Squat App - Planejamento', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.teal))),
+            pw.SizedBox(height: 20),
+            
+            pw.Header(level: 1, child: pw.Text('1. Analise de Historico')),
+            pw.Text(macro?['historico']?['texto'] ?? (macro?['analise'] ?? 'N/A')),
+            pw.SizedBox(height: 20),
+
+            pw.Header(level: 1, child: pw.Text('2. Visao Geral do Plano')),
+            pw.Bullet(text: 'Objetivo: ${summary?['objetivoPrincipal'] ?? 'N/A'}'),
+            pw.Bullet(text: 'Duracao: ${summary?['duracaoSemanas'] ?? 'N/A'} semanas'),
+            pw.SizedBox(height: 10),
+            pw.Text('Mesociclos:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+            if (summary?['blocos'] is List)
+              ...((summary?['blocos'] as List).map((b) => pw.Padding(
+                padding: const pw.EdgeInsets.only(left: 10, top: 5),
+                child: pw.Text('- ${b['mesociclo']}: ${b['foco']}', style: const pw.TextStyle(fontSize: 10)),
+              ))),
+            
+            pw.SizedBox(height: 20),
+            pw.Header(level: 1, child: pw.Text('3. Planejamento Consolidado (Meso 1)')),
+            if (summary?['mesociclo1_consolidado'] is List)
+              pw.Table.fromTextArray(
+                context: context,
+                data: [
+                  ['Sem', 'Foco', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'],
+                  ...((summary?['mesociclo1_consolidado'] as List).map((s) => [
+                    s['semana'].toString(),
+                    s['foco'].toString(),
+                    s['seg'].toString(),
+                    s['ter'].toString(),
+                    s['qua'].toString(),
+                    s['qui'].toString(),
+                    s['sex'].toString(),
+                    s['sab'].toString(),
+                    s['dom'].toString(),
+                  ])),
+                ],
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+                headerDecoration: const pw.BoxDecoration(color: PdfColors.teal),
+                cellStyle: const pw.TextStyle(fontSize: 8),
+              ),
+          ];
+        },
+      ),
+    );
+
+    final bytes = await pdf.save();
+    await Printing.sharePdf(bytes: bytes, filename: 'plano_holy_squat.pdf');
   }
 
   String _formatActualPlanForShare(Map json, String analiseExtra) {
@@ -201,7 +359,11 @@ class _PlanningScreenState extends State<PlanningScreen> {
     if (json['blocos'] is List) {
       buffer.writeln('*Mesociclos:*');
       for (var b in json['blocos']) {
-        buffer.writeln('▪ *${b['mesociclo']}* (${b['duracaoSemanas']} sem): ${b['foco']}');
+        if (b is Map) {
+          buffer.writeln('▪ *${b['mesociclo'] ?? ''}* (${b['duracaoSemanas'] ?? ''} sem): ${b['foco'] ?? ''}');
+        } else {
+          buffer.writeln('▪ $b');
+        }
       }
     }
     return buffer.toString();
@@ -215,7 +377,12 @@ class _PlanningScreenState extends State<PlanningScreen> {
       if (actualPlanJson != null) {
         final actualJson = jsonDecode(actualPlanJson);
         if (actualJson is Map && actualJson['blocos'] is List && (actualJson['blocos'] as List).isNotEmpty) {
-          currentMesoTitle = actualJson['blocos'][0]['mesociclo'].toString();
+          final firstBloco = actualJson['blocos'][0];
+          if (firstBloco is Map) {
+            currentMesoTitle = firstBloco['mesociclo'].toString();
+          } else {
+            currentMesoTitle = firstBloco.toString();
+          }
         }
       }
     } catch (_) {}
@@ -246,7 +413,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
       shareText: shareText,
       children: [
         if (tableData != null && tableData is List && tableData.isNotEmpty) ...[
-          Text(currentMesoTitle, style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text('Primeiro Mesociclo - Vista Semanal', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
           ..._buildWeeklyTables(tableData),
         ] else ...[
