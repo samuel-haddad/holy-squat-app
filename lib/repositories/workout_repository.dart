@@ -6,139 +6,160 @@ import '../models/ai_workout_response.dart';
 class WorkoutRepository {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  /// =========================================================
-  /// AÇÃO 1: Criar um Plano Macro/Meso do Zero
-  /// =========================================================
-  Future<AIWorkoutResponse> criarPlanoMacro({
+  Future<void> _refreshSessionIfNeeded() async {
+    try {
+      final session = _supabase.auth.currentSession;
+      if (session == null) return;
+      final expiresAt = session.expiresAt;
+      if (expiresAt != null) {
+        final expiry = DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000);
+        if (expiry.isBefore(DateTime.now().add(const Duration(seconds: 60)))) {
+          await _supabase.auth.refreshSession();
+        }
+      }
+    } catch (e) {
+      print('Aviso: refresh de sessão falhou: $e');
+    }
+  }
+
+  // =========================================================
+  // FASE 1: Criar Plano — estrutura + visaoSemanal
+  // =========================================================
+  Future<AIWorkoutResponse> criarPlanoFase1({
     required String emailUtilizador,
-    required String objetivoGeral, // O que o atleta escreveu no app
-    required String dataInicio,    // Formato 'YYYY-MM-DD'
-    required String dataFim,       // Formato 'YYYY-MM-DD'
+    required String objetivoGeral,
+    required String dataInicio,
+    required String dataFim,
     required List<String> competicoes,
     String? notasAdicionais,
   }) async {
-    try {
-      final response = await _supabase.functions.invoke(
-        'gerar-treino',
-        body: {
-          'acao': 'criar_plano_macro',
-          'email_utilizador': emailUtilizador,
-          'diretrizes_plano': {
-            'objetivo': objetivoGeral,
-            'data_inicio': dataInicio,
-            'data_fim': dataFim,
-            'competicoes': competicoes,
-            'notas': notasAdicionais ?? '',
-          }
+    await _refreshSessionIfNeeded();
+    final response = await _supabase.functions.invoke(
+      'gerar-treino',
+      body: {
+        'acao': 'criar_plano_fase1',
+        'email_utilizador': emailUtilizador,
+        'diretrizes_plano': {
+          'objetivo': objetivoGeral,
+          'data_inicio': dataInicio,
+          'data_fim': dataFim,
+          'competicoes': competicoes,
+          'notas': notasAdicionais ?? '',
         },
-      );
-
-      if (response.status == 200) {
-        final jsonData = response.data as Map<String, dynamic>;
-        return AIWorkoutResponse.fromJson(jsonData);
-      } else {
-        throw Exception('Erro na API ao criar plano: ${response.status} - ${response.data}');
-      }
-    } catch (e) {
-      print('Erro no Repositório (Criar Plano): $e');
-      rethrow;
+      },
+    );
+    if (response.status != 200) {
+      throw Exception('Fase 1 falhou: ${response.status} - ${response.data}');
     }
+    return AIWorkoutResponse.fromJson(response.data as Map<String, dynamic>);
   }
 
-  /// =========================================================
-  /// AÇÃO 2: Gerar novas semanas (Microciclos) de um plano atual
-  /// =========================================================
-  Future<AIWorkoutResponse> gerarSemanaMicro({
+  // =========================================================
+  // FASE 1: Próximo Meso — estrutura + visaoSemanal
+  // =========================================================
+  Future<AIWorkoutResponse> gerarProximoMesocicloFase1({
     required String emailUtilizador,
-    required String planoId, // O ID do plano na tabela 'training_plans'
-    required int semanaAlvo, // Ex: 2 (Semana 2 do mesociclo)
-    required String mesocicloAtual,
-    required String focoSemana,
+    required String planoId,
+    required String actualPlanSummaryJson,
+    required List<String> mesosJaGerados,
+  }) async {
+    await _refreshSessionIfNeeded();
+    final response = await _supabase.functions.invoke(
+      'gerar-treino',
+      body: {
+        'acao': 'gerar_proximo_meso_fase1',
+        'email_utilizador': emailUtilizador,
+        'plano_id': planoId,
+        'actual_plan_summary_json': actualPlanSummaryJson,
+        'mesos_ja_gerados': mesosJaGerados,
+      },
+    );
+    if (response.status != 200) {
+      throw Exception('Próximo Meso Fase 1 falhou: ${response.status} - ${response.data}');
+    }
+    return AIWorkoutResponse.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  // =========================================================
+  // SEMANA: Gera exercícios de UMA semana
+  // Chamada tantas vezes quantas forem as semanas do mesociclo
+  // =========================================================
+  Future<List<ExercicioDetalhado>> gerarExerciciosSemana({
+    required String emailUtilizador,
+    required List<Map<String, dynamic>> diasSemana, // apenas dias de TREINO desta semana
+    required Map<String, dynamic> mesoContext,
+    // mesoContext: { nome, objetivo, dataInicio, dataFim, semanaNum, totalSemanas, focoSemana, sessionsPerDay, whereTrain }
+  }) async {
+    await _refreshSessionIfNeeded();
+    final response = await _supabase.functions.invoke(
+      'gerar-treino',
+      body: {
+        'acao': 'gerar_exercicios_semana',
+        'email_utilizador': emailUtilizador,
+        'dias_semana': diasSemana,
+        'meso_context': mesoContext,
+      },
+    );
+    if (response.status != 200) {
+      throw Exception('Semana ${mesoContext['semanaNum']} falhou: ${response.status} - ${response.data}');
+    }
+    final jsonData = response.data as Map<String, dynamic>;
+    final rawList = jsonData['exerciciosDetalhados'] as List<dynamic>? ?? [];
+    return rawList.map((e) => ExercicioDetalhado.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // =========================================================
+  // Salvar exercícios na base de dados
+  // =========================================================
+  Future<void> salvarExerciciosGerados(
+    List<ExercicioDetalhado> exercicios,
+    String emailUtilizador, {
+    String? planId,
   }) async {
     try {
-      final response = await _supabase.functions.invoke(
-        'gerar-treino',
-        body: {
-          'acao': 'gerar_semana_micro',
-          'email_utilizador': emailUtilizador,
-          'plano_id': planoId,
-          'semana_alvo': semanaAlvo,
-          'mesociclo_atual': mesocicloAtual,
-          'foco_semana': focoSemana,
-        },
-      );
-
-      if (response.status == 200) {
-        final jsonData = response.data as Map<String, dynamic>;
-        return AIWorkoutResponse.fromJson(jsonData);
-      } else {
-        throw Exception('Erro na API ao gerar semana: ${response.status} - ${response.data}');
-      }
-    } catch (e) {
-      print('Erro no Repositório (Gerar Semana): $e');
-      rethrow;
-    }
-  }
-
-  /// =========================================================
-  /// FUNÇÃO AUXILIAR: Guardar na Base de Dados
-  /// =========================================================
-  Future<void> salvarExerciciosGerados(List<ExercicioDetalhado> exercicios, String emailUtilizador, {String? planId}) async {
-    try {
-      // Usamos o método toJson() e injetamos o email para o RLS do Supabase
       final Map<String, Map<String, dynamic>> uniqueSessions = {};
 
-      final List<Map<String, dynamic>> recordsToInsert = exercicios.map((ex) {
-        final json = ex.toJson();
-        json['user_email'] = emailUtilizador;
-        
-        // --- PROTEÇÃO CONTRA ALUCINAÇÃO DA IA ---
-        final validIcons = [
-          'Acessório', 'Acessórios/Blindagem', 'Calistenia', 'Cardio', 'Cardio-Mobilidade',
-          'Core Strength', 'Core/Prep', 'Crossfit', 'Descanso', 'Endurance', 'Força/Heavy',
-          'Força/Metcon', 'Força/Skill', 'Full Body Pump', 'Full Session', 'Ginástica/Metcon',
-          'Hipertrofia/Blindagem', 'LPO', 'LPO/Força/Metcon', 'LPO/Metcon', 'LPO/Potência',
-          'Mobilidade', 'Mobilidade Flow', 'Mobilidade-Cardio', 'Mobilidade-Core',
-          'Mobilidade-Inferiores', 'Mobilidade/Prep', 'Multi', 'Musculação', 'Musculação-Cardio',
-          'Musculação-Funcional', 'Musculação/Força', 'Natação', 'Prehab/Força',
-          'Prehab/Mobilidade', 'Recuperação Ativa', 'Reintrodução/FBB', 'Skill', 'Skill/Metcon'
-        ];
+      final validSessionTypes = {
+        'Acessório', 'Acessórios/Blindagem', 'Calistenia', 'Cardio', 'Cardio-Mobilidade',
+        'Core Strength', 'Core/Prep', 'Crossfit', 'Descanso', 'Endurance', 'Força/Heavy',
+        'Força/Metcon', 'Força/Skill', 'Full Body Pump', 'Full Session', 'Ginástica/Metcon',
+        'Hipertrofia/Blindagem', 'LPO', 'LPO/Força/Metcon', 'LPO/Metcon', 'LPO/Potência',
+        'Mobilidade', 'Mobilidade Flow', 'Mobilidade-Cardio', 'Mobilidade-Core',
+        'Mobilidade-Inferiores', 'Mobilidade/Prep', 'Multi', 'Musculação', 'Musculação-Cardio',
+        'Musculação-Funcional', 'Musculação/Força', 'Natação', 'Prehab/Força',
+        'Prehab/Mobilidade', 'Recuperação Ativa', 'Reintrodução/FBB', 'Skill', 'Skill/Metcon',
+      };
+
+      final List<Map<String, dynamic>> recordsToInsert = [];
+
+      for (int i = 0; i < exercicios.length; i++) {
+        final ex = exercicios[i];
         var safeSessionType = ex.sessionType.trim();
-        if (!validIcons.contains(safeSessionType)) {
-          print('⚠️ IA retornou um tipo inválido ($safeSessionType). Usando fallback "Crossfit"');
-          safeSessionType = 'Crossfit'; // O mais genérico
+        if (!validSessionTypes.contains(safeSessionType)) {
+          print('⚠️ session_type inválido: "$safeSessionType" → usando "Crossfit"');
+          safeSessionType = 'Crossfit';
         }
-        json['session_type'] = safeSessionType;
-        // ----------------------------------------
 
-        // Geramos as chaves obrigatórias exigidas pelo esquema do banco
-        final dateStr = ex.date;
-        final sessionNum = ex.session;
-        final workoutIdx = ex.workoutIdx;
-        
-        // date_session_sessiontype_key é a chave de ligação com a tabela sessions
-        final sessionKey = '${dateStr}_${sessionNum}_$safeSessionType';
-        json['date_session_sessiontype_key'] = sessionKey;
-
-        // Registramos a sessão para garantir que ela exista na tabela 'sessions'
+        final sessionKey = '${ex.date}_${ex.session}_$safeSessionType';
         if (!uniqueSessions.containsKey(sessionKey)) {
           uniqueSessions[sessionKey] = {
             'date_session_sessiontype_key': sessionKey,
-            'date': dateStr,
-            'session': sessionNum,
+            'date': ex.date,
+            'session': ex.session,
             'session_type': safeSessionType,
             'user_email': emailUtilizador,
             if (planId != null) 'plan_id': planId,
           };
         }
 
-        // wod_exercise_id é a Primary Key e precisa ser única e não-nula
-        json['wod_exercise_id'] = '${dateStr}_${sessionNum}_${workoutIdx}_${DateTime.now().millisecondsSinceEpoch % 10000}';
+        final record = ex.toJson();
+        record['user_email'] = emailUtilizador;
+        record['session_type'] = safeSessionType;
+        record['date_session_sessiontype_key'] = sessionKey;
+        record['wod_exercise_id'] = '${ex.date}_${ex.session}_${ex.workoutIdx}_${DateTime.now().millisecondsSinceEpoch % 100000}_$i';
+        recordsToInsert.add(record);
+      }
 
-        return json;
-      }).toList();
-
-      // Upsert das sessões antes de inserir os exercícios, para evitar violação de Foreign Key
       if (uniqueSessions.isNotEmpty) {
         await _supabase.from('sessions').upsert(
           uniqueSessions.values.toList(),
@@ -146,9 +167,11 @@ class WorkoutRepository {
         );
       }
 
-      await _supabase.from('workouts').insert(recordsToInsert);
+      if (recordsToInsert.isNotEmpty) {
+        await _supabase.from('workouts').insert(recordsToInsert);
+      }
     } catch (e) {
-      print('Erro ao salvar os exercícios no banco: $e');
+      print('Erro ao salvar exercícios: $e');
       rethrow;
     }
   }

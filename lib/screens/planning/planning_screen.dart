@@ -81,11 +81,11 @@ class _PlanningScreenState extends State<PlanningScreen> {
                     _currentPlan?['workouts_plan_text']
                   ),
                   const SizedBox(height: 16),
-                  _buildWorkoutsPlanSection(
+                  ..._buildWorkoutsPlanSections(
                     _currentPlan?['workouts_plan_table'],
-                    _currentPlan != null ? _generateMicro : null,
-                    _currentPlan?['actual_plan_summary'],
                   ),
+                  const SizedBox(height: 16),
+                  _buildProgressSection(_currentPlan?['progress_analysis']),
                   const SizedBox(height: 32),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
@@ -112,6 +112,20 @@ class _PlanningScreenState extends State<PlanningScreen> {
                       style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  if (_currentPlan != null)
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.cardColor,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.primaryTeal, width: 0.5)),
+                      ),
+                      onPressed: _generateNextMeso,
+                      child: const Text(
+                        'Generate Next Cycle',
+                        style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -152,7 +166,39 @@ class _PlanningScreenState extends State<PlanningScreen> {
           children: [_buildVisaoGeralContent(summaryJson)],
         ),
         const SizedBox(height: 16),
-        _buildPDFExportButton(macroJson, summaryJson),
+        _buildPDFExportButton(macroJson, summaryJson, _currentPlan?['progress_analysis']),
+      ],
+    );
+  }
+
+  Widget _buildProgressSection(String? progressJson) {
+    if (progressJson == null || progressJson.isEmpty) return const SizedBox.shrink();
+
+    Map<String, dynamic>? data;
+    try {
+      data = jsonDecode(progressJson);
+    } catch (_) {}
+
+    if (data == null) return const SizedBox.shrink();
+
+    return _buildContainer(
+      title: 'Progress',
+      shareText: "📈 *Análise de Progresso*\n\n${data['texto'] ?? ''}",
+      children: [
+        if (data['texto'] != null)
+          Text(data['texto'], style: const TextStyle(color: AppTheme.secondaryTextColor)),
+        const SizedBox(height: 16),
+        if (data['aderencia'] != null)
+          _buildRichText('Aderência: ', data['aderencia'].toString()),
+        if (data['evolucao'] != null)
+           Padding(
+             padding: const EdgeInsets.only(top: 8),
+             child: _buildRichText('Evolução: ', data['evolucao'].toString()),
+           ),
+        if (data['graficos'] is List) ...[
+          const SizedBox(height: 20),
+          ...((data['graficos'] as List).map((g) => _buildChartSection(g)).toList()),
+        ]
       ],
     );
   }
@@ -270,14 +316,14 @@ class _PlanningScreenState extends State<PlanningScreen> {
     );
   }
 
-  Widget _buildPDFExportButton(Map<String, dynamic>? macroJson, Map<String, dynamic>? summaryJson) {
+  Widget _buildPDFExportButton(Map<String, dynamic>? macroJson, Map<String, dynamic>? summaryJson, String? progressJson) {
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white.withOpacity(0.05),
         padding: const EdgeInsets.symmetric(vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.primaryTeal)),
       ),
-      onPressed: () => _generateAndSharePDF(macroJson, summaryJson),
+      onPressed: () => _generateAndSharePDF(macroJson, summaryJson, progressJson),
       icon: const Icon(Icons.picture_as_pdf, color: AppTheme.primaryTeal),
       label: const Text('Exportar Plano (PDF)', style: TextStyle(color: Colors.white)),
     );
@@ -290,8 +336,10 @@ class _PlanningScreenState extends State<PlanningScreen> {
     return "📈 *Análise de Histórico*\n\n${hist['texto']}";
   }
 
-  Future<void> _generateAndSharePDF(Map<String, dynamic>? macro, Map<String, dynamic>? summary) async {
+  Future<void> _generateAndSharePDF(Map<String, dynamic>? macro, Map<String, dynamic>? summary, String? progressJson) async {
     final pdf = pw.Document();
+    Map<String, dynamic>? progressData;
+    try { if (progressJson != null) progressData = jsonDecode(progressJson); } catch (_) {}
 
     pdf.addPage(
       pw.MultiPage(
@@ -301,6 +349,14 @@ class _PlanningScreenState extends State<PlanningScreen> {
             pw.Header(level: 0, child: pw.Text('Holy Squat App - Planejamento', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.teal))),
             pw.SizedBox(height: 20),
             
+            if (progressData != null) ...[
+              pw.Header(level: 1, child: pw.Text('Análise de Progresso (Mesociclo Anterior)')),
+              pw.Text(progressData['texto'] ?? ''),
+              pw.Bullet(text: 'Aderencia: ${progressData['aderencia'] ?? 'N/A'}'),
+              pw.Bullet(text: 'Evolucao: ${progressData['evolucao'] ?? 'N/A'}'),
+              pw.SizedBox(height: 20),
+            ],
+
             pw.Header(level: 1, child: pw.Text('1. Analise de Historico')),
             pw.Text(macro?['historico']?['texto'] ?? (macro?['analise'] ?? 'N/A')),
             pw.SizedBox(height: 20),
@@ -317,7 +373,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
               ))),
             
             pw.SizedBox(height: 20),
-            pw.Header(level: 1, child: pw.Text('3. Planejamento Consolidado (Meso 1)')),
+            pw.Header(level: 1, child: pw.Text('3. Planejamento Consolidado')),
             if (summary?['mesociclo1_consolidado'] is List)
               pw.Table.fromTextArray(
                 context: context,
@@ -369,88 +425,179 @@ class _PlanningScreenState extends State<PlanningScreen> {
     return buffer.toString();
   }
 
-  Widget _buildWorkoutsPlanSection(dynamic tableData, VoidCallback? onGenerateMicro, String? actualPlanJson) {
-    String shareText = 'Prescrições pendentes.';
-
-    String currentMesoTitle = "Mesociclo Atual";
-    try {
-      if (actualPlanJson != null) {
-        final actualJson = jsonDecode(actualPlanJson);
-        if (actualJson is Map && actualJson['blocos'] is List && (actualJson['blocos'] as List).isNotEmpty) {
-          final firstBloco = actualJson['blocos'][0];
-          if (firstBloco is Map) {
-            currentMesoTitle = firstBloco['mesociclo'].toString();
-          } else {
-            currentMesoTitle = firstBloco.toString();
-          }
-        }
-      }
-    } catch (_) {}
-
-    final buffer = StringBuffer();
-    buffer.writeln('🏋️‍♂️ *Planejamento Semanal*');
-    if (tableData is List && tableData.isNotEmpty) {
-      buffer.writeln('\n*$currentMesoTitle*');
-      
-      int weekNum = 1;
-      for (int i = 0; i < tableData.length; i += 7) {
-        int end = (i + 7 < tableData.length) ? i + 7 : tableData.length;
-        buffer.writeln('\n*Semana $weekNum*');
-        for (var row in tableData.sublist(i, end)) {
-          if (row is Map) {
-            buffer.writeln('${row['day']}: ${row['workout']}');
-          }
-        }
-        weekNum++;
-      }
-    } else {
-      buffer.writeln('\nPrescrições pendentes.');
+  List<Widget> _buildWorkoutsPlanSections(dynamic tableData) {
+    if (tableData == null || tableData is! List || tableData.isEmpty) {
+      return [_buildContainer(
+        title: 'Workouts Plan',
+        shareText: 'Nenhum plano pendente.',
+        children: [const Text('Prescrições pendentes.', style: TextStyle(color: AppTheme.secondaryTextColor))],
+      )];
     }
-    shareText = buffer.toString();
 
-    return _buildContainer(
-      title: 'Workouts Plan',
-      shareText: shareText,
-      children: [
-        if (tableData != null && tableData is List && tableData.isNotEmpty) ...[
-          const Text('Primeiro Mesociclo - Vista Semanal', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          ..._buildWeeklyTables(tableData),
-        ] else ...[
-          const Text('Prescrições pendentes.', style: TextStyle(color: AppTheme.secondaryTextColor)),
-        ],
-        if (onGenerateMicro != null) ...[
-          const SizedBox(height: 16),
-          Center(
-            child: TextButton.icon(
-              onPressed: onGenerateMicro,
-              icon: const Icon(Icons.autorenew, color: AppTheme.primaryTeal),
-              label: const Text('Generate Next Cycle', style: TextStyle(color: AppTheme.primaryTeal)),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
+    final data = tableData as List;
 
-  List<Widget> _buildWeeklyTables(List data) {
-    List<Widget> tables = [];
-    int weekNum = 1;
-    for (int i = 0; i < data.length; i += 7) {
-      int end = (i + 7 < data.length) ? i + 7 : data.length;
-      final weekData = data.sublist(i, end);
-      
-      tables.add(
+    // 1. Agrupar por Mesociclo (mantendo a ordem original de inserção)
+    final Map<String, List<Map<String, dynamic>>> byMeso = {};
+    for (var row in data) {
+      if (row is Map) {
+        final meso = row['mesocycle']?.toString() ?? 'Histórico';
+        byMeso.putIfAbsent(meso, () => []);
+        byMeso[meso]!.add(Map<String, dynamic>.from(row));
+      }
+    }
+
+    final List<Widget> sections = [];
+
+    for (final mesoEntry in byMeso.entries) {
+      final mesoName = mesoEntry.key;
+      final mesoRows = mesoEntry.value;
+
+      // 2. Agrupar por semana intra-meso usando o campo 'week'.
+      //    Fallback: se todos os registros tiverem week == 0 ou nulo, agrupa por
+      //    semana calendária derivando da diferença de dias da primeira data.
+      final bool hasWeekField = mesoRows.any((r) {
+        final w = r['week'];
+        return w != null && (w is int ? w > 0 : int.tryParse(w.toString(), radix: 10) != null && int.parse(w.toString()) > 0);
+      });
+
+      final Map<int, Map<String, Map<String, dynamic>>> byWeekByDate = {};
+      // byWeekByDate[semana][date] → row com o maior/único focoPrincipal do dia
+
+      if (hasWeekField) {
+        // Caminho principal: usa campo 'week' como semana intra-meso
+        for (final row in mesoRows) {
+          final week = (row['week'] as num?)?.toInt() ?? 1;
+          final dateKey = row['date']?.toString() ?? '';
+          byWeekByDate.putIfAbsent(week, () => {});
+          // Se já existe uma entrada para essa data, concatena os focos (dupla sessão)
+          if (byWeekByDate[week]!.containsKey(dateKey)) {
+            final existing = byWeekByDate[week]![dateKey]!;
+            final existingFoco = existing['focoPrincipal']?.toString() ?? existing['workout']?.toString() ?? '';
+            final newFoco = (row['focoPrincipal'] ?? row['workout'])?.toString() ?? '';
+            if (newFoco.isNotEmpty && !existingFoco.contains(newFoco)) {
+              existing['focoPrincipal'] = '$existingFoco / $newFoco';
+            }
+          } else {
+            byWeekByDate[week]![dateKey] = Map<String, dynamic>.from(row);
+          }
+        }
+      } else {
+        // Fallback calendário: calcula semana pela diferença de dias da primeira data
+        DateTime? firstDate;
+        for (final row in mesoRows) {
+          final ds = row['date']?.toString() ?? '';
+          if (ds.isNotEmpty) {
+            try {
+              final d = DateTime.parse(ds);
+              if (firstDate == null || d.isBefore(firstDate)) firstDate = d;
+            } catch (_) {}
+          }
+        }
+        firstDate ??= DateTime.now();
+
+        for (final row in mesoRows) {
+          final ds = row['date']?.toString() ?? '';
+          if (ds.isEmpty) continue;
+          try {
+            final d = DateTime.parse(ds);
+            final week = (d.difference(firstDate).inDays ~/ 7) + 1;
+            byWeekByDate.putIfAbsent(week, () => {});
+            if (byWeekByDate[week]!.containsKey(ds)) {
+              final existing = byWeekByDate[week]![ds]!;
+              final existingFoco = existing['focoPrincipal']?.toString() ?? existing['workout']?.toString() ?? '';
+              final newFoco = (row['focoPrincipal'] ?? row['workout'])?.toString() ?? '';
+              if (newFoco.isNotEmpty && !existingFoco.contains(newFoco)) {
+                existing['focoPrincipal'] = '$existingFoco / $newFoco';
+              }
+            } else {
+              byWeekByDate[week]![ds] = Map<String, dynamic>.from(row);
+            }
+          } catch (_) {}
+        }
+      }
+
+      // 3. Construir os widgets do mesociclo
+      final buffer = StringBuffer();
+      buffer.writeln('🏋️‍♂️ *Planejamento - $mesoName*');
+
+      final List<Widget> mesoChildren = [
+        Text(mesoName, style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+      ];
+
+      final sortedWeeks = byWeekByDate.keys.toList()..sort();
+      for (final weekNum in sortedWeeks) {
+        final dateMap = byWeekByDate[weekNum]!;
+
+        // 4. Ordenar as datas da semana e expandir para 7 dias (Seg–Dom)
+        final sortedDates = dateMap.keys.toList()..sort();
+        List<Map<String, dynamic>> weekRows = [];
+
+        if (sortedDates.isNotEmpty) {
+          // Encontra a segunda-feira da semana a partir da primeira data da semana
+          DateTime? firstOfWeek;
+          try {
+            firstOfWeek = DateTime.parse(sortedDates.first);
+            // Se não começa na segunda, volta até a segunda
+            while (firstOfWeek!.weekday != DateTime.monday) {
+              firstOfWeek = firstOfWeek.subtract(const Duration(days: 1));
+            }
+          } catch (_) {}
+
+          if (firstOfWeek != null) {
+            const dayNames = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
+            for (int i = 0; i < 7; i++) {
+              final dayDate = firstOfWeek.add(Duration(days: i));
+              final dateStr = '${dayDate.year}-${dayDate.month.toString().padLeft(2, '0')}-${dayDate.day.toString().padLeft(2, '0')}';
+              if (dateMap.containsKey(dateStr)) {
+                weekRows.add(dateMap[dateStr]!);
+              } else {
+                // Dia sem sessão → Descanso
+                weekRows.add({
+                  'date': dateStr,
+                  'day': dayNames[i],
+                  'focoPrincipal': 'Descanso',
+                  'isDescansoAtivo': true,
+                  'mesocycle': mesoName,
+                  'week': weekNum,
+                });
+              }
+            }
+          } else {
+            // Sem data parseável, usa os dados como estão
+            weekRows = dateMap.values.toList();
+          }
+        }
+
+        buffer.writeln('\n*Semana $weekNum*');
+        for (var row in weekRows) {
+          buffer.writeln('${row['day']}: ${row['focoPrincipal'] ?? row['workout'] ?? ''}');
+        }
+
+        mesoChildren.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0, top: 12.0),
+            child: Text('Semana $weekNum', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+          )
+        );
+        mesoChildren.add(_buildWorkoutsTable(weekRows));
+      }
+
+      sections.add(
         Padding(
-          padding: const EdgeInsets.only(bottom: 8.0, top: 12.0),
-          child: Text('Semana $weekNum', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+          padding: const EdgeInsets.only(bottom: 16),
+          child: _buildContainer(
+            title: mesoName,
+            shareText: buffer.toString(),
+            children: mesoChildren,
+          ),
         )
       );
-      tables.add(_buildWorkoutsTable(weekData));
-      weekNum++;
     }
-    return tables;
+
+    return sections;
   }
+
 
   Widget _buildContainer({required String title, required String shareText, required List<Widget> children}) {
     return Container(
@@ -500,7 +647,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
     );
   }
 
-  Future<void> _generateMicro() async {
+  Future<void> _generateNextMeso() async {
     if (_currentPlan == null) return;
     setState(() {
       _isLoading = true;
@@ -556,32 +703,64 @@ class _PlanningScreenState extends State<PlanningScreen> {
     }
   }
 
-  Widget _buildWorkoutsTable(List data) {
-    if (data.isEmpty) return const SizedBox.shrink();
+  Widget _buildWorkoutsTable(List weekData) {
+    if (weekData.isEmpty) return const SizedBox.shrink();
     
-    // Assume each item is a Map with 'day', 'workout', 'details'
+    // 1. Agrupar por Dia para lidar com múltiplas sessões no mesmo dia
+    Map<String, List<String>> sessionsByDay = {};
+    for (var row in weekData) {
+      if (row is Map) {
+        String day = row['day']?.toString() ?? 'N/A';
+        // Suporta tanto o novo campo 'focoPrincipal' quanto o antigo 'workout'
+        String workout = (row['focoPrincipal'] ?? row['workout'])?.toString() ?? '';
+        if (!sessionsByDay.containsKey(day)) sessionsByDay[day] = [];
+        sessionsByDay[day]!.add(workout);
+      }
+    }
+
+    // 2. Descobrir o número máximo de sessões num único dia para montar as colunas
+    int maxSessions = 0;
+    for (var sessions in sessionsByDay.values) {
+      if (sessions.length > maxSessions) maxSessions = sessions.length;
+    }
+    if (maxSessions == 0) maxSessions = 1;
+
+    // Cabeçalhos (Dia, Treino 1, Treino 2...)
+    List<Widget> headerCells = [
+      const Padding(padding: EdgeInsets.all(8), child: Text('Dia', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold))),
+    ];
+    for (int s = 1; s <= maxSessions; s++) {
+      headerCells.add(Padding(
+        padding: const EdgeInsets.all(8), 
+        child: Text(maxSessions > 1 ? 'Treino $s' : 'Treino', style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold))
+      ));
+    }
+
     return Table(
       border: TableBorder.all(color: Colors.white.withOpacity(0.1), width: 1),
-      columnWidths: const {
-        0: IntrinsicColumnWidth(),
-        1: FlexColumnWidth(),
+      columnWidths: {
+        0: const IntrinsicColumnWidth(),
+        for (int s = 1; s <= maxSessions; s++) s: const FlexColumnWidth(),
       },
       children: [
         TableRow(
           decoration: BoxDecoration(color: Colors.white.withOpacity(0.05)),
-          children: const [
-            Padding(padding: EdgeInsets.all(8), child: Text('Dia', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold))),
-            Padding(padding: EdgeInsets.all(8), child: Text('Treino', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold))),
-          ],
+          children: headerCells,
         ),
-        ...data.map((item) {
-          final map = item as Map;
-          return TableRow(
-            children: [
-              Padding(padding: const EdgeInsets.all(8), child: Text(map['day']?.toString() ?? '', style: const TextStyle(color: Colors.white))),
-              Padding(padding: const EdgeInsets.all(8), child: Text(map['workout']?.toString() ?? '', style: const TextStyle(color: AppTheme.secondaryTextColor))),
-            ],
-          );
+        ...sessionsByDay.entries.map((entry) {
+          final day = entry.key;
+          final workouts = entry.value;
+
+          List<Widget> rowCells = [
+            Padding(padding: const EdgeInsets.all(8), child: Text(day, style: const TextStyle(color: Colors.white))),
+          ];
+
+          for (int s = 0; s < maxSessions; s++) {
+            String text = s < workouts.length ? workouts[s] : '-';
+            rowCells.add(Padding(padding: const EdgeInsets.all(8), child: Text(text, style: const TextStyle(color: AppTheme.secondaryTextColor))));
+          }
+
+          return TableRow(children: rowCells);
         }).toList(),
       ],
     );

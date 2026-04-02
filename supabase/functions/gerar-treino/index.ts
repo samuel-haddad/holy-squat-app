@@ -1,96 +1,28 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { GoogleGenerativeAI } from "npm:@google/generative-ai"
-import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const workoutSchemaTemplate = `
-Você DEVE retornar APENAS um JSON válido seguindo a estrutura exata (sem markdown como \`\`\`json):
-{
-  "analiseMacro": { 
-    "analise": "string",
-    "historico": {
-      "texto": "string",
-      "graficos": [
-        { "tipo": "linha|barra|pizza", "titulo": "string", "dados": [{ "x": "string", "y": 0 }] }
-      ]
-    }
-  },
-  "analiseMesocicloAnterior": { "aderencia": "string", "evolucao": "string" },
-  "visaoGeralPlano": { 
-    "objetivoPrincipal": "string", 
-    "duracaoSemanas": 0,
-    "fases": [
-      { "nome": "string", "duracao": "string", "foco": "string" }
-    ],
-    "blocos": [
-      { "mesociclo": "string", "duracaoSemanas": 0, "foco": "string" }
-    ],
-    "mesociclo1_consolidado": [
-       { "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }
-    ]
-  },
-  "visaoSemanal": [
-    { "date": "YYYY-MM-DD", "day": "Segunda-feira", "session_type": "string", "focoPrincipal": "string", "isDescansoAtivo": false }
-  ],
-  "exerciciosDetalhados": [
-    {
-      "date": "YYYY-MM-DD",
-      "week": 1,
-      "mesocycle": "string",
-      "day": "Segunda-feira",
-      "session": 1,
-      "session_type": "string",
-      "duration": 60,
-      "workout_idx": 1,
-      "exercise": "Back Squat",
-      "exercise_title": "Força",
-      "exercise_group": "LPO",
-      "exercise_type": "Força",
-      "sets": 5,
-      "details": "5x5 @ 70%",
-      "time_exercise": 15,
-      "ex_unit": "min",
-      "rest": 90,
-      "rest_unit": "seg",
-      "rest_round": 0,
-      "rest_round_unit": "min",
-      "total_time": 15,
-      "location": "Academia",
-      "stage": "workout",
-      "adaptacaoLesao": "string (opcional)"
-    }
-  ]
-}`;
-
 const allowedSessionTypes = "Acessório, Acessórios/Blindagem, Calistenia, Cardio, Cardio-Mobilidade, Core Strength, Core/Prep, Crossfit, Descanso, Endurance, Força/Heavy, Força/Metcon, Força/Skill, Full Body Pump, Full Session, Ginástica/Metcon, Hipertrofia/Blindagem, LPO, LPO/Força/Metcon, LPO/Metcon, LPO/Potência, Mobilidade, Mobilidade Flow, Mobilidade-Cardio, Mobilidade-Core, Mobilidade-Inferiores, Mobilidade/Prep, Multi, Musculação, Musculação-Cardio, Musculação-Funcional, Musculação/Força, Natação, Prehab/Força, Prehab/Mobilidade, Recuperação Ativa, Reintrodução/FBB, Skill, Skill/Metcon";
 
 async function queryKnowledgeBase(queryText: string, genAI: any, supabaseClient: any) {
   if (!queryText) return "";
   try {
-    // Utilizado 'text-embedding-004' (recomendado) ou fallback para o modelo de ingestão
     const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
     const result = await embeddingModel.embedContent(queryText);
     const embedding = result.embedding.values;
-
     const { data: documents, error } = await supabaseClient.rpc('match_knowledge_base', {
       query_embedding: embedding,
-      match_threshold: 0.4, // Threshold mais baixo para recuperar contexto relacionado a lesão/rehab
-      match_count: 5 // top 5 blocos (chunks)
+      match_threshold: 0.4,
+      match_count: 5
     });
-
-    if (error) {
-      console.error("RPC Error (match_knowledge_base):", error);
-      return "";
-    }
-
+    if (error) { console.error("RPC Error (match_knowledge_base):", error); return ""; }
     if (documents && documents.length > 0) {
-      const texts = documents.map((doc: any) => doc.content).join("\n\n---\n\n");
-      return `\n[LITERATURA CIENTÍFICA DE REFERÊNCIA (KNOWLEDGE BASE)]\nVocê DEVE basear seu raciocínio anatômico e prescrição de treino nas diretrizes abaixo. Use essas informações para pautar qualquer adaptação de lesão ou de foco que o atleta pedir:\n\n${texts}\n`;
+      return `\n[LITERATURA CIENTÍFICA]\n${documents.map((d: any) => d.content).join("\n---\n")}\n`;
     }
     return "";
   } catch (err) {
@@ -112,146 +44,281 @@ serve(async (req) => {
     )
 
     const payload = await req.json()
-    const { acao, email_utilizador, diretrizes_plano, plano_id, semana_alvo, mesociclo_atual, foco_semana } = payload
+    const {
+      acao,
+      email_utilizador,
+      diretrizes_plano,
+      plano_id,
+      mesos_ja_gerados,
+      actual_plan_summary_json,
+      // gerar_exercicios_semana params:
+      dias_semana,       // List of training days for ONE week (non-rest days only)
+      meso_context,      // { nome, objetivo, dataInicio, dataFim, semanaNum, totalSemanas, sessionsPerDay, whereTrain }
+    } = payload
 
     const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY')!)
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } })
+    const today = new Date().toISOString().split('T')[0];
+    const model = genAI.getGenerativeModel(
+      { model: "gemini-pro-latest", generationConfig: { responseMimeType: "application/json" } }
+    )
 
-    if (acao === 'criar_plano_macro') {
+    // =========================================================
+    // AÇÃO: criar_plano_fase1
+    // 1 chamada Gemini — retorna estrutura + visaoSemanal (sem exercícios)
+    // Output pequeno: ~30-60K tokens → sem WORKER_LIMIT
+    // =========================================================
+    if (acao === 'criar_plano_fase1') {
       const sixMonthsAgo = new Date();
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
       const dateStr = sixMonthsAgo.toISOString().split('T')[0];
 
-      // 1. Fetch User Context from DB (Reduced payload: only last 6 months + limited rows)
       const [profileRes, prRes, benchRes, benchDefRes, workoutsRes, logsRes] = await Promise.all([
         supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single(),
         supabaseClient.from('pr_log').select('*').eq('user_email', email_utilizador),
         supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador),
         supabaseClient.from('benchmarks').select('*'),
-        supabaseClient.from('workouts').select('date, exercise, exercise_title, sets, details').eq('user_email', email_utilizador).gte('date', dateStr).order('date', { ascending: false }).limit(200),
-        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, cardio_result, cardio_unit').eq('user_email', email_utilizador).gte('workout_date', dateStr).order('workout_date', { ascending: false }).limit(200)
+        supabaseClient.from('workouts').select('date, exercise, exercise_title, sets, details').eq('user_email', email_utilizador).gte('date', dateStr).order('date', { ascending: false }).limit(150),
+        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, cardio_result, cardio_unit').eq('user_email', email_utilizador).gte('workout_date', dateStr).order('workout_date', { ascending: false }).limit(150)
       ]);
 
       const profile = profileRes.data || {};
-      const prs = prRes.data || [];
-      const benchmarks = benchRes.data || [];
-      const benchmarkDefs = benchDefRes.data || [];
-      const workoutHistory = workoutsRes.data || [];
-      const workoutLogs = logsRes.data || [];
+      const knowledgeContext = await queryKnowledgeBase(diretrizes_plano?.objetivo || "", genAI, supabaseClient);
 
-      // 2. Try fetching the Background PDF if it exists
-      let pdfPart = null;
-      if (profile.background_file_url) {
-        try {
-          const pdfResponse = await fetch(profile.background_file_url);
-          if (pdfResponse.ok) {
-            const arrayBuffer = await pdfResponse.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            const base64Pdf = encodeBase64(uint8Array);
+      const prompt = `
+        Você é o AI Coach do Holy Squat App especialista em periodização de CrossFit.
+        [DATA DE HOJE: ${today}]
 
-            pdfPart = {
-              inlineData: {
-                data: base64Pdf,
-                mimeType: "application/pdf"
-              }
-            };
-          }
-        } catch (e) { console.error("Could not fetch background PDF", e); }
-      }
-
-      const promptText = `
-        Você é o AI Coach especialista em periodização de CrossFit do Holy Squat App.
-        Crie um planejamento Macro para o atleta com base nos seguintes dados:
-
-        [PERFIL E HISTÓRICO]
+        [PERFIL DO ATLETA]
         - Nome: ${profile.name}
-        - Onde treina: ${JSON.stringify(profile.where_train)}
-        - Treinos/dia: ${profile.sessions_per_day} | Duração: ${profile.active_hours_value} ${profile.active_hours_unit}
-        - Dados 'About': ${profile.about_me || 'Não informado'}
-        - Dados 'Skills & Training': ${profile.skills_training || 'Não informado'}
-        - PRs: ${JSON.stringify(prs)}
-        - Benchmarks realizados: ${JSON.stringify(benchmarks)}
-        - Definições de Benchmarks: ${JSON.stringify(benchmarkDefs)}
-        - Histórico de Treinos (12 meses): ${JSON.stringify(workoutHistory)}
-        - Logs de Performance (12 meses): ${JSON.stringify(workoutLogs)}
+        - Local: ${JSON.stringify(profile.where_train)}
+        - Sessões/dia: ${profile.sessions_per_day} | Duração: ${profile.active_hours_value} ${profile.active_hours_unit}
+        - About: ${profile.about_me || 'Não informado'}
+        - Skills: ${profile.skills_training || 'Não informado'}
+        - PRs: ${JSON.stringify(prRes.data || [])}
+        - Benchmarks: ${JSON.stringify(benchRes.data || [])}
+        - Histórico 6 meses: ${JSON.stringify(workoutsRes.data || [])}
+        - Logs performance: ${JSON.stringify(logsRes.data || [])}
 
-        [DIRETRIZES DO NOVO PLANO]
+        [DIRETRIZES DO PLANO]
         - Objetivo: ${diretrizes_plano?.objetivo}
         - Início: ${diretrizes_plano?.data_inicio} | Fim: ${diretrizes_plano?.data_fim}
         - Competições: ${JSON.stringify(diretrizes_plano?.competicoes)}
         - Notas: ${diretrizes_plano?.notas}
-        
-        ${await queryKnowledgeBase(diretrizes_plano?.objetivo || "", genAI, supabaseClient)}
-        
-        [MISSÕES (OUTPUTS ESPERADOS)]
-        1. TOPICO 1 (Histórico): Faça uma análise profunda do histórico (volume, consistência, evolução). 
-           Gere dados para gráficos (ex: "Volume Semanal", "Evolução de PRs", "Frequência").
-        2. TOPICO 2 (Planejamento Macro/Meso): Estruture o plano completo. Objetivo do macro, períodos e descrição de cada mesociclo.
-        3. TOPICO 3 (Consolidado Meso 1): Planeje todos os microciclos do primeiro mesociclo (visão consolidada por dia da semana).
-        4. TOPICO 4 (Execução Semana 1): Detalhe todos os exercícios apenas da primeira semana (microciclo 1).
+        ${knowledgeContext}
 
-        [REGRAS]
-        - session_type OBRIGATÓRIO: [${allowedSessionTypes}]
-        - Retorne EXCLUSIVAMENTE o JSON no formato solicitado.
-        
-        ${workoutSchemaTemplate}
+        [MISSÃO — APENAS ESTRUTURA E CALENDÁRIO]
+        Gere SOMENTE o planejamento estrutural. Os exercícios detalhados serão gerados depois semana a semana.
+        Retorne APENAS estes campos:
+
+        1. analiseMacro: análise do histórico com gráficos (volume, PRs, frequência).
+        2. analiseMesocicloAnterior: { "aderencia": "", "evolucao": "", "texto": "", "graficos": [] }
+        3. visaoGeralPlano:
+           - objetivoPrincipal, duracaoSemanas, fases
+           - blocos: TODOS os mesociclos com nome, duracaoSemanas, foco.
+           - mesociclo1_consolidado: 1 linha por semana do Meso 1 (seg/ter/qua/qui/sex/sab/dom = tipo de treino).
+        4. visaoSemanal: TODOS os 7 dias de TODAS as semanas do Mesociclo 1.
+           - 7 dias/semana sem exceção (Segunda a Domingo).
+           - isDescansoAtivo: true para dias de repouso.
+           - week = número intra-mesociclo (começa em 1).
+           - ANO OBRIGATÓRIO: ${today.split('-')[0]}.
+        5. exerciciosDetalhados: [] (VAZIO — será gerado por semana separadamente)
+
+        [FORMATO — JSON PURO SEM MARKDOWN]
+        {
+          "analiseMacro": { "analise": "string", "historico": { "texto": "string", "graficos": [{ "tipo": "linha", "titulo": "string", "dados": [{ "x": "string", "y": 0 }] }] } },
+          "analiseMesocicloAnterior": { "aderencia": "", "evolucao": "", "texto": "", "graficos": [] },
+          "visaoGeralPlano": {
+            "objetivoPrincipal": "string", "duracaoSemanas": 0,
+            "fases": [{ "nome": "string", "duracao": "string", "foco": "string" }],
+            "blocos": [{ "mesociclo": "string", "duracaoSemanas": 0, "foco": "string" }],
+            "mesociclo1_consolidado": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }]
+          },
+          "visaoSemanal": [{ "date": "YYYY-MM-DD", "day": "Segunda-feira", "session_type": "string", "focoPrincipal": "string", "isDescansoAtivo": false, "mesocycle": "string", "week": 1 }],
+          "exerciciosDetalhados": []
+        }
       `;
 
-      const promptParts: any[] = [promptText];
-      if (pdfPart) {
-        promptParts.push(pdfPart);
-      }
-
-      const result = await model.generateContent(promptParts);
-      const output = result.response.text();
-      const planData = JSON.parse(output);
-
+      console.log("criar_plano_fase1: gerando estrutura + visaoSemanal...");
+      const result = await model.generateContent([prompt]);
+      const usage = result.response.usageMetadata;
+      console.log(`[TOKENS] criar_plano_fase1 | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'} | total: ${usage?.totalTokenCount ?? '?'}`);
+      const planData = JSON.parse(result.response.text());
       return new Response(JSON.stringify(planData), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 })
     }
-    else if (acao === 'gerar_semana_micro') {
-      const [planRes, prRes, benchRes] = await Promise.all([
-        supabaseClient.from('training_plans').select('*').eq('id', plano_id || '').single(),
-        supabaseClient.from('pr_log').select('*').eq('user_email', email_utilizador),
-        supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador)
-      ]);
 
-      const planData = planRes.data || {};
-      const prs = prRes.data || [];
-      const benchmarks = benchRes.data || [];
+    // =========================================================
+    // AÇÃO: gerar_exercicios_semana
+    // 1 chamada Gemini — gera exercícios de UMA semana (~5 dias × ~8 exercícios)
+    // Output pequeno: ~8-15K tokens → ZERO probabilidade de WORKER_LIMIT
+    // Usada tanto em criar_plano quanto em gerar_proximo_meso
+    // =========================================================
+    else if (acao === 'gerar_exercicios_semana') {
+      // dias_semana: array de { date, day, session_type, focoPrincipal, week, mesocycle }
+      // meso_context: { nome, objetivo, dataInicio, dataFim, semanaNum, totalSemanas, sessionsPerDay, whereTrain }
+      const ctx = meso_context || {};
+      const diasStr = (dias_semana || [])
+        .map((d: any) => `  - ${d.date} (${d.day}) | ${d.session_type} | ${d.focoPrincipal} | semana ${d.week}`)
+        .join('\n');
 
       const prompt = `
-        Você é o AI Coach especialista em periodização de CrossFit.
-        Gere detalhadamente o Planejamento Microciclo para o Mesociclo (${mesociclo_atual}, Semana ${semana_alvo}).
-        Foco da semana: ${foco_semana}
+        Você é o AI Coach do Holy Squat App. Gere os exercícios para a Semana ${ctx.semanaNum} de ${ctx.totalSemanas} do mesociclo "${ctx.nome}".
+        [DATA DE HOJE: ${today}]
 
-        [CONTEXTO DO ATLETA]
-        - Plano Macro (Diretrizes Iniciais): ${JSON.stringify(planData)}
-        - Lista de PRs (Recordes Pessoais): ${JSON.stringify(prs)}
-        - Benchmarks atuais: ${JSON.stringify(benchmarks)}
-        
-        ${await queryKnowledgeBase(foco_semana || "", genAI, supabaseClient)}
+        [CONTEXTO]
+        - Objetivo do macrociclo: ${ctx.objetivo}
+        - Mesociclo: ${ctx.nome} | Semana ${ctx.semanaNum}/${ctx.totalSemanas}
+        - Foco desta semana: ${ctx.focoSemana || 'Conforme planejamento'}
+        - Local de treino: ${JSON.stringify(ctx.whereTrain)}
+        - Sessões/dia: ${ctx.sessionsPerDay || 1}
 
-        [REGRAS]
-        1. Analise a evolução do histórico e prepare a próxima semana (Microciclo).
-        2. Atualize a 'visaoSemanal' EXCLUSIVAMENTE PARA ESTA PRÓXIMA SEMANA (7 dias).
-        3. Forneça os blocos de treinos apenas desta semana na lista de 'exerciciosDetalhados' adaptada às cargas e PRs dele.
-        4. OBRIGATÓRIO: O campo "session_type" DEVE SER EXATAMENTE um dos seguintes valores: [${allowedSessionTypes}]
-        
-        ${workoutSchemaTemplate}
+        [DIAS DE TREINO DESTA SEMANA — use exatamente estas datas]
+${diasStr}
+
+        [MISSÃO]
+        Gere exercícios COMPLETOS para cada dia de treino listado acima.
+        - Para cada dia: gere TODOS os exercícios da sessão (aquecimento, principal, metcon, acessório, etc.)
+        - NÃO omita exercícios. Seja detalhado e completo.
+        - workout_idx: índice sequencial do exercício dentro da sessão (começa em 1).
+        - session: número da sessão do dia (normalmente 1, a menos que haja dupla sessão).
+        - week = ${ctx.semanaNum} (semana intra-mesociclo).
+        - mesocycle = "${ctx.nome}".
+        - session_type OBRIGATÓRIO (use apenas tipos da lista): [${allowedSessionTypes}]
+        - ANO OBRIGATÓRIO: ${today.split('-')[0]}.
+
+        [FORMATO — JSON PURO SEM MARKDOWN]
+        {
+          "exerciciosDetalhados": [
+            {
+              "date": "YYYY-MM-DD",
+              "week": ${ctx.semanaNum},
+              "mesocycle": "${ctx.nome}",
+              "day": "Segunda-feira",
+              "session": 1,
+              "session_type": "string",
+              "duration": 60,
+              "workout_idx": 1,
+              "exercise": "nome do exercício",
+              "exercise_title": "título do bloco",
+              "exercise_group": "LPO|Força|Cardio|Mobilidade|etc",
+              "exercise_type": "Força|Técnica|Metcon|Acessório|etc",
+              "sets": 0,
+              "details": "séries × reps @ % ou descrição",
+              "time_exercise": 0,
+              "ex_unit": "min",
+              "rest": 0,
+              "rest_unit": "seg",
+              "rest_round": 0,
+              "rest_round_unit": "min",
+              "total_time": 0,
+              "location": "Academia",
+              "stage": "warmup|workout|cooldown",
+              "adaptacaoLesao": ""
+            }
+          ]
+        }
       `;
 
+      console.log(`gerar_exercicios_semana: ${ctx.nome} semana ${ctx.semanaNum}/${ctx.totalSemanas}...`);
       const result = await model.generateContent([prompt]);
-      const output = result.response.text();
-      const weekData = JSON.parse(output);
-
-      return new Response(JSON.stringify(weekData), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 })
+      const usage = result.response.usageMetadata;
+      console.log(`[TOKENS] semana ${ctx.semanaNum}/${ctx.totalSemanas} | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'} | total: ${usage?.totalTokenCount ?? '?'}`);
+      const exercData = JSON.parse(result.response.text());
+      return new Response(JSON.stringify(exercData), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 })
     }
+
+    // =========================================================
+    // AÇÃO: gerar_proximo_meso_fase1
+    // 1 chamada Gemini — estrutura + visaoSemanal do próximo meso
+    // =========================================================
+    else if (acao === 'gerar_proximo_meso_fase1') {
+      const planRes = await supabaseClient.from('training_plans').select('*').eq('id', plano_id || '').single();
+      const planData = planRes.data || {};
+      const startDate = planData.start_date;
+
+      const twelveMonthsBefore = new Date(startDate);
+      twelveMonthsBefore.setFullYear(twelveMonthsBefore.getFullYear() - 1);
+      const preMacroDateStr = twelveMonthsBefore.toISOString().split('T')[0];
+
+      const [prRes, benchRes, benchDefRes, preWorkoutsRes, preLogsRes, postWorkoutsRes, postLogsRes, profileRes] = await Promise.all([
+        supabaseClient.from('pr_log').select('exercise, value, unit, date').eq('user_email', email_utilizador),
+        supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador),
+        supabaseClient.from('benchmarks').select('*'),
+        supabaseClient.from('workouts').select('date, exercise, exercise_title, sets').eq('user_email', email_utilizador).gte('date', preMacroDateStr).lt('date', startDate).order('date', { ascending: false }).limit(50),
+        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, pse').eq('user_email', email_utilizador).gte('workout_date', preMacroDateStr).lt('workout_date', startDate).order('workout_date', { ascending: false }).limit(50),
+        supabaseClient.from('workouts').select('date, exercise, exercise_title, sets').eq('user_email', email_utilizador).gte('date', startDate).lte('date', today).order('date', { ascending: false }).limit(80),
+        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, pse').eq('user_email', email_utilizador).gte('workout_date', startDate).lte('workout_date', today).order('workout_date', { ascending: false }).limit(80),
+        supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single()
+      ]);
+
+      let planSummary: any = {};
+      try {
+        planSummary = actual_plan_summary_json
+          ? JSON.parse(actual_plan_summary_json)
+          : (planData.actual_plan_summary ? JSON.parse(planData.actual_plan_summary) : {});
+      } catch (e) { console.error("parse plan summary error:", e); }
+
+      const todosOsMesos: any[] = planSummary.blocos || [];
+      const mesosJaGeradosArr: string[] = mesos_ja_gerados || [];
+      const proximoMeso = todosOsMesos.find((b: any) => !mesosJaGeradosArr.includes(b.mesociclo));
+      const duracaoProximoMeso = proximoMeso?.duracaoSemanas || 4;
+      const nomeProximoMeso = proximoMeso?.mesociclo || 'Próximo Meso';
+
+      const profile = profileRes.data || {};
+
+      const prompt = `
+        Você é o AI Coach do Holy Squat App gerando o PRÓXIMO MESOCICLO.
+        [DATA DE HOJE: ${today}]
+
+        [PLANO MACRO]
+        - Período: ${planData.start_date} a ${planData.end_date}
+        - Todos os mesociclos: ${JSON.stringify(todosOsMesos)}
+        - Já gerados: ${mesosJaGeradosArr.join(', ') || 'Nenhum'}
+        - PRÓXIMO: "${nomeProximoMeso}" — ${duracaoProximoMeso} semanas | ${proximoMeso?.foco || ''}
+
+        [ATLETA]
+        - Nome: ${profile.name} | Local: ${JSON.stringify(profile.where_train)}
+        - Sessões/dia: ${profile.sessions_per_day}
+        - PRs: ${JSON.stringify(prRes.data || [])}
+        - Benchmarks: ${JSON.stringify(benchRes.data || [])}
+        - Progresso macro (treinos realizados): ${JSON.stringify(postWorkoutsRes.data || [])}
+        - Logs PSE: ${JSON.stringify(postLogsRes.data || [])}
+
+        [MISSÃO — ANÁLISE + ESTRUTURA + CALENDÁRIO (sem exercícios detalhados)]
+        1. analiseMesocicloAnterior: análise profunda do progresso (aderência, cargas, PSE).
+        2. visaoGeralPlano: blocos de todos os mesos (atualize se necessário) + mesociclo1_consolidado
+           (${duracaoProximoMeso} linhas — uma por semana do próximo meso).
+        3. visaoSemanal: TODOS os 7 dias × ${duracaoProximoMeso} semanas = ${duracaoProximoMeso * 7} entradas.
+           - week = intra-mesociclo (começa em 1).
+           - mesocycle = "${nomeProximoMeso}".
+           - Datas obrigatoriamente entre ${planData.start_date} e ${planData.end_date}.
+           - ANO: ${today.split('-')[0]}.
+        4. exerciciosDetalhados: [] (VAZIO — gerado por semana separadamente)
+
+        [FORMATO — JSON PURO]
+        {
+          "analiseMacro": { "analise": "string", "historico": { "texto": "string", "graficos": [] } },
+          "analiseMesocicloAnterior": { "aderencia": "string", "evolucao": "string", "texto": "string", "graficos": [] },
+          "visaoGeralPlano": { "objetivoPrincipal": "string", "duracaoSemanas": 0, "fases": [], "blocos": [], "mesociclo1_consolidado": [] },
+          "visaoSemanal": [{ "date": "YYYY-MM-DD", "day": "string", "session_type": "string", "focoPrincipal": "string", "isDescansoAtivo": false, "mesocycle": "${nomeProximoMeso}", "week": 1 }],
+          "exerciciosDetalhados": [],
+          "_mesoContext": { "nome": "${nomeProximoMeso}", "semanas": ${duracaoProximoMeso}, "startDate": "${planData.start_date}", "endDate": "${planData.end_date}", "sessionsPerDay": ${profile.sessions_per_day || 1}, "whereTrain": ${JSON.stringify(profile.where_train || [])} }
+        }
+      `;
+
+      console.log("gerar_proximo_meso_fase1: estrutura...");
+      const result = await model.generateContent([prompt]);
+      const usage = result.response.usageMetadata;
+      console.log(`[TOKENS] gerar_proximo_meso_fase1 | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'} | total: ${usage?.totalTokenCount ?? '?'}`);
+      const fase1Data = JSON.parse(result.response.text());
+      return new Response(JSON.stringify(fase1Data), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 })
+    }
+
     else {
-      return new Response(JSON.stringify({ error: 'Ação desconhecida.' }), { headers: corsHeaders, status: 400 })
+      return new Response(JSON.stringify({ error: `Ação desconhecida: ${acao}` }), { headers: corsHeaders, status: 400 })
     }
 
   } catch (error) {
-    console.error("Erro no Edge Function:", error);
+    console.error("Erro Edge Function:", error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500

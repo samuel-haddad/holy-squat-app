@@ -118,6 +118,8 @@ class VisaoSemanal {
   final String sessionType;
   final String focoPrincipal;
   final bool isDescansoAtivo;
+  final String mesocycle; // NOVO: Nome do mesociclo
+  final int week;        // NOVO: Número da semana
 
   VisaoSemanal({
     required this.date,
@@ -125,6 +127,8 @@ class VisaoSemanal {
     required this.sessionType,
     required this.focoPrincipal,
     required this.isDescansoAtivo,
+    required this.mesocycle,
+    required this.week,
   });
 
   factory VisaoSemanal.fromJson(Map<String, dynamic> json) {
@@ -134,10 +138,11 @@ class VisaoSemanal {
       sessionType: json['session_type'] ?? '',
       focoPrincipal: json['focoPrincipal'] ?? '',
       isDescansoAtivo: json['isDescansoAtivo'] ?? false,
+      mesocycle: json['mesocycle'] ?? '',
+      week: json['week'] ?? 0,
     );
   }
 
-  // NOVO: Método para converter de volta para JSON
   Map<String, dynamic> toJson() {
     return {
       'date': date,
@@ -145,6 +150,8 @@ class VisaoSemanal {
       'session_type': sessionType,
       'focoPrincipal': focoPrincipal,
       'isDescansoAtivo': isDescansoAtivo,
+      'mesocycle': mesocycle,
+      'week': week,
     };
   }
 }

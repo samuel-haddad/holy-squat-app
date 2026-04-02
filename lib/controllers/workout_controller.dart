@@ -6,31 +6,35 @@ import '../models/ai_workout_response.dart';
 import '../repositories/workout_repository.dart';
 import '../services/supabase_service.dart';
 
-// Criamos um Enum para representar exatamente em que fase o ecrã está
 enum WorkoutState { initial, loading, success, error }
 
 class WorkoutController extends ChangeNotifier {
   final WorkoutRepository _repository;
 
-  // Variáveis de Estado (O que a UI vai observar)
   WorkoutState _state = WorkoutState.initial;
   String _errorMessage = '';
   String _loadingMessage = '';
   AIWorkoutResponse? _planoGerado;
 
-  // Getters para a UI aceder aos dados com segurança
   WorkoutState get state => _state;
   bool get isLoading => _state == WorkoutState.loading;
   String get errorMessage => _errorMessage;
   String get loadingMessage => _loadingMessage;
   AIWorkoutResponse? get planoGerado => _planoGerado;
 
-  // Injeção de dependência do Repositório
   WorkoutController(this._repository);
 
-  /// =========================================================
-  /// AÇÃO 1: Botão "Criar Novo Plano"
-  /// =========================================================
+  // =========================================================
+  // AÇÃO 1: Criar Novo Plano
+  //
+  // Fluxo (respeita 5 RPM do gemini-2.5-flash):
+  //   [t=0s]    Fase 1: estrutura + visaoSemanal         (~25s)
+  //   [t=25s]   delay 13s
+  //   [t=38s]   Semana 1: exercícios                     (~20s)
+  //   [t=58s]   delay 13s
+  //   [t=71s]   Semana 2: exercícios                     (~20s)
+  //   ...e assim por diante para cada semana do Meso 1
+  // =========================================================
   Future<void> criarNovoPlano({
     required String emailUtilizador,
     required String objetivoGeral,
@@ -40,12 +44,12 @@ class WorkoutController extends ChangeNotifier {
     String? notasAdicionais,
   }) async {
     _state = WorkoutState.loading;
-    _loadingMessage = 'Analisando perfil e estruturando 1ª semana...';
+    _loadingMessage = '🧠 Estruturando plano e calendário...';
     notifyListeners();
 
     try {
-      // 2. Chama o Repositório (que vai à Nuvem)
-      final resultado = await _repository.criarPlanoMacro(
+      // ── FASE 1: estrutura + visaoSemanal ──────────────────────────
+      final fase1 = await _repository.criarPlanoFase1(
         emailUtilizador: emailUtilizador,
         objetivoGeral: objetivoGeral,
         dataInicio: dataInicio,
@@ -53,120 +57,115 @@ class WorkoutController extends ChangeNotifier {
         competicoes: competicoes,
         notasAdicionais: notasAdicionais,
       );
+      _planoGerado = fase1;
+      notifyListeners();
 
-      // 3. Guarda o treino gerado e avisa a UI que foi um sucesso
-      _planoGerado = resultado;
-      
-      // 4. Salva os metadados do plano gerado na tabela training_plans ANTES 
-      // para conseguir o ID.
+      // ── Extrair info do Meso 1 para o contexto das semanas ────────
+      final blocos = (fase1.visaoGeralPlano['blocos'] as List<dynamic>?) ?? [];
+      final meso1 = blocos.isNotEmpty ? (blocos.first as Map<String, dynamic>) : <String, dynamic>{};
+      final meso1Nome = meso1['mesociclo']?.toString() ?? 'Mesociclo 1';
+      final meso1Foco = meso1['foco']?.toString() ?? '';
+
+      // ── Agrupar visaoSemanal por semana (apenas dias de treino) ───
+      final Map<int, List<Map<String, dynamic>>> weekGroups = {};
+      for (final dia in fase1.visaoSemanal) {
+        if (!dia.isDescansoAtivo) {
+          weekGroups.putIfAbsent(dia.week, () => []).add(dia.toJson());
+        }
+      }
+      final weeksOrdered = weekGroups.keys.toList()..sort();
+      final totalSemanas = weeksOrdered.length;
+
+      // ── Gerar exercícios semana por semana ────────────────────────
+      final List<ExercicioDetalhado> todosExercicios = [];
+
+      for (int i = 0; i < weeksOrdered.length; i++) {
+        final weekNum = weeksOrdered[i];
+
+        // Delay de 13s entre chamadas (respeita 5 RPM)
+        _loadingMessage = '⏳ Preparando semana ${weekNum}/$totalSemanas...';
+        notifyListeners();
+        await Future.delayed(const Duration(seconds: 13));
+
+        _loadingMessage = '💪 Gerando exercícios — Semana $weekNum/$totalSemanas';
+        notifyListeners();
+
+        final exerciciosSemana = await _repository.gerarExerciciosSemana(
+          emailUtilizador: emailUtilizador,
+          diasSemana: weekGroups[weekNum]!,
+          mesoContext: {
+            'nome': meso1Nome,
+            'objetivo': objetivoGeral,
+            'dataInicio': dataInicio,
+            'dataFim': dataFim,
+            'semanaNum': weekNum,
+            'totalSemanas': totalSemanas,
+            'focoSemana': meso1Foco,
+          },
+        );
+        todosExercicios.addAll(exerciciosSemana);
+      }
+
+      // ── Montar resposta final ─────────────────────────────────────
+      final finalResponse = AIWorkoutResponse.fromJson({
+        ...fase1.toJson(),
+        'exerciciosDetalhados': todosExercicios.map((e) => e.toJson()).toList(),
+      });
+      _planoGerado = finalResponse;
+
+      _loadingMessage = '💾 Salvando plano na base de dados...';
+      notifyListeners();
+
+      // ── Salvar metadados do plano ─────────────────────────────────
       final novoPlanoId = await SupabaseService.saveTrainingPlan({
         'start_date': dataInicio,
         'end_date': dataFim.isEmpty ? null : dataFim,
         'notes': notasAdicionais,
         'competitions': competicoes.map((c) => {'name': c, 'date': null}).toList(),
-        'actual_plan_summary': jsonEncode(resultado.visaoGeralPlano),
-        'workouts_plan_text': jsonEncode(resultado.analiseMacro),
-        'workouts_plan_table': resultado.visaoSemanal.map((v) => {
-          'day': v.day,
-          'workout': v.focoPrincipal,
-        }).toList(),
+        'actual_plan_summary': jsonEncode(finalResponse.visaoGeralPlano),
+        'workouts_plan_text': jsonEncode(finalResponse.analiseMacro),
+        'workouts_plan_table': finalResponse.visaoSemanal.map((v) => v.toJson()).toList(),
       });
 
-      // --- PROTEÇÃO DE DADOS (Limpeza do Futuro) ---
-      // Apagamos todas as sessões futuras (a partir de amanhã) que PERTENCEM A UM PLANO DE IA.
-      // E protegemos completamente os treinos manuais!
+      // ── Limpar sessões futuras da IA anteriores (preservar manuais) ──
       final hoje = DateTime.now();
-      final hojeFormatado = "${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}";
-      
+      final hojeStr = '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
       try {
-        // Agora apagamos apenas sessões futuras que foram geradas pela IA (tem plan_id)
         await SupabaseService.client
             .from('sessions')
             .delete()
             .eq('user_email', emailUtilizador)
             .not('plan_id', 'is', null)
-            .gt('date', hojeFormatado);
+            .gt('date', hojeStr);
       } catch (e) {
-        print('Erro ao limpar treinos futuros da IA: $e');
-      }
-      // ---------------------------------------------
-
-      // 5. Salva os exercícios gerados passando o ID do plano
-      if (resultado.exerciciosDetalhados.isNotEmpty) {
-        await _repository.salvarExerciciosGerados(
-          resultado.exerciciosDetalhados, 
-          emailUtilizador,
-          planId: novoPlanoId
-        );
+        print('Erro ao limpar sessões IA antigas: $e');
       }
 
-      // --- GERAR O RESTO DO MESOCICLO EM BACKGROUND LOOP ---
-      int totalSemanasMesociclo = 4; // fallback
-      String nomeMesociclo = "Mesociclo Inicial";
-      try {
-        if (resultado.visaoGeralPlano['blocos'] is List) {
-          final blocos = resultado.visaoGeralPlano['blocos'] as List;
-          if (blocos.isNotEmpty) {
-            totalSemanasMesociclo = (blocos[0]['duracaoSemanas'] as num).toInt();
-            nomeMesociclo = blocos[0]['mesociclo'].toString();
-          }
-        }
-      } catch (_) {}
-
-      List currentTable = resultado.visaoSemanal.map((v) => {
-        'day': v.day,
-        'workout': v.focoPrincipal,
-      }).toList();
-
-      for (int week = 2; week <= totalSemanasMesociclo; week++) {
-        _loadingMessage = 'Gerando exercícios aprofundados (Semana $week de $totalSemanasMesociclo)...';
+      // ── Salvar exercícios ─────────────────────────────────────────
+      if (finalResponse.exerciciosDetalhados.isNotEmpty) {
+        _loadingMessage = '💾 Salvando ${finalResponse.exerciciosDetalhados.length} exercícios...';
         notifyListeners();
-        
-        try {
-          final microResult = await _repository.gerarSemanaMicro(
-            emailUtilizador: emailUtilizador,
-            planoId: novoPlanoId,
-            semanaAlvo: week,
-            mesocicloAtual: nomeMesociclo,
-            focoSemana: 'Continuação do $nomeMesociclo - Semana $week',
-          );
-
-          if (microResult.exerciciosDetalhados.isNotEmpty) {
-            await _repository.salvarExerciciosGerados(microResult.exerciciosDetalhados, emailUtilizador, planId: novoPlanoId);
-          }
-
-          final newRows = microResult.visaoSemanal.map((v) => {
-            'day': v.day,
-            'workout': v.focoPrincipal,
-          }).toList();
-          currentTable.addAll(newRows);
-
-          // Atualiza a tabela parcial para a UI
-          await SupabaseService.updateTrainingPlan(novoPlanoId, {
-            'workouts_plan_table': currentTable,
-          });
-        } catch (iteracaoErro) {
-          print("Erro ao gerar a semana $week: $iteracaoErro");
-          break; // Aborta geração do resto se der erro
-        }
+        await _repository.salvarExerciciosGerados(
+          finalResponse.exerciciosDetalhados,
+          emailUtilizador,
+          planId: novoPlanoId,
+        );
       }
 
       _state = WorkoutState.success;
       _loadingMessage = '';
-      
+
     } catch (e) {
-      // 4. Se a internet cair ou a API falhar, captura o erro e mostra ao utilizador
       _errorMessage = 'Falha ao gerar o plano: ${e.toString()}';
       _state = WorkoutState.error;
     } finally {
-      // 5. Atualiza o ecrã independentemente de ter dado certo ou errado
       notifyListeners();
     }
   }
 
-  /// =========================================================
-  /// AÇÃO 2: Botão "Gerar Próximo Ciclo"
-  /// =========================================================
+  // =========================================================
+  // AÇÃO 2: Gerar Próximo Ciclo
+  // =========================================================
   Future<void> gerarProximoCiclo({
     required String emailUtilizador,
     required String planoId,
@@ -174,69 +173,102 @@ class WorkoutController extends ChangeNotifier {
     required List currentWorkoutsTable,
   }) async {
     _state = WorkoutState.loading;
-    _loadingMessage = 'Analisando os blocos concluídos...';
+    _loadingMessage = '🧠 Analisando progresso e estruturando próximo meso...';
     notifyListeners();
 
     try {
-      int semanasGeradasNoPlano = (currentWorkoutsTable.length / 7).floor();
-      int currentWeekToGenerate = semanasGeradasNoPlano + 1;
-
-      int weeksPassed = 0;
-      Map<String, dynamic>? targetBlock;
-      final summary = jsonDecode(actualPlanSummaryJson);
-      final blocos = summary['blocos'] as List;
-      
-      for (var bloco in blocos) {
-        int duracao = (bloco['duracaoSemanas'] as num).toInt();
-        if (currentWeekToGenerate <= weeksPassed + duracao) {
-          targetBlock = bloco;
-          break;
+      // Deriva mesociclos já gerados
+      final Set<String> mesosGeradosSet = {};
+      for (final row in currentWorkoutsTable) {
+        if (row is Map) {
+          final meso = row['mesocycle']?.toString();
+          if (meso != null && meso.isNotEmpty) mesosGeradosSet.add(meso);
         }
-        weeksPassed += duracao;
       }
 
-      if (targetBlock == null) {
-        throw Exception("Todas as semanas previstas no Plano atual já foram geradas!");
+      // ── FASE 1: estrutura do próximo meso ─────────────────────────
+      final fase1 = await _repository.gerarProximoMesocicloFase1(
+        emailUtilizador: emailUtilizador,
+        planoId: planoId,
+        actualPlanSummaryJson: actualPlanSummaryJson,
+        mesosJaGerados: mesosGeradosSet.toList(),
+      );
+      _planoGerado = fase1;
+      notifyListeners();
+
+      // Extrai contexto que a Edge Function embutiu na resposta (_mesoContext)
+      final rawFase1 = fase1.toJson();
+      final mesoCtxBase = (rawFase1['_mesoContext'] as Map<String, dynamic>?) ?? {};
+
+      // Agrupar visaoSemanal por semana
+      final Map<int, List<Map<String, dynamic>>> weekGroups = {};
+      for (final dia in fase1.visaoSemanal) {
+        if (!dia.isDescansoAtivo) {
+          weekGroups.putIfAbsent(dia.week, () => []).add(dia.toJson());
+        }
       }
+      final weeksOrdered = weekGroups.keys.toList()..sort();
+      final totalSemanas = weeksOrdered.length;
 
-      String mesocicloNome = targetBlock['mesociclo'] ?? 'Novo Ciclo';
-      int semanasDesteBloco = (targetBlock['duracaoSemanas'] as num).toInt();
-      
-      List updatedTable = List.from(currentWorkoutsTable);
+      // ── Gerar exercícios semana por semana ────────────────────────
+      final List<ExercicioDetalhado> todosExercicios = [];
 
-      for (int w = currentWeekToGenerate; w <= weeksPassed + semanasDesteBloco; w++) {
-        _loadingMessage = 'Modelando Semana $w ($mesocicloNome)...';
+      for (int i = 0; i < weeksOrdered.length; i++) {
+        final weekNum = weeksOrdered[i];
+
+        _loadingMessage = '⏳ Preparando semana $weekNum/$totalSemanas...';
         notifyListeners();
-        
-        final microResult = await _repository.gerarSemanaMicro(
+        await Future.delayed(const Duration(seconds: 13));
+
+        _loadingMessage = '💪 Gerando exercícios — Semana $weekNum/$totalSemanas';
+        notifyListeners();
+
+        final exerciciosSemana = await _repository.gerarExerciciosSemana(
           emailUtilizador: emailUtilizador,
-          planoId: planoId,
-          semanaAlvo: w,
-          mesocicloAtual: mesocicloNome,
-          focoSemana: 'Estruturação do $mesocicloNome - Semana $w',
+          diasSemana: weekGroups[weekNum]!,
+          mesoContext: {
+            ...mesoCtxBase,
+            'semanaNum': weekNum,
+            'totalSemanas': totalSemanas,
+          },
         );
+        todosExercicios.addAll(exerciciosSemana);
+      }
 
-        if (microResult.exerciciosDetalhados.isNotEmpty) {
-          await _repository.salvarExerciciosGerados(
-            microResult.exerciciosDetalhados, 
-            emailUtilizador, 
-            planId: planoId
-          );
-        }
+      // ── Montar resposta final ─────────────────────────────────────
+      final finalResponse = AIWorkoutResponse.fromJson({
+        ...rawFase1,
+        'exerciciosDetalhados': todosExercicios.map((e) => e.toJson()).toList(),
+      });
+      _planoGerado = finalResponse;
 
-        updatedTable.addAll(microResult.visaoSemanal.map((v) => {
-          'day': v.day,
-          'workout': v.focoPrincipal,
-        }).toList());
+      _loadingMessage = '💾 Salvando novo ciclo...';
+      notifyListeners();
 
-        await SupabaseService.updateTrainingPlan(planoId, {
-          'workouts_plan_table': updatedTable,
-        });
+      // ── Atualizar plano ───────────────────────────────────────────
+      await SupabaseService.updateTrainingPlan(planoId, {
+        'progress_analysis': jsonEncode(finalResponse.analiseMesocicloAnterior),
+        'actual_plan_summary': jsonEncode(finalResponse.visaoGeralPlano),
+        'workouts_plan_table': [
+          ...currentWorkoutsTable,
+          ...finalResponse.visaoSemanal.map((v) => v.toJson()).toList(),
+        ],
+      });
+
+      // ── Salvar exercícios ─────────────────────────────────────────
+      if (finalResponse.exerciciosDetalhados.isNotEmpty) {
+        _loadingMessage = '💾 Salvando ${finalResponse.exerciciosDetalhados.length} exercícios...';
+        notifyListeners();
+        await _repository.salvarExerciciosGerados(
+          finalResponse.exerciciosDetalhados,
+          emailUtilizador,
+          planId: planoId,
+        );
       }
 
       _state = WorkoutState.success;
       _loadingMessage = '';
-      
+
     } catch (e) {
       _errorMessage = 'Falha ao gerar o próximo ciclo: ${e.toString()}';
       _state = WorkoutState.error;
@@ -245,7 +277,6 @@ class WorkoutController extends ChangeNotifier {
     }
   }
 
-  /// Função para limpar o estado caso o utilizador feche o ecrã
   void resetState() {
     _state = WorkoutState.initial;
     _errorMessage = '';
