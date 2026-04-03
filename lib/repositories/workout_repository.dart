@@ -23,6 +23,17 @@ class WorkoutRepository {
   }
 
   // =========================================================
+  // Busca coaches disponíveis na tabela ai_coach
+  // =========================================================
+  Future<List<Map<String, dynamic>>> fetchAiCoaches() async {
+    final response = await _supabase
+        .from('ai_coach')
+        .select('*')
+        .order('id');
+    return List<Map<String, dynamic>>.from(response as List);
+  }
+
+  // =========================================================
   // FASE 1: Criar Plano — estrutura + visaoSemanal
   // =========================================================
   Future<AIWorkoutResponse> criarPlanoFase1({
@@ -32,6 +43,7 @@ class WorkoutRepository {
     required String dataFim,
     required List<String> competicoes,
     String? notasAdicionais,
+    String? aiCoachName,
   }) async {
     await _refreshSessionIfNeeded();
     final response = await _supabase.functions.invoke(
@@ -39,6 +51,7 @@ class WorkoutRepository {
       body: {
         'acao': 'criar_plano_fase1',
         'email_utilizador': emailUtilizador,
+        'ai_coach_name': aiCoachName,
         'diretrizes_plano': {
           'objetivo': objetivoGeral,
           'data_inicio': dataInicio,
@@ -62,6 +75,7 @@ class WorkoutRepository {
     required String planoId,
     required String actualPlanSummaryJson,
     required List<String> mesosJaGerados,
+    String? aiCoachName,
   }) async {
     await _refreshSessionIfNeeded();
     final response = await _supabase.functions.invoke(
@@ -72,6 +86,7 @@ class WorkoutRepository {
         'plano_id': planoId,
         'actual_plan_summary_json': actualPlanSummaryJson,
         'mesos_ja_gerados': mesosJaGerados,
+        'ai_coach_name': aiCoachName,
       },
     );
     if (response.status != 200) {
@@ -81,14 +96,13 @@ class WorkoutRepository {
   }
 
   // =========================================================
-  // SEMANA: Gera exercícios de UMA semana
-  // Chamada tantas vezes quantas forem as semanas do mesociclo
+  // SEMANA: Exercícios de UMA semana (loop no controller)
   // =========================================================
   Future<List<ExercicioDetalhado>> gerarExerciciosSemana({
     required String emailUtilizador,
-    required List<Map<String, dynamic>> diasSemana, // apenas dias de TREINO desta semana
+    required List<Map<String, dynamic>> diasSemana,
     required Map<String, dynamic> mesoContext,
-    // mesoContext: { nome, objetivo, dataInicio, dataFim, semanaNum, totalSemanas, focoSemana, sessionsPerDay, whereTrain }
+    String? aiCoachName,
   }) async {
     await _refreshSessionIfNeeded();
     final response = await _supabase.functions.invoke(
@@ -98,6 +112,7 @@ class WorkoutRepository {
         'email_utilizador': emailUtilizador,
         'dias_semana': diasSemana,
         'meso_context': mesoContext,
+        'ai_coach_name': aiCoachName,
       },
     );
     if (response.status != 200) {
@@ -109,12 +124,13 @@ class WorkoutRepository {
   }
 
   // =========================================================
-  // Salvar exercícios na base de dados
+  // Salvar exercícios + sessões na base de dados
   // =========================================================
   Future<void> salvarExerciciosGerados(
     List<ExercicioDetalhado> exercicios,
     String emailUtilizador, {
     String? planId,
+    String? aiCoachName,
   }) async {
     try {
       final Map<String, Map<String, dynamic>> uniqueSessions = {};
@@ -149,6 +165,7 @@ class WorkoutRepository {
             'session_type': safeSessionType,
             'user_email': emailUtilizador,
             if (planId != null) 'plan_id': planId,
+            if (aiCoachName != null) 'ai_coach_name': aiCoachName,  // ← NEW
           };
         }
 

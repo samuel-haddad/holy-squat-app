@@ -26,14 +26,6 @@ class WorkoutController extends ChangeNotifier {
 
   // =========================================================
   // AÇÃO 1: Criar Novo Plano
-  //
-  // Fluxo (respeita 5 RPM do gemini-2.5-flash):
-  //   [t=0s]    Fase 1: estrutura + visaoSemanal         (~25s)
-  //   [t=25s]   delay 13s
-  //   [t=38s]   Semana 1: exercícios                     (~20s)
-  //   [t=58s]   delay 13s
-  //   [t=71s]   Semana 2: exercícios                     (~20s)
-  //   ...e assim por diante para cada semana do Meso 1
   // =========================================================
   Future<void> criarNovoPlano({
     required String emailUtilizador,
@@ -42,13 +34,14 @@ class WorkoutController extends ChangeNotifier {
     required String dataFim,
     required List<String> competicoes,
     String? notasAdicionais,
+    String? aiCoachName,          // ← NEW: nome do coach selecionado
   }) async {
     _state = WorkoutState.loading;
     _loadingMessage = '🧠 Estruturando plano e calendário...';
     notifyListeners();
 
     try {
-      // ── FASE 1: estrutura + visaoSemanal ──────────────────────────
+      // ── FASE 1: estrutura + visaoSemanal ──
       final fase1 = await _repository.criarPlanoFase1(
         emailUtilizador: emailUtilizador,
         objetivoGeral: objetivoGeral,
@@ -56,17 +49,18 @@ class WorkoutController extends ChangeNotifier {
         dataFim: dataFim,
         competicoes: competicoes,
         notasAdicionais: notasAdicionais,
+        aiCoachName: aiCoachName,
       );
       _planoGerado = fase1;
       notifyListeners();
 
-      // ── Extrair info do Meso 1 para o contexto das semanas ────────
+      // ── Extrair info do Meso 1 ──
       final blocos = (fase1.visaoGeralPlano['blocos'] as List<dynamic>?) ?? [];
       final meso1 = blocos.isNotEmpty ? (blocos.first as Map<String, dynamic>) : <String, dynamic>{};
       final meso1Nome = meso1['mesociclo']?.toString() ?? 'Mesociclo 1';
       final meso1Foco = meso1['foco']?.toString() ?? '';
 
-      // ── Agrupar visaoSemanal por semana (apenas dias de treino) ───
+      // ── Agrupar visaoSemanal por semana ──
       final Map<int, List<Map<String, dynamic>>> weekGroups = {};
       for (final dia in fase1.visaoSemanal) {
         if (!dia.isDescansoAtivo) {
@@ -76,21 +70,14 @@ class WorkoutController extends ChangeNotifier {
       final weeksOrdered = weekGroups.keys.toList()..sort();
       final totalSemanas = weeksOrdered.length;
 
-      // ── Gerar exercícios semana por semana ────────────────────────
+      // ── Gerar exercícios em PARALELO (Otimização para versões pagas) ──
+      _loadingMessage = '⚡ Gerando exercícios em paralelo (Semanas 1 a $totalSemanas)...';
+      notifyListeners();
+
       final List<ExercicioDetalhado> todosExercicios = [];
-
-      for (int i = 0; i < weeksOrdered.length; i++) {
-        final weekNum = weeksOrdered[i];
-
-        // Delay de 13s entre chamadas (respeita 5 RPM)
-        _loadingMessage = '⏳ Preparando semana ${weekNum}/$totalSemanas...';
-        notifyListeners();
-        await Future.delayed(const Duration(seconds: 13));
-
-        _loadingMessage = '💪 Gerando exercícios — Semana $weekNum/$totalSemanas';
-        notifyListeners();
-
-        final exerciciosSemana = await _repository.gerarExerciciosSemana(
+      
+      final List<Future<List<ExercicioDetalhado>>> futureWeeks = weeksOrdered.map((weekNum) {
+        return _repository.gerarExerciciosSemana(
           emailUtilizador: emailUtilizador,
           diasSemana: weekGroups[weekNum]!,
           mesoContext: {
@@ -102,11 +89,17 @@ class WorkoutController extends ChangeNotifier {
             'totalSemanas': totalSemanas,
             'focoSemana': meso1Foco,
           },
+          aiCoachName: aiCoachName,
         );
-        todosExercicios.addAll(exerciciosSemana);
+      }).toList();
+
+      // Aguarda todas as semanas concluírem em paralelo
+      final results = await Future.wait(futureWeeks);
+      for (final res in results) {
+        todosExercicios.addAll(res);
       }
 
-      // ── Montar resposta final ─────────────────────────────────────
+      // ── Montar resposta final ──
       final finalResponse = AIWorkoutResponse.fromJson({
         ...fase1.toJson(),
         'exerciciosDetalhados': todosExercicios.map((e) => e.toJson()).toList(),
@@ -116,7 +109,7 @@ class WorkoutController extends ChangeNotifier {
       _loadingMessage = '💾 Salvando plano na base de dados...';
       notifyListeners();
 
-      // ── Salvar metadados do plano ─────────────────────────────────
+      // ── Salvar metadados do plano ──
       final novoPlanoId = await SupabaseService.saveTrainingPlan({
         'start_date': dataInicio,
         'end_date': dataFim.isEmpty ? null : dataFim,
@@ -127,7 +120,7 @@ class WorkoutController extends ChangeNotifier {
         'workouts_plan_table': finalResponse.visaoSemanal.map((v) => v.toJson()).toList(),
       });
 
-      // ── Limpar sessões futuras da IA anteriores (preservar manuais) ──
+      // ── Limpar sessões IA futuras antigas ──
       final hoje = DateTime.now();
       final hojeStr = '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
       try {
@@ -141,7 +134,7 @@ class WorkoutController extends ChangeNotifier {
         print('Erro ao limpar sessões IA antigas: $e');
       }
 
-      // ── Salvar exercícios ─────────────────────────────────────────
+      // ── Salvar exercícios ──
       if (finalResponse.exerciciosDetalhados.isNotEmpty) {
         _loadingMessage = '💾 Salvando ${finalResponse.exerciciosDetalhados.length} exercícios...';
         notifyListeners();
@@ -149,6 +142,7 @@ class WorkoutController extends ChangeNotifier {
           finalResponse.exerciciosDetalhados,
           emailUtilizador,
           planId: novoPlanoId,
+          aiCoachName: aiCoachName,
         );
       }
 
@@ -171,13 +165,13 @@ class WorkoutController extends ChangeNotifier {
     required String planoId,
     required String actualPlanSummaryJson,
     required List currentWorkoutsTable,
+    String? aiCoachName,          // ← NEW
   }) async {
     _state = WorkoutState.loading;
     _loadingMessage = '🧠 Analisando progresso e estruturando próximo meso...';
     notifyListeners();
 
     try {
-      // Deriva mesociclos já gerados
       final Set<String> mesosGeradosSet = {};
       for (final row in currentWorkoutsTable) {
         if (row is Map) {
@@ -186,21 +180,20 @@ class WorkoutController extends ChangeNotifier {
         }
       }
 
-      // ── FASE 1: estrutura do próximo meso ─────────────────────────
+      // ── FASE 1 ──
       final fase1 = await _repository.gerarProximoMesocicloFase1(
         emailUtilizador: emailUtilizador,
         planoId: planoId,
         actualPlanSummaryJson: actualPlanSummaryJson,
         mesosJaGerados: mesosGeradosSet.toList(),
+        aiCoachName: aiCoachName,
       );
       _planoGerado = fase1;
       notifyListeners();
 
-      // Extrai contexto que a Edge Function embutiu na resposta (_mesoContext)
       final rawFase1 = fase1.toJson();
       final mesoCtxBase = (rawFase1['_mesoContext'] as Map<String, dynamic>?) ?? {};
 
-      // Agrupar visaoSemanal por semana
       final Map<int, List<Map<String, dynamic>>> weekGroups = {};
       for (final dia in fase1.visaoSemanal) {
         if (!dia.isDescansoAtivo) {
@@ -210,20 +203,14 @@ class WorkoutController extends ChangeNotifier {
       final weeksOrdered = weekGroups.keys.toList()..sort();
       final totalSemanas = weeksOrdered.length;
 
-      // ── Gerar exercícios semana por semana ────────────────────────
+      // ── Gerar exercícios em PARALELO (Próximo Ciclo) ──
+      _loadingMessage = '⚡ Gerando exercícios do novo ciclo em paralelo (1 a $totalSemanas)...';
+      notifyListeners();
+
       final List<ExercicioDetalhado> todosExercicios = [];
 
-      for (int i = 0; i < weeksOrdered.length; i++) {
-        final weekNum = weeksOrdered[i];
-
-        _loadingMessage = '⏳ Preparando semana $weekNum/$totalSemanas...';
-        notifyListeners();
-        await Future.delayed(const Duration(seconds: 13));
-
-        _loadingMessage = '💪 Gerando exercícios — Semana $weekNum/$totalSemanas';
-        notifyListeners();
-
-        final exerciciosSemana = await _repository.gerarExerciciosSemana(
+      final List<Future<List<ExercicioDetalhado>>> futureWeeks = weeksOrdered.map((weekNum) {
+        return _repository.gerarExerciciosSemana(
           emailUtilizador: emailUtilizador,
           diasSemana: weekGroups[weekNum]!,
           mesoContext: {
@@ -231,11 +218,15 @@ class WorkoutController extends ChangeNotifier {
             'semanaNum': weekNum,
             'totalSemanas': totalSemanas,
           },
+          aiCoachName: aiCoachName,
         );
-        todosExercicios.addAll(exerciciosSemana);
+      }).toList();
+
+      final results = await Future.wait(futureWeeks);
+      for (final res in results) {
+        todosExercicios.addAll(res);
       }
 
-      // ── Montar resposta final ─────────────────────────────────────
       final finalResponse = AIWorkoutResponse.fromJson({
         ...rawFase1,
         'exerciciosDetalhados': todosExercicios.map((e) => e.toJson()).toList(),
@@ -245,7 +236,6 @@ class WorkoutController extends ChangeNotifier {
       _loadingMessage = '💾 Salvando novo ciclo...';
       notifyListeners();
 
-      // ── Atualizar plano ───────────────────────────────────────────
       await SupabaseService.updateTrainingPlan(planoId, {
         'progress_analysis': jsonEncode(finalResponse.analiseMesocicloAnterior),
         'actual_plan_summary': jsonEncode(finalResponse.visaoGeralPlano),
@@ -255,7 +245,6 @@ class WorkoutController extends ChangeNotifier {
         ],
       });
 
-      // ── Salvar exercícios ─────────────────────────────────────────
       if (finalResponse.exerciciosDetalhados.isNotEmpty) {
         _loadingMessage = '💾 Salvando ${finalResponse.exerciciosDetalhados.length} exercícios...';
         notifyListeners();
@@ -263,6 +252,7 @@ class WorkoutController extends ChangeNotifier {
           finalResponse.exerciciosDetalhados,
           emailUtilizador,
           planId: planoId,
+          aiCoachName: aiCoachName,
         );
       }
 

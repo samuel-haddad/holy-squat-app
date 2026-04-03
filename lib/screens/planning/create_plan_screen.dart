@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/controllers/workout_controller.dart';
+import 'package:holy_squat_app/repositories/workout_repository.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
@@ -18,6 +19,36 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
   final _objetivoController = TextEditingController();
   final _notesController = TextEditingController();
   final List<Map<String, dynamic>> _competitions = [];
+
+  // Coach selection
+  List<Map<String, dynamic>> _coaches = [];
+  Map<String, dynamic>? _selectedCoach;
+  bool _loadingCoaches = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCoaches();
+  }
+
+  Future<void> _loadCoaches() async {
+    try {
+      final repo = WorkoutRepository();
+      final coaches = await repo.fetchAiCoaches();
+      print('[Coach] Carregados: ${coaches.length} coaches → $coaches');
+      if (mounted) {
+        setState(() {
+          _coaches = coaches;
+          _loadingCoaches = false;
+        });
+      }
+    } catch (e, stack) {
+      print('[Coach] ERRO ao carregar: $e\n$stack');
+      if (mounted) {
+        setState(() => _loadingCoaches = false);
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -106,6 +137,16 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
       return;
     }
 
+    if (_selectedCoach == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecione um Coach antes de continuar'),
+          backgroundColor: Colors.orangeAccent,
+        ),
+      );
+      return;
+    }
+
     final controller = context.read<WorkoutController>();
 
     final List<String> competicoesFormatadas = _competitions
@@ -117,12 +158,13 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
     final endDateFormatted = _endDate != null ? DateFormat('yyyy-MM-dd').format(_endDate!) : '';
 
     await controller.criarNovoPlano(
-      emailUtilizador: 'samuelhsm@gmail.com', // Mocked as requested
+      emailUtilizador: 'samuelhsm@gmail.com',
       objetivoGeral: _objetivoController.text,
       dataInicio: startDateFormatted,
       dataFim: endDateFormatted,
       competicoes: competicoesFormatadas,
       notasAdicionais: _notesController.text,
+      aiCoachName: _selectedCoach!['ai_coach_name'] as String,
     );
 
     if (mounted) {
@@ -145,6 +187,17 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
     }
   }
 
+  /// Converte hex string (#RRGGBB) em Color
+  Color _hexToColor(String? hex) {
+    if (hex == null || hex.isEmpty) return AppTheme.primaryTeal;
+    try {
+      final cleaned = hex.replaceFirst('#', '');
+      return Color(int.parse('FF$cleaned', radix: 16));
+    } catch (_) {
+      return AppTheme.primaryTeal;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -161,6 +214,32 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+
+              // ── Coach Dropdown ──────────────────────────────────────
+              const Text(
+                'Coach *',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              _loadingCoaches
+                  ? Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        children: [
+                          SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryTeal)),
+                          SizedBox(width: 12),
+                          Text('Carregando coaches...', style: TextStyle(color: Colors.white54)),
+                        ],
+                      ),
+                    )
+                  : _buildCoachDropdown(),
+              const SizedBox(height: 20),
+
+              // ── Objetivo ────────────────────────────────────────────
               const Text(
                 'Objetivo do Macrociclo *',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
@@ -184,6 +263,8 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
               const SizedBox(height: 20),
               _buildDatePicker('End date', _endDate, () => _selectDate(context, false), false),
               const SizedBox(height: 32),
+
+              // ── Competitions ────────────────────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -200,6 +281,8 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
               const SizedBox(height: 12),
               ..._competitions.asMap().entries.map((entry) => _buildCompetitionItem(entry.key)).toList(),
               const SizedBox(height: 32),
+
+              // ── Notes ───────────────────────────────────────────────
               const Text(
                 'Notes',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
@@ -217,6 +300,9 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 ),
               ),
+              const SizedBox(height: 32),
+
+              // ── Submit Button ────────────────────────────────────────
               Consumer<WorkoutController>(
                 builder: (context, controller, child) {
                   return Column(
@@ -233,16 +319,30 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
                         ),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primaryTeal,
+                          backgroundColor: _selectedCoach != null
+                              ? _hexToColor(_selectedCoach!['color_hex'] as String?)
+                              : AppTheme.primaryTeal,
                           padding: const EdgeInsets.symmetric(vertical: 18),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         onPressed: controller.isLoading ? null : _savePlan,
                         child: controller.isLoading
                             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                            : const Text(
-                                '3, 2, 1... GO!',
-                                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (_selectedCoach != null) ...[
+                                    Text(
+                                      _selectedCoach!['icon_emoji'] as String? ?? '🤖',
+                                      style: const TextStyle(fontSize: 18),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  const Text(
+                                    '3, 2, 1... GO!',
+                                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+                                  ),
+                                ],
                               ),
                       ),
                     ],
@@ -251,6 +351,97 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCoachDropdown() {
+    if (_coaches.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppTheme.cardColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Text('Nenhum coach disponível.', style: TextStyle(color: Colors.white54)),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: _selectedCoach == null
+            ? Border.all(color: Colors.orangeAccent.withOpacity(0.4), width: 1)
+            : Border.all(color: _hexToColor(_selectedCoach!['color_hex'] as String?).withOpacity(0.5), width: 1.5),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<Map<String, dynamic>>(
+          value: _selectedCoach,
+          isExpanded: true,
+          dropdownColor: AppTheme.cardColor,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          hint: const Text('Selecionar Coach', style: TextStyle(color: Colors.white54)),
+          icon: const Icon(Icons.keyboard_arrow_down, color: AppTheme.primaryTeal),
+          onChanged: (value) => setState(() => _selectedCoach = value),
+          selectedItemBuilder: (context) {
+            return _coaches.map((coach) {
+              final color = _hexToColor(coach['color_hex'] as String?);
+              return Row(
+                children: [
+                  Text(coach['icon_emoji'] as String? ?? '🤖', style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          coach['ai_coach_name'] as String,
+                          style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        Text(
+                          coach['description'] as String? ?? '',
+                          style: const TextStyle(color: Colors.white54, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            }).toList();
+          },
+          items: _coaches.map((coach) {
+            final color = _hexToColor(coach['color_hex'] as String?);
+            return DropdownMenuItem<Map<String, dynamic>>(
+              value: coach,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  children: [
+                    Text(coach['icon_emoji'] as String? ?? '🤖', style: const TextStyle(fontSize: 22)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            coach['ai_coach_name'] as String,
+                            style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                          Text(
+                            coach['description'] as String? ?? '',
+                            style: const TextStyle(color: Colors.white54, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
         ),
       ),
     );

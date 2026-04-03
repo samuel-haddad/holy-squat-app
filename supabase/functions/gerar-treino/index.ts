@@ -9,6 +9,77 @@ const corsHeaders = {
 
 const allowedSessionTypes = "Acessório, Acessórios/Blindagem, Calistenia, Cardio, Cardio-Mobilidade, Core Strength, Core/Prep, Crossfit, Descanso, Endurance, Força/Heavy, Força/Metcon, Força/Skill, Full Body Pump, Full Session, Ginástica/Metcon, Hipertrofia/Blindagem, LPO, LPO/Força/Metcon, LPO/Metcon, LPO/Potência, Mobilidade, Mobilidade Flow, Mobilidade-Cardio, Mobilidade-Core, Mobilidade-Inferiores, Mobilidade/Prep, Multi, Musculação, Musculação-Cardio, Musculação-Funcional, Musculação/Força, Natação, Prehab/Força, Prehab/Mobilidade, Recuperação Ativa, Reintrodução/FBB, Skill, Skill/Metcon";
 
+// =========================================================
+// Helper: gera conteúdo com o provider correto (Google ou Anthropic)
+// =========================================================
+async function generateWithProvider(
+  prompt: string,
+  provider: string,
+  llmModel: string,
+  genAI: any,
+  actionLabel: string,
+  maxTokens: number = 16000
+): Promise<any> {
+  if (provider === 'google') {
+    const model = genAI.getGenerativeModel(
+      { model: llmModel, generationConfig: { responseMimeType: "application/json" } }
+    );
+    const result = await model.generateContent([prompt]);
+    const usage = result.response.usageMetadata;
+    console.log(`[TOKENS] ${actionLabel} | model: ${llmModel} | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'}`);
+    return JSON.parse(result.response.text());
+
+  } else if (provider === 'anthropic') {
+    console.log(`[anthropic] Calling ${llmModel} (maxTok: ${maxTokens})`);
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': Deno.env.get('ANTHROPIC_API_KEY') ?? '',
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: llmModel,
+        max_tokens: maxTokens,
+        system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(`Anthropic API error (${response.status}): ${JSON.stringify(data)}`);
+    }
+
+    const stopReason = data.stop_reason;
+    console.log(`[TOKENS] ${actionLabel} | model: ${llmModel} | maxTok: ${maxTokens} | input: ${data.usage?.input_tokens} | output: ${data.usage?.output_tokens} | stop: ${stopReason}`);
+
+    let rawText: string = data.content[0].text.trim();
+    
+    // 1. Markdown strip
+    if (rawText.startsWith('```')) {
+      rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    }
+
+    // 2. Trailing comma fix (Claude Opus often leaves these at the end of large arrays)
+    rawText = rawText.replace(/,\s*([\}\]])/g, '$1');
+
+    try {
+      return JSON.parse(rawText);
+    } catch (e: any) {
+      console.error(`[JSON ERROR] Falha ao parsear resposta do Claude em ${actionLabel}`);
+      console.error(`[JSON PREVIEW] Primeiros 300: ${rawText.substring(0, 300)}`);
+      console.error(`[JSON PREVIEW] Últimos 300: ${rawText.substring(rawText.length - 300)}`);
+      throw new Error(`Invalid JSON from Claude at ${actionLabel}: ${e.message}`);
+    }
+
+  } else {
+    throw new Error(`Provider desconhecido: ${provider}`);
+  }
+}
+
+// =========================================================
+// Helper: query na base de conhecimento (sempre Google Embeddings)
+// =========================================================
 async function queryKnowledgeBase(queryText: string, genAI: any, supabaseClient: any) {
   if (!queryText) return "";
   try {
@@ -51,21 +122,37 @@ serve(async (req) => {
       plano_id,
       mesos_ja_gerados,
       actual_plan_summary_json,
-      // gerar_exercicios_semana params:
-      dias_semana,       // List of training days for ONE week (non-rest days only)
-      meso_context,      // { nome, objetivo, dataInicio, dataFim, semanaNum, totalSemanas, sessionsPerDay, whereTrain }
+      dias_semana,
+      meso_context,
+      ai_coach_name,  // NEW: nome do coach selecionado pelo usuário
     } = payload
 
+    // ── Sempre instanciar genAI para embeddings (knowledge base) ──
     const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY')!)
     const today = new Date().toISOString().split('T')[0];
-    const model = genAI.getGenerativeModel(
-      { model: "gemini-pro-latest", generationConfig: { responseMimeType: "application/json" } }
-    )
+
+    // ── Buscar configuração do coach na tabela ai_coach ────────────
+    let provider = 'google';
+    let llmModel = 'gemini-pro-latest';
+
+    if (ai_coach_name) {
+      const { data: coachData, error: coachError } = await supabaseClient
+        .from('ai_coach')
+        .select('llm_model, provider')
+        .eq('ai_coach_name', ai_coach_name)
+        .single();
+
+      if (coachError || !coachData) {
+        console.warn(`Coach '${ai_coach_name}' não encontrado. Usando Gemini padrão.`);
+      } else {
+        provider = coachData.provider;
+        llmModel = coachData.llm_model;
+        console.log(`Coach: ${ai_coach_name} | Model: ${llmModel} | Provider: ${provider}`);
+      }
+    }
 
     // =========================================================
     // AÇÃO: criar_plano_fase1
-    // 1 chamada Gemini — retorna estrutura + visaoSemanal (sem exercícios)
-    // Output pequeno: ~30-60K tokens → sem WORKER_LIMIT
     // =========================================================
     if (acao === 'criar_plano_fase1') {
       const sixMonthsAgo = new Date();
@@ -107,21 +194,18 @@ serve(async (req) => {
         ${knowledgeContext}
 
         [MISSÃO — APENAS ESTRUTURA E CALENDÁRIO]
-        Gere SOMENTE o planejamento estrutural. Os exercícios detalhados serão gerados depois semana a semana.
-        Retorne APENAS estes campos:
+        Gere SOMENTE o planejamento estrutural. Os exercícios detalhados serão gerados por semana separadamente.
 
-        1. analiseMacro: análise do histórico com gráficos (volume, PRs, frequência).
+        1. analiseMacro: análise do histórico com gráficos.
         2. analiseMesocicloAnterior: { "aderencia": "", "evolucao": "", "texto": "", "graficos": [] }
         3. visaoGeralPlano:
-           - objetivoPrincipal, duracaoSemanas, fases
            - blocos: TODOS os mesociclos com nome, duracaoSemanas, foco.
-           - mesociclo1_consolidado: 1 linha por semana do Meso 1 (seg/ter/qua/qui/sex/sab/dom = tipo de treino).
+           - mesociclo1_consolidado: 1 linha por semana do Meso 1.
         4. visaoSemanal: TODOS os 7 dias de TODAS as semanas do Mesociclo 1.
-           - 7 dias/semana sem exceção (Segunda a Domingo).
            - isDescansoAtivo: true para dias de repouso.
-           - week = número intra-mesociclo (começa em 1).
-           - ANO OBRIGATÓRIO: ${today.split('-')[0]}.
-        5. exerciciosDetalhados: [] (VAZIO — será gerado por semana separadamente)
+           - week = intra-mesociclo (começa em 1).
+           - ANO: ${today.split('-')[0]}.
+        5. exerciciosDetalhados: [] (VAZIO)
 
         [FORMATO — JSON PURO SEM MARKDOWN]
         {
@@ -138,23 +222,15 @@ serve(async (req) => {
         }
       `;
 
-      console.log("criar_plano_fase1: gerando estrutura + visaoSemanal...");
-      const result = await model.generateContent([prompt]);
-      const usage = result.response.usageMetadata;
-      console.log(`[TOKENS] criar_plano_fase1 | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'} | total: ${usage?.totalTokenCount ?? '?'}`);
-      const planData = JSON.parse(result.response.text());
+      console.log(`criar_plano_fase1 | coach: ${ai_coach_name ?? 'default'}`);
+      const planData = await generateWithProvider(prompt, provider, llmModel, genAI, 'criar_plano_fase1', 16000);
       return new Response(JSON.stringify(planData), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 })
     }
 
     // =========================================================
     // AÇÃO: gerar_exercicios_semana
-    // 1 chamada Gemini — gera exercícios de UMA semana (~5 dias × ~8 exercícios)
-    // Output pequeno: ~8-15K tokens → ZERO probabilidade de WORKER_LIMIT
-    // Usada tanto em criar_plano quanto em gerar_proximo_meso
     // =========================================================
     else if (acao === 'gerar_exercicios_semana') {
-      // dias_semana: array de { date, day, session_type, focoPrincipal, week, mesocycle }
-      // meso_context: { nome, objetivo, dataInicio, dataFim, semanaNum, totalSemanas, sessionsPerDay, whereTrain }
       const ctx = meso_context || {};
       const diasStr = (dias_semana || [])
         .map((d: any) => `  - ${d.date} (${d.day}) | ${d.session_type} | ${d.focoPrincipal} | semana ${d.week}`)
@@ -165,70 +241,102 @@ serve(async (req) => {
         [DATA DE HOJE: ${today}]
 
         [CONTEXTO]
-        - Objetivo do macrociclo: ${ctx.objetivo}
+        - Objetivo: ${ctx.objetivo}
         - Mesociclo: ${ctx.nome} | Semana ${ctx.semanaNum}/${ctx.totalSemanas}
-        - Foco desta semana: ${ctx.focoSemana || 'Conforme planejamento'}
-        - Local de treino: ${JSON.stringify(ctx.whereTrain)}
+        - Foco: ${ctx.focoSemana || 'Conforme planejamento'}
+        - Local: ${JSON.stringify(ctx.whereTrain)}
         - Sessões/dia: ${ctx.sessionsPerDay || 1}
 
-        [DIAS DE TREINO DESTA SEMANA — use exatamente estas datas]
+        [DIAS DE TREINO DESTA SEMANA]
 ${diasStr}
 
         [MISSÃO]
-        Gere exercícios COMPLETOS para cada dia de treino listado acima.
-        - Para cada dia: gere TODOS os exercícios da sessão (aquecimento, principal, metcon, acessório, etc.)
-        - NÃO omita exercícios. Seja detalhado e completo.
-        - workout_idx: índice sequencial do exercício dentro da sessão (começa em 1).
-        - session: número da sessão do dia (normalmente 1, a menos que haja dupla sessão).
-        - week = ${ctx.semanaNum} (semana intra-mesociclo).
+        Gere exercícios COMPLETOS para cada dia de treino listado.
+        - workout_idx: índice sequencial por sessão (começa em 1).
+        - week = ${ctx.semanaNum} (intra-mesociclo).
         - mesocycle = "${ctx.nome}".
-        - session_type OBRIGATÓRIO (use apenas tipos da lista): [${allowedSessionTypes}]
-        - ANO OBRIGATÓRIO: ${today.split('-')[0]}.
+        - session_type (use apenas): [${allowedSessionTypes}]
+        - ANO: ${today.split('-')[0]}.
 
         [FORMATO — JSON PURO SEM MARKDOWN]
         {
           "exerciciosDetalhados": [
             {
-              "date": "YYYY-MM-DD",
-              "week": ${ctx.semanaNum},
-              "mesocycle": "${ctx.nome}",
-              "day": "Segunda-feira",
-              "session": 1,
-              "session_type": "string",
-              "duration": 60,
-              "workout_idx": 1,
-              "exercise": "nome do exercício",
-              "exercise_title": "título do bloco",
-              "exercise_group": "LPO|Força|Cardio|Mobilidade|etc",
-              "exercise_type": "Força|Técnica|Metcon|Acessório|etc",
-              "sets": 0,
-              "details": "séries × reps @ % ou descrição",
-              "time_exercise": 0,
-              "ex_unit": "min",
-              "rest": 0,
-              "rest_unit": "seg",
-              "rest_round": 0,
-              "rest_round_unit": "min",
-              "total_time": 0,
-              "location": "Academia",
-              "stage": "warmup|workout|cooldown",
-              "adaptacaoLesao": ""
+              "date": "YYYY-MM-DD", "week": ${ctx.semanaNum}, "mesocycle": "${ctx.nome}",
+              "day": "string", "session": 1, "session_type": "string", "duration": 60,
+              "workout_idx": 1, "exercise": "string", "exercise_title": "string",
+              "exercise_group": "string", "exercise_type": "string", "sets": 0,
+              "details": "string", "time_exercise": 0, "ex_unit": "min",
+              "rest": 0, "rest_unit": "seg", "rest_round": 0, "rest_round_unit": "min",
+              "total_time": 0, "location": "string", "stage": "workout", "adaptacaoLesao": ""
             }
           ]
         }
       `;
 
-      console.log(`gerar_exercicios_semana: ${ctx.nome} semana ${ctx.semanaNum}/${ctx.totalSemanas}...`);
-      const result = await model.generateContent([prompt]);
-      const usage = result.response.usageMetadata;
-      console.log(`[TOKENS] semana ${ctx.semanaNum}/${ctx.totalSemanas} | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'} | total: ${usage?.totalTokenCount ?? '?'}`);
-      const exercData = JSON.parse(result.response.text());
-      return new Response(JSON.stringify(exercData), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 })
+      console.log(`gerar_exercicios_semana: ${ctx.nome} semana ${ctx.semanaNum}/${ctx.totalSemanas} | coach: ${ai_coach_name ?? 'default'}`);
+      
+      // Prompt otimizado para economia extrema de tokens (chaves curtas)
+      const compactPrompt = `
+        Você é o AI Coach. Gere os exercícios para a Semana ${ctx.semanaNum} do meso "${ctx.nome}".
+        [FORMATO COMPACTO - JSON PURO]
+        {
+          "exs": [
+            {
+              "dt": "YYYY-MM-DD", "dy": "Dia", "se": 1, "st": "tipo", "du": 60,
+              "idx": 1, "ex": "nome", "et": "titulo", "eg": "grupo", "ey": "tipo_ex",
+              "ts": 3, "de": "detalhes", "te": 0, "eu": "min", "re": 60, "ru": "seg",
+              "rr": 0, "rru": "min", "tt": 0, "lo": "box", "sg": "workout", "al": ""
+            }
+          ]
+        }
+        
+        [REGRAS]
+        - Use APENAS as chaves curtas acima.
+        - Seja conciso em "de" (detalhes).
+        - Dias de treino:
+${diasStr}
+      `;
+
+      const responseData = await generateWithProvider(compactPrompt, provider, llmModel, genAI, `semana_${ctx.semanaNum}`, 16000);
+      
+      // Expansão: Mapeia as chaves curtas de volta para o formato longo esperado pelo App
+      // E reinjeta os campos constantes (week, mesocycle)
+      const fullExercicios = (responseData.exs || []).map((short: any) => ({
+        date: short.dt,
+        week: ctx.semanaNum,
+        mesocycle: ctx.nome,
+        day: short.dy,
+        session: short.se,
+        session_type: short.st,
+        duration: short.du,
+        workout_idx: short.idx,
+        exercise: short.ex,
+        exercise_title: short.et,
+        exercise_group: short.eg,
+        exercise_type: short.ey,
+        sets: short.ts,
+        details: short.de,
+        time_exercise: short.te,
+        ex_unit: short.eu,
+        rest: short.re,
+        rest_unit: short.ru,
+        rest_round: short.rr,
+        rest_round_unit: short.rru,
+        total_time: short.tt,
+        location: short.lo,
+        stage: short.sg,
+        adaptacaoLesao: short.al
+      }));
+
+      return new Response(JSON.stringify({ "exerciciosDetalhados": fullExercicios }), { 
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, 
+        status: 200 
+      });
     }
 
     // =========================================================
     // AÇÃO: gerar_proximo_meso_fase1
-    // 1 chamada Gemini — estrutura + visaoSemanal do próximo meso
     // =========================================================
     else if (acao === 'gerar_proximo_meso_fase1') {
       const planRes = await supabaseClient.from('training_plans').select('*').eq('id', plano_id || '').single();
@@ -239,12 +347,10 @@ ${diasStr}
       twelveMonthsBefore.setFullYear(twelveMonthsBefore.getFullYear() - 1);
       const preMacroDateStr = twelveMonthsBefore.toISOString().split('T')[0];
 
-      const [prRes, benchRes, benchDefRes, preWorkoutsRes, preLogsRes, postWorkoutsRes, postLogsRes, profileRes] = await Promise.all([
+      const [prRes, benchRes, benchDefRes, postWorkoutsRes, postLogsRes, profileRes] = await Promise.all([
         supabaseClient.from('pr_log').select('exercise, value, unit, date').eq('user_email', email_utilizador),
         supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador),
         supabaseClient.from('benchmarks').select('*'),
-        supabaseClient.from('workouts').select('date, exercise, exercise_title, sets').eq('user_email', email_utilizador).gte('date', preMacroDateStr).lt('date', startDate).order('date', { ascending: false }).limit(50),
-        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, pse').eq('user_email', email_utilizador).gte('workout_date', preMacroDateStr).lt('workout_date', startDate).order('workout_date', { ascending: false }).limit(50),
         supabaseClient.from('workouts').select('date, exercise, exercise_title, sets').eq('user_email', email_utilizador).gte('date', startDate).lte('date', today).order('date', { ascending: false }).limit(80),
         supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, pse').eq('user_email', email_utilizador).gte('workout_date', startDate).lte('workout_date', today).order('workout_date', { ascending: false }).limit(80),
         supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single()
@@ -262,7 +368,6 @@ ${diasStr}
       const proximoMeso = todosOsMesos.find((b: any) => !mesosJaGeradosArr.includes(b.mesociclo));
       const duracaoProximoMeso = proximoMeso?.duracaoSemanas || 4;
       const nomeProximoMeso = proximoMeso?.mesociclo || 'Próximo Meso';
-
       const profile = profileRes.data || {};
 
       const prompt = `
@@ -271,7 +376,7 @@ ${diasStr}
 
         [PLANO MACRO]
         - Período: ${planData.start_date} a ${planData.end_date}
-        - Todos os mesociclos: ${JSON.stringify(todosOsMesos)}
+        - Todos os mesos: ${JSON.stringify(todosOsMesos)}
         - Já gerados: ${mesosJaGeradosArr.join(', ') || 'Nenhum'}
         - PRÓXIMO: "${nomeProximoMeso}" — ${duracaoProximoMeso} semanas | ${proximoMeso?.foco || ''}
 
@@ -279,20 +384,15 @@ ${diasStr}
         - Nome: ${profile.name} | Local: ${JSON.stringify(profile.where_train)}
         - Sessões/dia: ${profile.sessions_per_day}
         - PRs: ${JSON.stringify(prRes.data || [])}
-        - Benchmarks: ${JSON.stringify(benchRes.data || [])}
-        - Progresso macro (treinos realizados): ${JSON.stringify(postWorkoutsRes.data || [])}
+        - Progresso no macro: ${JSON.stringify(postWorkoutsRes.data || [])}
         - Logs PSE: ${JSON.stringify(postLogsRes.data || [])}
 
-        [MISSÃO — ANÁLISE + ESTRUTURA + CALENDÁRIO (sem exercícios detalhados)]
-        1. analiseMesocicloAnterior: análise profunda do progresso (aderência, cargas, PSE).
-        2. visaoGeralPlano: blocos de todos os mesos (atualize se necessário) + mesociclo1_consolidado
-           (${duracaoProximoMeso} linhas — uma por semana do próximo meso).
-        3. visaoSemanal: TODOS os 7 dias × ${duracaoProximoMeso} semanas = ${duracaoProximoMeso * 7} entradas.
-           - week = intra-mesociclo (começa em 1).
-           - mesocycle = "${nomeProximoMeso}".
-           - Datas obrigatoriamente entre ${planData.start_date} e ${planData.end_date}.
-           - ANO: ${today.split('-')[0]}.
-        4. exerciciosDetalhados: [] (VAZIO — gerado por semana separadamente)
+        [MISSÃO — ESTRUTURA + CALENDÁRIO (sem exercícios)]
+        Retorne JSON com analiseMacro, analiseMesocicloAnterior, visaoGeralPlano,
+        visaoSemanal (7 dias × ${duracaoProximoMeso} semanas), exerciciosDetalhados: [].
+        - week = intra-mesociclo (começa em 1).
+        - mesocycle = "${nomeProximoMeso}".
+        - ANO: ${today.split('-')[0]}.
 
         [FORMATO — JSON PURO]
         {
@@ -305,11 +405,8 @@ ${diasStr}
         }
       `;
 
-      console.log("gerar_proximo_meso_fase1: estrutura...");
-      const result = await model.generateContent([prompt]);
-      const usage = result.response.usageMetadata;
-      console.log(`[TOKENS] gerar_proximo_meso_fase1 | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'} | total: ${usage?.totalTokenCount ?? '?'}`);
-      const fase1Data = JSON.parse(result.response.text());
+      console.log(`gerar_proximo_meso_fase1 | coach: ${ai_coach_name ?? 'default'}`);
+      const fase1Data = await generateWithProvider(prompt, provider, llmModel, genAI, 'proximo_meso_fase1', 16000);
       return new Response(JSON.stringify(fase1Data), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 })
     }
 

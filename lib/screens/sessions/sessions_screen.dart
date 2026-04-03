@@ -231,6 +231,33 @@ class _SessionsScreenState extends State<SessionsScreen> {
       ),
     );
   }
+  Color _coachColor(String? coachName) {
+    if (coachName == null) return Colors.transparent;
+    if (coachName.toLowerCase().contains('gemini')) return const Color(0xFF1565C0);
+    if (coachName.toLowerCase().contains('claude')) return const Color(0xFF6A1B9A);
+    return Colors.grey.shade700;
+  }
+
+  Widget _buildCoachTag(String? coachName) {
+    if (coachName == null || coachName.isEmpty) return const SizedBox.shrink();
+    final color = _coachColor(coachName);
+    final emoji = coachName.toLowerCase().contains('gemini') ? '🔵' : coachName.toLowerCase().contains('claude') ? '🟣' : '🤖';
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.4), width: 1),
+      ),
+      child: Text(
+        '$emoji $coachName',
+        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600),
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
   Widget _buildSessionTile(Map<String, dynamic> session) {
     // Parse Supabase data fields
     final dayName = session['day'] ?? 'DAY';
@@ -238,7 +265,8 @@ class _SessionsScreenState extends State<SessionsScreen> {
     final sessionType = session['session_type'] ?? 'Session';
     final sessionNum = session['session']?.toString() ?? '1';
     final sessionKey = session['date_session_sessiontype_key'] ?? '';
-    
+    final aiCoachName = session['ai_coach_name'] as String?;
+
     // Parse Date for display formatting if valid date
     String formattedDate = dateStr;
     try {
@@ -320,6 +348,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                       fontSize: 14,
                     ),
                   ),
+                  _buildCoachTag(aiCoachName),
                 ],
               ),
             ),

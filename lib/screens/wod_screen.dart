@@ -166,6 +166,13 @@ class _WodScreenState extends State<WodScreen> {
     );
   }
 
+  Color _coachColor(String? coachName) {
+    if (coachName == null) return Colors.transparent;
+    if (coachName.toLowerCase().contains('gemini')) return const Color(0xFF1565C0);
+    if (coachName.toLowerCase().contains('claude')) return const Color(0xFF6A1B9A);
+    return Colors.grey.shade700;
+  }
+
   Widget _buildWodCard(BuildContext context, Map<String, dynamic> session) {
     // Parse Supabase data fields
     final dayName = session['day'] ?? 'DAY';
@@ -173,6 +180,7 @@ class _WodScreenState extends State<WodScreen> {
     final sessionType = session['session_type'] ?? 'Session';
     final sessionNum = session['session']?.toString() ?? '1';
     final sessionKey = session['date_session_sessiontype_key'] ?? '';
+    final aiCoachName = session['ai_coach_name'] as String?;
     
     // Parse Date for display formatting
     String formattedDate = dateStr;
@@ -251,6 +259,20 @@ class _WodScreenState extends State<WodScreen> {
                   color: AppTheme.secondaryTextColor,
                 ),
               ),
+              if (aiCoachName != null && aiCoachName.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _coachColor(aiCoachName).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _coachColor(aiCoachName).withOpacity(0.5), width: 1),
+                  ),
+                  child: Text(
+                    aiCoachName.contains('Gemini') ? '🔵 Gemini' : aiCoachName.contains('Claude') ? '🟣 Claude' : '🤖 AI',
+                    style: TextStyle(color: _coachColor(aiCoachName), fontSize: 9, fontWeight: FontWeight.bold),
+                  ),
+                ),
             ],
           ),
         ),

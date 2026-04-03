@@ -42,6 +42,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final String sessionNum =
         widget.sessionData['session_num']?.toString() ?? '1';
     final String formattedDate = DateFormat('dd/MM/yyyy').format(date);
+    final String? aiCoachName = widget.sessionData['ai_coach_name'] as String?;
+
+    Color coachColor(String? name) {
+      if (name == null) return Colors.grey;
+      if (name.toLowerCase().contains('gemini')) return const Color(0xFF1565C0);
+      if (name.toLowerCase().contains('claude')) return const Color(0xFF6A1B9A);
+      return Colors.grey.shade600;
+    }
 
     String getSessionIcon(String? type) {
       if (type == null) return 'assets/sessions_icons/crossfit_session_icon.png';
@@ -133,6 +141,25 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                             fontSize: 14,
                           ),
                         ),
+                        if (aiCoachName != null && aiCoachName.isNotEmpty) ...[  
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: coachColor(aiCoachName).withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: coachColor(aiCoachName).withOpacity(0.45), width: 1),
+                            ),
+                            child: Text(
+                              aiCoachName.contains('Gemini') ? '🔵 $aiCoachName' : aiCoachName.contains('Claude') ? '🟣 $aiCoachName' : '🤖 $aiCoachName',
+                              style: TextStyle(
+                                color: coachColor(aiCoachName),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
