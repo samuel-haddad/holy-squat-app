@@ -9,6 +9,24 @@ const corsHeaders = {
 
 const allowedSessionTypes = "Acessório, Acessórios/Blindagem, Calistenia, Cardio, Cardio-Mobilidade, Core Strength, Core/Prep, Crossfit, Descanso, Endurance, Força/Heavy, Força/Metcon, Força/Skill, Full Body Pump, Full Session, Ginástica/Metcon, Hipertrofia/Blindagem, LPO, LPO/Força/Metcon, LPO/Metcon, LPO/Potência, Mobilidade, Mobilidade Flow, Mobilidade-Cardio, Mobilidade-Core, Mobilidade-Inferiores, Mobilidade/Prep, Multi, Musculação, Musculação-Cardio, Musculação-Funcional, Musculação/Força, Natação, Prehab/Força, Prehab/Mobilidade, Recuperação Ativa, Reintrodução/FBB, Skill, Skill/Metcon";
 
+const DATA_CONTRACT = `
+[CONTRATO DE CAMPOS - OBRIGATÓRIOS]
+- ts (Sets): Número de séries/rounds. Nunca null.
+- re/ru (Rest/Unit): Descanso entre séries (ex: 60, "seg"). Se não houver, use 0.
+- te/eu (Time/Unit): Tempo de execução ESTIMADO por série (ex: 2, "min" ou 30, "seg"). NUNCA 0.
+- tt (Total Time): Tempo total estimado do bloco (sets * tempo_exec + descansos) em minutos. NUNCA 0.
+- idx (Index): Ordem SEQUENCIAL GLOBAL do exercício na sessão (1, 2, 3...).
+- al (Adaptation): Se o atleta tiver lesões ou limitações, descreva a adaptação aqui.
+- de (Details): Prescrição técnica (reps, carga, intenção).
+- sg (Stage): O estágio do operacional. Use: "warmup", "skill", "strength", "workout" ou "cooldown".
+`;
+
+const FEW_SHOT_EXAMPLES = `
+[EXEMPLOS DE ALTA QUALIDADE]
+{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Mobilidade-Cardio","du":45,"idx":1,"ex":"Alongamento total","et":"Warmup","eg":"Full body","ey":"Mobilidade","ts":1,"de":"Foco em quadril e ombros","te":5,"eu":"min","re":0,"ru":"min","rr":0,"rru":"min","tt":5,"lo":"Casa","sg":"warmup","al":""}
+{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força/Skill","du":60,"idx":2,"ex":"Back Squat","et":"Força de Pernas","eg":"Lower Body","ey":"Força","ts":4,"de":"4x6 @75% 1RM","te":2,"eu":"min","re":90,"ru":"seg","rr":0,"rru":"min","tt":12,"lo":"Box","sg":"strength","al":""}
+`;
+
 // =========================================================
 // Helper: gera conteúdo com o provider correto (Google ou Anthropic)
 // =========================================================
@@ -124,7 +142,8 @@ serve(async (req) => {
       actual_plan_summary_json,
       dias_semana,
       meso_context,
-      ai_coach_name,  // NEW: nome do coach selecionado pelo usuário
+      ai_coach_name,
+      performance_stats,
     } = payload
 
     // ── Sempre instanciar genAI para embeddings (knowledge base) ──
@@ -159,21 +178,31 @@ serve(async (req) => {
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
       const dateStr = sixMonthsAgo.toISOString().split('T')[0];
 
-      const [profileRes, prRes, benchRes, benchDefRes, workoutsRes, logsRes] = await Promise.all([
+      const [profileRes, prRes, benchRes, benchDefRes, workoutsRes, logsRes, athleteStatsRes] = await Promise.all([
         supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single(),
         supabaseClient.from('pr_log').select('*').eq('user_email', email_utilizador),
         supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador),
         supabaseClient.from('benchmarks').select('*'),
         supabaseClient.from('workouts').select('date, exercise, exercise_title, sets, details').eq('user_email', email_utilizador).gte('date', dateStr).order('date', { ascending: false }).limit(150),
-        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, cardio_result, cardio_unit').eq('user_email', email_utilizador).gte('workout_date', dateStr).order('workout_date', { ascending: false }).limit(150)
+        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, cardio_result, cardio_unit').eq('user_email', email_utilizador).gte('workout_date', dateStr).order('workout_date', { ascending: false }).limit(150),
+        supabaseClient.rpc('get_athlete_planning_stats', { p_email: email_utilizador })
       ]);
 
       const profile = profileRes.data || {};
+      const athleteStats = payload.athlete_stats_summary || (athleteStatsRes?.data?.kpis) || {};
       const knowledgeContext = await queryKnowledgeBase(diretrizes_plano?.objetivo || "", genAI, supabaseClient);
 
       const prompt = `
         Você é o AI Coach do Holy Squat App especialista em periodização de CrossFit.
         [DATA DE HOJE: ${today}]
+
+        [KPIs DETERMINÍSTICOS DO ATLETA - USE ESTES DADOS PARA ANÁLISE]
+        - Aderência Global: ${athleteStats.adherence}%
+        - PSE Médio (10 sessões): ${athleteStats.avg_pse}
+        - Power Index: ${athleteStats.power_index}
+        - Melhor Evolução: ${athleteStats.best_evolution?.exercise} (+${athleteStats.best_evolution?.percent}%)
+        - Streak Atual: ${athleteStats.streak} dias
+        - Frequência Semanal: ${athleteStats.weekly_freq} treinos/semana
 
         [PERFIL DO ATLETA]
         - Nome: ${profile.name}
@@ -276,9 +305,12 @@ ${diasStr}
 
       console.log(`gerar_exercicios_semana: ${ctx.nome} semana ${ctx.semanaNum}/${ctx.totalSemanas} | coach: ${ai_coach_name ?? 'default'}`);
       
-      // Prompt otimizado para economia extrema de tokens (chaves curtas)
       const compactPrompt = `
         Você é o AI Coach. Gere os exercícios para a Semana ${ctx.semanaNum} do meso "${ctx.nome}".
+        
+        ${DATA_CONTRACT}
+        ${FEW_SHOT_EXAMPLES}
+
         [FORMATO COMPACTO - JSON PURO]
         {
           "exs": [
@@ -291,10 +323,15 @@ ${diasStr}
           ]
         }
         
-        [REGRAS]
-        - Use APENAS as chaves curtas acima.
-        - Seja conciso em "de" (detalhes).
-        - Dias de treino:
+        [REGRAS CRÍTICAS DE ORDEM E FLUXO]
+        1. Toda sessão deve seguir a ordem lógica: warmup -> skill -> strength -> workout -> cooldown.
+        2. Nem toda sessão precisa de todos os estágios, mas os que existirem devem seguir a ordem acima.
+        3. O campo 'idx' deve ser ÚNICO e CRESCENTE para toda a sessão (ex: warmup idx 1, skill idx 2, strength 3, workout idx 4).
+        4. PREENCHA TODOS OS CAMPOS. Não retorne 0 ou null em re/ru/te/eu se a informação for relevante.
+        5. Se ts > 1, o campo rest (re) DEVE ser > 0.
+        6. Use APENAS as chaves curtas.
+        7. O campo 'tt' (total_time) DEVE ser a soma estimada do bloco. NUNCA use 0 para exercícios ativos.
+        8. Dias de treino:
 ${diasStr}
       `;
 
@@ -347,14 +384,17 @@ ${diasStr}
       twelveMonthsBefore.setFullYear(twelveMonthsBefore.getFullYear() - 1);
       const preMacroDateStr = twelveMonthsBefore.toISOString().split('T')[0];
 
-      const [prRes, benchRes, benchDefRes, postWorkoutsRes, postLogsRes, profileRes] = await Promise.all([
+      const [prRes, benchRes, benchDefRes, postWorkoutsRes, postLogsRes, profileRes, athleteStatsRes] = await Promise.all([
         supabaseClient.from('pr_log').select('exercise, value, unit, date').eq('user_email', email_utilizador),
         supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador),
         supabaseClient.from('benchmarks').select('*'),
         supabaseClient.from('workouts').select('date, exercise, exercise_title, sets').eq('user_email', email_utilizador).gte('date', startDate).lte('date', today).order('date', { ascending: false }).limit(80),
         supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, pse').eq('user_email', email_utilizador).gte('workout_date', startDate).lte('workout_date', today).order('workout_date', { ascending: false }).limit(80),
-        supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single()
+        supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single(),
+        supabaseClient.rpc('get_athlete_planning_stats', { p_email: email_utilizador })
       ]);
+
+      const athleteStats = payload.athlete_stats_summary || (athleteStatsRes?.data?.kpis) || {};
 
       let planSummary: any = {};
       try {
@@ -374,6 +414,14 @@ ${diasStr}
         Você é o AI Coach do Holy Squat App gerando o PRÓXIMO MESOCICLO.
         [DATA DE HOJE: ${today}]
 
+        [KPIs DETERMINÍSTICOS DO ATLETA - USE ESTES DADOS PARA ANÁLISE]
+        - Aderência Global: ${athleteStats.adherence}%
+        - PSE Médio (10 sessões): ${athleteStats.avg_pse}
+        - Power Index: ${athleteStats.power_index}
+        - Melhor Evolução: ${athleteStats.best_evolution?.exercise} (+${athleteStats.best_evolution?.percent}%)
+        - Streak Atual: ${athleteStats.streak} dias
+        - Frequência Semanal: ${athleteStats.weekly_freq} treinos/semana
+
         [PLANO MACRO]
         - Período: ${planData.start_date} a ${planData.end_date}
         - Todos os mesos: ${JSON.stringify(todosOsMesos)}
@@ -387,9 +435,20 @@ ${diasStr}
         - Progresso no macro: ${JSON.stringify(postWorkoutsRes.data || [])}
         - Logs PSE: ${JSON.stringify(postLogsRes.data || [])}
 
+        [KPIs DETERMINÍSTICOS DO CICLO ANTERIOR]
+        ${JSON.stringify(performance_stats || {})}
+        (Se os dados acima estiverem vazios ou zerados, o atleta não treinou ou não registrou logs. Nesse caso, a analiseMesocicloAnterior.texto deve dizer que não há dados de progresso para este ciclo).
+
         [MISSÃO — ESTRUTURA + CALENDÁRIO (sem exercícios)]
-        Retorne JSON com analiseMacro, analiseMesocicloAnterior, visaoGeralPlano,
-        visaoSemanal (7 dias × ${duracaoProximoMeso} semanas), exerciciosDetalhados: [].
+        Retorne JSON com:
+        1. analiseMacro: Perspectiva do plano todo.
+        2. analiseMesocicloAnterior: 
+           - texto: Uma análise motivadora e técnica BASEADA nos KPIs de performance_stats acima.
+           - kpis: OS MESMOS kpis recebidos no performance_stats.
+           - charts: OS MESMOS charts recebidos no performance_stats.
+        3. visaoGeralPlano: Atualização dos blocos e consolidação.
+        4. visaoSemanal: Calendário detalhado.
+        
         - week = intra-mesociclo (começa em 1).
         - mesocycle = "${nomeProximoMeso}".
         - ANO: ${today.split('-')[0]}.
@@ -397,7 +456,11 @@ ${diasStr}
         [FORMATO — JSON PURO]
         {
           "analiseMacro": { "analise": "string", "historico": { "texto": "string", "graficos": [] } },
-          "analiseMesocicloAnterior": { "aderencia": "string", "evolucao": "string", "texto": "string", "graficos": [] },
+          "analiseMesocicloAnterior": { 
+            "texto": "string", 
+            "kpis": { "completion_rate": 0, "weekly_freq": 0, "neglected_type": "", "load_delta": 0, "pr_recovery": 0 },
+            "charts": { "planned_vs_realized": [], "load_vs_pse": [], "volume_by_group": [] }
+          },
           "visaoGeralPlano": { "objetivoPrincipal": "string", "duracaoSemanas": 0, "fases": [], "blocos": [], "mesociclo1_consolidado": [] },
           "visaoSemanal": [{ "date": "YYYY-MM-DD", "day": "string", "session_type": "string", "focoPrincipal": "string", "isDescansoAtivo": false, "mesocycle": "${nomeProximoMeso}", "week": 1 }],
           "exerciciosDetalhados": [],

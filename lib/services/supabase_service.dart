@@ -37,7 +37,6 @@ class SupabaseService {
           UserState.goal.value = response['training_goal'];
         
         // New Skill & Training fields (defensive checks)
-        if (response['ai_coach_id'] != null) UserState.aiCoachId.value = response['ai_coach_id'];
         if (response['anamnesis'] != null) UserState.anamnesis.value = response['anamnesis'];
         if (response['active_hours_value'] != null) UserState.activeHoursValue.value = (response['active_hours_value'] as num).toDouble();
         if (response['active_hours_unit'] != null) UserState.activeHoursUnit.value = response['active_hours_unit'];
@@ -99,7 +98,6 @@ class SupabaseService {
       'weight_unit': UserState.weightUnit.value,
       'favorite_sport': UserState.sport.value,
       'training_goal': UserState.goal.value,
-      'ai_coach_id': UserState.aiCoachId.value,
       'anamnesis': UserState.anamnesis.value,
       'active_hours_value': UserState.activeHoursValue.value,
       'active_hours_unit': UserState.activeHoursUnit.value,
@@ -258,7 +256,7 @@ class SupabaseService {
         List<Map<String, dynamic>>.from(response);
 
     // Group workouts and filter logs by user email and done status
-    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    final Map<String, List<Map<String, dynamic>>> groupedUnsorted = {};
     for (var workout in workoutsList) {
       // Safely handle workouts_logs which may come as a List or Map from Supabase join
       final rawLogs = workout['workouts_logs'];
@@ -281,11 +279,29 @@ class SupabaseService {
       workout['filtered_logs'] = logs;
 
       final stage = workout['stage']?.toString().toUpperCase() ?? 'EXERCISE';
-      if (!grouped.containsKey(stage)) {
-        grouped[stage] = [];
+      if (!groupedUnsorted.containsKey(stage)) {
+        groupedUnsorted[stage] = [];
       }
-      grouped[stage]!.add(workout);
+      groupedUnsorted[stage]!.add(workout);
     }
+
+    // Sort according to canonical order
+    const canonicalOrder = ['WARMUP', 'SKILL', 'STRENGTH', 'WORKOUT', 'COOLDOWN'];
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    
+    // First, add stages in canonical order if they exist
+    for (var stage in canonicalOrder) {
+      if (groupedUnsorted.containsKey(stage)) {
+        grouped[stage] = groupedUnsorted[stage]!;
+      }
+    }
+    
+    // Then, add any other stages that might exist
+    groupedUnsorted.forEach((key, value) {
+      if (!canonicalOrder.contains(key)) {
+        grouped[key] = value;
+      }
+    });
 
     return grouped;
   }
@@ -464,15 +480,24 @@ class SupabaseService {
     UserState.stravaConnected.value = false;
   }
 
-  static Future<Map<String, dynamic>?> fetchLatestTrainingPlan() async {
+  static Future<Map<String, dynamic>?> fetchLatestTrainingPlan({String? aiCoachName}) async {
     final user = client.auth.currentUser;
     if (user == null) return null;
 
     try {
-      final response = await client
+      var query = client
           .from('training_plans')
           .select()
-          .eq('user_id', user.id)
+          .eq('user_id', user.id);
+      
+      if (aiCoachName != null) {
+        query = query.eq('ai_coach_name', aiCoachName);
+      } else {
+        // Fallback para planos antigos sem coach
+        query = query.eq('ai_coach_name', 'Human Coach');
+      }
+
+      final response = await query
           .order('created_at', ascending: false)
           .limit(1)
           .maybeSingle();
@@ -483,7 +508,7 @@ class SupabaseService {
     }
   }
 
-  static Future<String> saveTrainingPlan(Map<String, dynamic> planData) async {
+  static Future<String> saveTrainingPlan(Map<String, dynamic> planData, {String? aiCoachName}) async {
     final user = client.auth.currentUser;
     if (user == null) return '';
 
@@ -491,6 +516,7 @@ class SupabaseService {
       final response = await client.from('training_plans').insert({
         ...planData,
         'user_id': user.id,
+        'ai_coach_name': aiCoachName ?? 'Human Coach',
       }).select('id').single();
       return response['id'] as String;
     } catch (e) {

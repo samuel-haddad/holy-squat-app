@@ -27,8 +27,6 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
   late TextEditingController _sportController;
 
   // Skills & Training Section
-  int? _selectedAiCoachId;
-  List<Map<String, dynamic>> _aiCoaches = [];
   late TextEditingController _anamnesisController;
   late TextEditingController _activeHoursController;
   late String _activeHoursUnit;
@@ -50,25 +48,12 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     _goalController = TextEditingController(text: UserState.goal.value);
     _sportController = TextEditingController(text: UserState.sport.value);
 
-    _selectedAiCoachId = UserState.aiCoachId.value;
     _anamnesisController = TextEditingController(text: UserState.anamnesis.value);
     _activeHoursController = TextEditingController(text: UserState.activeHoursValue.value.toString());
     _activeHoursUnit = UserState.activeHoursUnit.value;
     _sessionsPerDayController = TextEditingController(text: UserState.sessionsPerDay.value.toString());
     _selectedWhere = List<String>.from(UserState.whereTrain.value);
     _additionalInfoController = TextEditingController(text: UserState.additionalInfo.value);
-
-    _loadAiCoaches();
-  }
-
-  Future<void> _loadAiCoaches() async {
-    final coaches = await SupabaseService.getAICoaches();
-    setState(() {
-      _aiCoaches = coaches;
-      if (_selectedAiCoachId == null && coaches.isNotEmpty) {
-        _selectedAiCoachId = coaches.first['ai_coach_id'];
-      }
-    });
   }
 
   @override
@@ -137,7 +122,6 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
               
               const SizedBox(height: 32),
               _buildSectionHeader('Skills & Training'),
-              _buildCoachDropdown(),
               const SizedBox(height: 16),
               _buildTrainingBackgroundField(),
               const SizedBox(height: 16),
@@ -199,19 +183,6 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
           },
         ),
       ),
-    );
-  }
-
-  Widget _buildCoachDropdown() {
-    return DropdownButtonFormField<int>(
-      value: _selectedAiCoachId,
-      dropdownColor: AppTheme.cardColor,
-      style: const TextStyle(color: Colors.white),
-      decoration: _inputDecoration('AI Coach'),
-      items: _aiCoaches.map((coach) {
-        return DropdownMenuItem<int>(value: coach['ai_coach_id'], child: Text(coach['ai_coach_name']));
-      }).toList(),
-      onChanged: (val) => setState(() => _selectedAiCoachId = val),
     );
   }
 
@@ -379,7 +350,6 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
             UserState.goal.value = _goalController.text;
             UserState.sport.value = _sportController.text;
             
-            UserState.aiCoachId.value = _selectedAiCoachId;
             UserState.anamnesis.value = _anamnesisController.text;
             UserState.activeHoursValue.value = double.tryParse(_activeHoursController.text) ?? 1.0;
             UserState.activeHoursUnit.value = _activeHoursUnit;

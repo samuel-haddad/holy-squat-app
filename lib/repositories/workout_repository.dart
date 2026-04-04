@@ -34,6 +34,92 @@ class WorkoutRepository {
   }
 
   // =========================================================
+  // Busca estatísticas para o dashboard de planejamento
+  // =========================================================
+  Future<Map<String, dynamic>?> fetchAthletePlanningStats(String email) async {
+    try {
+      await _refreshSessionIfNeeded();
+      final response = await _supabase.rpc(
+        'get_athlete_planning_stats',
+        params: {'p_email': email},
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e) {
+      print('Erro ao buscar athlete planning stats: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> fetchMesocycleStats(String planId, String mesocycleName) async {
+    try {
+      await _refreshSessionIfNeeded();
+      final response = await _supabase.rpc(
+        'get_mesocycle_performance_stats',
+        params: {
+          'p_plan_id': planId,
+          'p_mesocycle_name': mesocycleName,
+        },
+      );
+      return response as Map<String, dynamic>?;
+    } catch (e) {
+      print('Erro ao buscar mesocycle stats: $e');
+      return null;
+    }
+  }
+
+  // =========================================================
+  // Migração: Atribui "Human Coach" a sessões sem coach
+  // =========================================================
+  Future<void> migrateLegacySessions() async {
+    try {
+      await _supabase
+          .from('sessions')
+          .update({'ai_coach_name': 'Human Coach'})
+          .isFilter('ai_coach_name', null);
+      print('✅ Migração de sessões legadas concluída.');
+    } catch (e) {
+      print('❌ Erro na migração: $e');
+    }
+  }
+
+  // =========================================================
+  // Limpeza: Remove dados de um coach específico para evitar fantasmas
+  // =========================================================
+  Future<void> cleanupCoachData(String email, String aiCoachName) async {
+    await _refreshSessionIfNeeded();
+    
+    // Remove sessões (workouts são vinculados pela key e devem ser limpos se houver cascata ou manualmente)
+    // Para garantir, limpamos workouts primeiro se não houver cascata no banco
+    await _supabase
+        .from('workouts')
+        .delete()
+        .eq('user_email', email)
+        .eq('mesocycle', 'Histórico'); // Opcional, mas por segurança limpamos tudo do coach
+        
+    // Como a tabela workouts não tem ai_coach_name, limpamos via subquerie ou apenas as sessões
+    // Na verdade, a melhor forma é limpar as sessões do coach, e os workouts associados.
+    
+    // 1. Buscar as chaves das sessões desse coach
+    final sessions = await _supabase
+        .from('sessions')
+        .select('date_session_sessiontype_key')
+        .eq('user_email', email)
+        .eq('ai_coach_name', aiCoachName);
+    
+    final List<String> keys = (sessions as List).map((s) => s['date_session_sessiontype_key'] as String).toList();
+    
+    if (keys.isNotEmpty) {
+      // 2. Limpar workouts vinculados a essas sessões
+      await _supabase.from('workouts').delete().inFilter('date_session_sessiontype_key', keys);
+      
+      // 3. Limpar as sessões
+      await _supabase.from('sessions').delete().inFilter('date_session_sessiontype_key', keys);
+    }
+    
+    print('🧹 Limpeza de dados para $aiCoachName concluída.');
+  }
+
+  // =========================================================
   // FASE 1: Criar Plano — estrutura + visaoSemanal
   // =========================================================
   Future<AIWorkoutResponse> criarPlanoFase1({
@@ -44,6 +130,10 @@ class WorkoutRepository {
     required List<String> competicoes,
     String? notasAdicionais,
     String? aiCoachName,
+    double? activeHoursValue,
+    String? activeHoursUnit,
+    int? sessionsPerDay,
+    List<String>? whereTrain,
   }) async {
     await _refreshSessionIfNeeded();
     final response = await _supabase.functions.invoke(
@@ -58,6 +148,12 @@ class WorkoutRepository {
           'data_fim': dataFim,
           'competicoes': competicoes,
           'notas': notasAdicionais ?? '',
+          'contexto_atleta': {
+            'horas_ativas_sessao': activeHoursValue,
+            'unidade_tempo': activeHoursUnit,
+            'sessoes_dia': sessionsPerDay,
+            'locais_treino': whereTrain,
+          },
         },
       },
     );
@@ -76,6 +172,7 @@ class WorkoutRepository {
     required String actualPlanSummaryJson,
     required List<String> mesosJaGerados,
     String? aiCoachName,
+    Map<String, dynamic>? performanceStats,
   }) async {
     await _refreshSessionIfNeeded();
     final response = await _supabase.functions.invoke(
@@ -87,6 +184,7 @@ class WorkoutRepository {
         'actual_plan_summary_json': actualPlanSummaryJson,
         'mesos_ja_gerados': mesosJaGerados,
         'ai_coach_name': aiCoachName,
+        'performance_stats': performanceStats,
       },
     );
     if (response.status != 200) {

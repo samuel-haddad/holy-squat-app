@@ -15,14 +15,28 @@ class WorkoutController extends ChangeNotifier {
   String _errorMessage = '';
   String _loadingMessage = '';
   AIWorkoutResponse? _planoGerado;
+  Map<String, dynamic>? _athleteStats;
 
   WorkoutState get state => _state;
   bool get isLoading => _state == WorkoutState.loading;
   String get errorMessage => _errorMessage;
   String get loadingMessage => _loadingMessage;
   AIWorkoutResponse? get planoGerado => _planoGerado;
+  Map<String, dynamic>? get athleteStats => _athleteStats;
 
   WorkoutController(this._repository);
+
+  // =========================================================
+  // Busca estatísticas para o dashboard (KPIs, Radar, Heatmap)
+  // =========================================================
+  Future<void> fetchPlanningStats(String email) async {
+    try {
+      _athleteStats = await _repository.fetchAthletePlanningStats(email);
+      notifyListeners();
+    } catch (e) {
+      print('Erro ao buscar estatísticas do atleta: $e');
+    }
+  }
 
   // =========================================================
   // AÇÃO 1: Criar Novo Plano
@@ -34,13 +48,21 @@ class WorkoutController extends ChangeNotifier {
     required String dataFim,
     required List<String> competicoes,
     String? notasAdicionais,
-    String? aiCoachName,          // ← NEW: nome do coach selecionado
+    int? aiCoachId,
+    String? aiCoachName,
+    double? activeHoursValue,
+    String? activeHoursUnit,
+    int? sessionsPerDay,
+    List<String>? whereTrain,
   }) async {
     _state = WorkoutState.loading;
-    _loadingMessage = '🧠 Estruturando plano e calendário...';
+    _loadingMessage = '🧠 Analisando seu histórico e estruturando plano...';
     notifyListeners();
 
     try {
+      // ── PASSO 0: Buscar estatísticas determinísticas ──
+      await fetchPlanningStats(emailUtilizador);
+
       // ── FASE 1: estrutura + visaoSemanal ──
       final fase1 = await _repository.criarPlanoFase1(
         emailUtilizador: emailUtilizador,
@@ -50,6 +72,10 @@ class WorkoutController extends ChangeNotifier {
         competicoes: competicoes,
         notasAdicionais: notasAdicionais,
         aiCoachName: aiCoachName,
+        activeHoursValue: activeHoursValue,
+        activeHoursUnit: activeHoursUnit,
+        sessionsPerDay: sessionsPerDay,
+        whereTrain: whereTrain,
       );
       _planoGerado = fase1;
       notifyListeners();
@@ -88,6 +114,7 @@ class WorkoutController extends ChangeNotifier {
             'semanaNum': weekNum,
             'totalSemanas': totalSemanas,
             'focoSemana': meso1Foco,
+            'contexto_atleta': _athleteStats?['kpis'], // Injeta KPIs no contexto da IA
           },
           aiCoachName: aiCoachName,
         );
@@ -118,7 +145,7 @@ class WorkoutController extends ChangeNotifier {
         'actual_plan_summary': jsonEncode(finalResponse.visaoGeralPlano),
         'workouts_plan_text': jsonEncode(finalResponse.analiseMacro),
         'workouts_plan_table': finalResponse.visaoSemanal.map((v) => v.toJson()).toList(),
-      });
+      }, aiCoachName: aiCoachName);
 
       // ── Limpar sessões IA futuras antigas ──
       final hoje = DateTime.now();
@@ -128,6 +155,7 @@ class WorkoutController extends ChangeNotifier {
             .from('sessions')
             .delete()
             .eq('user_email', emailUtilizador)
+            .eq('ai_coach_name', aiCoachName ?? 'Human Coach')
             .not('plan_id', 'is', null)
             .gt('date', hojeStr);
       } catch (e) {
@@ -165,19 +193,23 @@ class WorkoutController extends ChangeNotifier {
     required String planoId,
     required String actualPlanSummaryJson,
     required List currentWorkoutsTable,
-    String? aiCoachName,          // ← NEW
+    String? aiCoachName,
   }) async {
     _state = WorkoutState.loading;
     _loadingMessage = '🧠 Analisando progresso e estruturando próximo meso...';
     notifyListeners();
 
     try {
-      final Set<String> mesosGeradosSet = {};
-      for (final row in currentWorkoutsTable) {
-        if (row is Map) {
-          final meso = row['mesocycle']?.toString();
-          if (meso != null && meso.isNotEmpty) mesosGeradosSet.add(meso);
-        }
+      // 1. Identificar o último mesociclo gerado no plano
+      String? ultimoMeso;
+      if (currentWorkoutsTable.isNotEmpty) {
+        ultimoMeso = currentWorkoutsTable.last['mesocycle']?.toString();
+      }
+
+      // 2. Buscar estatísticas determinísticas do último ciclo
+      Map<String, dynamic>? performanceStats;
+      if (ultimoMeso != null) {
+        performanceStats = await _repository.fetchMesocycleStats(planoId, ultimoMeso);
       }
 
       // ── FASE 1 ──
@@ -185,8 +217,13 @@ class WorkoutController extends ChangeNotifier {
         emailUtilizador: emailUtilizador,
         planoId: planoId,
         actualPlanSummaryJson: actualPlanSummaryJson,
-        mesosJaGerados: mesosGeradosSet.toList(),
+        mesosJaGerados: currentWorkoutsTable
+            .map((e) => e['mesocycle']?.toString() ?? '')
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList(),
         aiCoachName: aiCoachName,
+        performanceStats: performanceStats, // Injeta as estatísticas
       );
       _planoGerado = fase1;
       notifyListeners();
@@ -208,7 +245,6 @@ class WorkoutController extends ChangeNotifier {
       notifyListeners();
 
       final List<ExercicioDetalhado> todosExercicios = [];
-
       final List<Future<List<ExercicioDetalhado>>> futureWeeks = weeksOrdered.map((weekNum) {
         return _repository.gerarExerciciosSemana(
           emailUtilizador: emailUtilizador,
@@ -258,7 +294,6 @@ class WorkoutController extends ChangeNotifier {
 
       _state = WorkoutState.success;
       _loadingMessage = '';
-
     } catch (e) {
       _errorMessage = 'Falha ao gerar o próximo ciclo: ${e.toString()}';
       _state = WorkoutState.error;

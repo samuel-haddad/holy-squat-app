@@ -26,8 +26,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   late TextEditingController _goalController;
 
   // Page 2 Controllers (Skills & Training)
-  int? _selectedAiCoachId;
-  List<Map<String, dynamic>> _aiCoaches = [];
   late TextEditingController _anamnesisController;
   late TextEditingController _activeHoursController;
   late String _activeHoursUnit;
@@ -53,18 +51,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _sessionsPerDayController = TextEditingController(text: UserState.sessionsPerDay.value.toString());
     _selectedWhere = List<String>.from(UserState.whereTrain.value);
     _additionalInfoController = TextEditingController(text: UserState.additionalInfo.value);
-
-    _loadAiCoaches();
-  }
-
-  Future<void> _loadAiCoaches() async {
-    final coaches = await SupabaseService.getAICoaches();
-    setState(() {
-      _aiCoaches = coaches;
-      if (_selectedAiCoachId == null && coaches.isNotEmpty) {
-        _selectedAiCoachId = UserState.aiCoachId.value ?? coaches.first['ai_coach_id'];
-      }
-    });
   }
 
   @override
@@ -112,7 +98,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     UserState.weightUnit.value = _weightUnit;
     UserState.goal.value = _goalController.text;
 
-    UserState.aiCoachId.value = _selectedAiCoachId;
     UserState.anamnesis.value = _anamnesisController.text;
     UserState.activeHoursValue.value = double.tryParse(_activeHoursController.text) ?? 1.0;
     UserState.activeHoursUnit.value = _activeHoursUnit;
@@ -223,7 +208,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 8),
             const Text('Help us personalize your journey.', style: TextStyle(color: AppTheme.secondaryTextColor)),
             const SizedBox(height: 32),
-            _buildCoachDropdown(),
             const SizedBox(height: 16),
             _buildTrainingBackgroundField(),
             const SizedBox(height: 16),
@@ -275,22 +259,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           const SizedBox(height: 24),
         ],
       ),
-    );
-  }
-
-  Widget _buildCoachDropdown() {
-    return DropdownButtonFormField<int>(
-      value: _selectedAiCoachId,
-      dropdownColor: AppTheme.cardColor,
-      style: const TextStyle(color: Colors.white),
-      decoration: _inputDecoration('Choose your AI Coach'),
-      items: _aiCoaches.map((coach) {
-        return DropdownMenuItem<int>(
-          value: coach['ai_coach_id'],
-          child: Text(coach['ai_coach_name']),
-        );
-      }).toList(),
-      onChanged: (val) => setState(() => _selectedAiCoachId = val),
     );
   }
 

@@ -20,24 +20,11 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  String? _aiCoachName;
-
   @override
   void initState() {
     super.initState();
-    _loadAiCoachName();
   }
 
-  Future<void> _loadAiCoachName() async {
-    if (UserState.aiCoachId.value != null) {
-      final coaches = await SupabaseService.getAICoaches();
-      final coach = coaches.firstWhere(
-        (c) => c['ai_coach_id'] == UserState.aiCoachId.value,
-        orElse: () => {'ai_coach_name': 'Not selected'},
-      );
-      setState(() => _aiCoachName = coach['ai_coach_name']);
-    }
-  }
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -60,9 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           IconButton(
             icon: const Icon(Icons.edit, color: AppTheme.primaryTeal),
             onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileFormScreen())).then((_) => setState(() {
-                _loadAiCoachName();
-              }));
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileFormScreen())).then((_) => setState(() {}));
             },
           ),
         ],
@@ -88,7 +73,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               title: 'Skills & Training',
               icon: Icons.fitness_center,
               children: [
-                _buildInfoRow('AI Coach', _aiCoachName ?? 'Loading...'),
                 _buildInfoRow('Active hours per session', '${UserState.activeHoursValue.value} ${UserState.activeHoursUnit.value}'),
                 _buildInfoRow('Sessions/Day', UserState.sessionsPerDay.value.toString()),
                 _buildInfoRow('Where', UserState.whereTrain.value.join(', ')),

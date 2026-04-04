@@ -6,6 +6,7 @@ import 'package:holy_squat_app/widgets/app_bottom_nav.dart';
 import 'package:holy_squat_app/screens/planning/create_plan_screen.dart';
 import 'package:holy_squat_app/controllers/workout_controller.dart';
 import 'package:holy_squat_app/repositories/workout_repository.dart';
+import 'package:holy_squat_app/core/user_state.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:share_plus/share_plus.dart';
@@ -13,6 +14,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'dart:math' as math;
 
 class PlanningScreen extends StatefulWidget {
   const PlanningScreen({super.key});
@@ -22,23 +24,50 @@ class PlanningScreen extends StatefulWidget {
 }
 
 class _PlanningScreenState extends State<PlanningScreen> {
-  Map<String, dynamic>? _currentPlan;
+  Map<String, Map<String, dynamic>?> _coachPlans = {};
   bool _isLoading = true;
-  String _loadingText = '';
+  List<Map<String, dynamic>> _aiCoaches = [];
+  Map<String, dynamic>? _athleteStats;
 
   @override
   void initState() {
     super.initState();
-    _loadPlan();
+    _loadData();
   }
 
-  Future<void> _loadPlan() async {
+  Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    final plan = await SupabaseService.fetchLatestTrainingPlan();
-    setState(() {
-      _currentPlan = plan;
-      _isLoading = false;
-    });
+    try {
+      final repo = WorkoutRepository();
+      // Obter email dinâmico
+      final String userEmail = SupabaseService.client.auth.currentUser?.email ?? UserState.email.value;
+
+      // 1. Carregar Coaches
+      _aiCoaches = await repo.fetchAiCoaches();
+
+      // 2. Carregar o último plano de cada coach e estatísticas
+      final Map<String, Map<String, dynamic>?> plans = {};
+      for (var coach in _aiCoaches) {
+        final name = coach['ai_coach_name'] as String;
+        final plan = await SupabaseService.fetchLatestTrainingPlan(aiCoachName: name);
+        plans[name] = plan;
+      }
+
+      // 3. Buscar estatísticas do atleta dinamicamente
+      _athleteStats = await repo.fetchAthletePlanningStats(userEmail);
+      
+      debugPrint('Dashboard Stats: ${jsonEncode(_athleteStats)}');
+
+      if (mounted) {
+        setState(() {
+          _coachPlans = plans;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar dados: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -52,88 +81,132 @@ class _PlanningScreenState extends State<PlanningScreen> {
       ),
       drawer: const AppDrawer(),
       body: _isLoading
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(color: AppTheme.primaryTeal),
-                    if (_loadingText.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        _loadingText, 
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold)
-                      ),
-                    ]
-                  ],
-                ),
-              ),
-            )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildActualPlanSection(
-                    _currentPlan?['actual_plan_summary'],
-                    _currentPlan?['workouts_plan_text']
-                  ),
-                  const SizedBox(height: 16),
-                  ..._buildWorkoutsPlanSections(
-                    _currentPlan?['workouts_plan_table'],
-                  ),
-                  const SizedBox(height: 16),
-                  _buildProgressSection(_currentPlan?['progress_analysis']),
-                  const SizedBox(height: 32),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryTeal,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChangeNotifierProvider(
-                            create: (_) => WorkoutController(WorkoutRepository()),
-                            child: const CreatePlanScreen(),
-                          ),
-                        ),
-                      );
-                      if (result == true) {
-                        _loadPlan();
-                      }
-                    },
-                    child: const Text(
-                      'Create a New Plan',
-                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_currentPlan != null)
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.cardColor,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.primaryTeal, width: 0.5)),
-                      ),
-                      onPressed: _generateNextMeso,
-                      child: const Text(
-                        'Generate Next Cycle',
-                        style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                    ),
-                ],
+          ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryTeal))
+          : RefreshIndicator(
+              onRefresh: _loadData,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16.0),
+                itemCount: _aiCoaches.length,
+                itemBuilder: (context, index) {
+                  final coach = _aiCoaches[index];
+                  return _buildCoachSection(coach);
+                },
               ),
             ),
       bottomNavigationBar: const AppBottomNav(),
     );
   }
 
-  Widget _buildActualPlanSection(String? actualPlanSummary, String? workoutsPlanText) {
+  Widget _buildCoachSection(Map<String, dynamic> coach) {
+    final String name = coach['ai_coach_name'] as String;
+    final plan = _coachPlans[name];
+    final color = _parseColor(coach['color_hex']);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            child: Text(coach['icon_emoji'] ?? '🤖', style: const TextStyle(fontSize: 20)),
+          ),
+          title: Text(
+            coach['ai_coach_name'] ?? 'Coach',
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          subtitle: Text(
+            coach['description'] ?? '',
+            style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          childrenPadding: const EdgeInsets.all(16),
+          children: [
+            if (plan == null) ...[
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text('Nenhum plano ativo com este Coach.', style: TextStyle(color: AppTheme.secondaryTextColor)),
+                ),
+              ),
+              _buildCreatePlanButton(coach),
+            ] else ...[
+              _buildActualPlanSection(
+                plan['actual_plan_summary'],
+                plan['workouts_plan_text'],
+                plan,
+              ),
+              const SizedBox(height: 16),
+              ..._buildWorkoutsPlanSections(plan['workouts_plan_table']),
+              const SizedBox(height: 16),
+              _buildProgressSection(plan['progress_analysis'], plan, coach),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(child: _buildCreatePlanButton(coach)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildGenerateNextButton(coach, plan)),
+                ],
+              ),
+            ]
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _parseColor(String? hex) {
+    if (hex == null || hex.isEmpty) return AppTheme.primaryTeal;
+    try {
+      return Color(int.parse(hex.replaceAll('#', '0xFF')));
+    } catch (_) {
+      return AppTheme.primaryTeal;
+    }
+  }
+
+  Widget _buildCreatePlanButton(Map<String, dynamic> coach) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppTheme.primaryTeal,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      onPressed: () async {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChangeNotifierProvider(
+              create: (_) => WorkoutController(WorkoutRepository()),
+              child: CreatePlanScreen(initialCoach: coach),
+            ),
+          ),
+        );
+        if (result == true) _loadData();
+      },
+      child: const Text('Create a New Plan', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildGenerateNextButton(Map<String, dynamic> coach, Map<String, dynamic> plan) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white.withOpacity(0.05),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.primaryTeal, width: 0.5)),
+      ),
+      onPressed: () => _generateNextMeso(coach, plan),
+      child: const Text('Next Cycle', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildActualPlanSection(String? actualPlanSummary, String? workoutsPlanText, Map<String, dynamic> plan) {
     if ((actualPlanSummary == null || actualPlanSummary.isEmpty) && (workoutsPlanText == null || workoutsPlanText.isEmpty)) {
       return _buildContainer(
         title: 'Actual Planning',
@@ -163,16 +236,37 @@ class _PlanningScreenState extends State<PlanningScreen> {
         _buildContainer(
           title: 'Visão Geral',
           shareText: _formatActualPlanForShare(summaryJson ?? {}, ""),
-          children: [_buildVisaoGeralContent(summaryJson)],
+          children: [
+            _buildBigNumbersGrid(_athleteStats?['kpis']),
+            const SizedBox(height: 24),
+            _buildCapabilitiesRadar(_athleteStats?['radar']),
+            const SizedBox(height: 24),
+            _buildActivityHeatmap(_athleteStats?['heatmap']),
+            const SizedBox(height: 24),
+            _buildVisaoGeralContent(summaryJson),
+          ],
         ),
         const SizedBox(height: 16),
-        _buildPDFExportButton(macroJson, summaryJson, _currentPlan?['progress_analysis']),
+        _buildPDFExportButton(macroJson, summaryJson, plan['progress_analysis']),
       ],
     );
   }
 
-  Widget _buildProgressSection(String? progressJson) {
-    if (progressJson == null || progressJson.isEmpty) return const SizedBox.shrink();
+  Widget _buildProgressSection(String? progressJson, Map<String, dynamic> plan, Map<String, dynamic> coach) {
+    if (progressJson == null || progressJson.isEmpty) {
+       return _buildContainer(
+        title: 'Progress',
+        shareText: '',
+        children: [
+          const Text(
+            'Inicie seu primeiro ciclo para ver sua análise de progresso aqui.',
+            style: TextStyle(color: AppTheme.secondaryTextColor),
+          ),
+          const SizedBox(height: 16),
+          _buildGenerateNextButton(coach, plan),
+        ],
+      );
+    }
 
     Map<String, dynamic>? data;
     try {
@@ -181,24 +275,351 @@ class _PlanningScreenState extends State<PlanningScreen> {
 
     if (data == null) return const SizedBox.shrink();
 
+    final kpis = data['kpis'] as Map<String, dynamic>?;
+    final charts = data['charts'] as Map<String, dynamic>?;
+    final hasData = kpis != null && (kpis['completion_rate'] as num? ?? 0) > 0;
+
     return _buildContainer(
-      title: 'Progress',
+      title: 'Progress (Último Mesociclo)',
       shareText: "📈 *Análise de Progresso*\n\n${data['texto'] ?? ''}",
       children: [
         if (data['texto'] != null)
           Text(data['texto'], style: const TextStyle(color: AppTheme.secondaryTextColor)),
+        
+        const SizedBox(height: 24),
+        
+        if (!hasData)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Text(
+                'Nenhum treino realizado foi detectado para análise neste ciclo.',
+                style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else ...[
+          _buildProgressKpisGrid(kpis),
+          
+          const SizedBox(height: 32),
+          
+          if (charts != null) ...[
+            _buildPlannedVsRealizedChart(charts['planned_vs_realized']),
+            const SizedBox(height: 24),
+            _buildLoadVsPseChart(charts['load_vs_pse']),
+            const SizedBox(height: 24),
+            _buildVolumeByGroupChart(charts['volume_by_group']),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _buildProgressKpisGrid(Map<String, dynamic>? kpis) {
+    if (kpis == null) return const SizedBox.shrink();
+
+    final items = [
+      {'l': 'Conclusão', 'v': '${kpis['completion_rate']}%', 'i': Icons.check_circle_outline},
+      {'l': 'Freq. Sem.', 'v': '${kpis['weekly_freq']} sv', 'i': Icons.calendar_today},
+      {'l': 'Negligenciados', 'v': kpis['neglected_type'] ?? '-', 'i': Icons.warning_amber, 'c': Colors.orange},
+      {'l': 'Delta Carga', 'v': '${kpis['load_delta']}%', 'i': Icons.trending_up},
+      {'l': 'Recuperação PR', 'v': '${kpis['pr_recovery']}%', 'i': Icons.history},
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1.1,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final it = items[index];
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.04),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: (it['c'] as Color?) ?? Colors.white.withOpacity(0.05)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(it['i'] as IconData, size: 16, color: (it['c'] as Color?) ?? AppTheme.primaryTeal),
+              const SizedBox(height: 6),
+              Text(it['v'] as String, 
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 2),
+              Text(it['l'] as String, style: const TextStyle(color: Colors.grey, fontSize: 8), textAlign: TextAlign.center),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPlannedVsRealizedChart(List<dynamic>? data) {
+    if (data == null || data.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Prescrito vs Realizado (Semana)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
         const SizedBox(height: 16),
-        if (data['aderencia'] != null)
-          _buildRichText('Aderência: ', data['aderencia'].toString()),
-        if (data['evolucao'] != null)
-           Padding(
-             padding: const EdgeInsets.only(top: 8),
-             child: _buildRichText('Evolução: ', data['evolucao'].toString()),
-           ),
-        if (data['graficos'] is List) ...[
-          const SizedBox(height: 20),
-          ...((data['graficos'] as List).map((g) => _buildChartSection(g)).toList()),
-        ]
+        SizedBox(
+          height: 150,
+          child: data.isEmpty 
+            ? const Center(child: Text('Sem dados para comparar', style: TextStyle(color: Colors.grey, fontSize: 10)))
+            : BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: data.isEmpty ? 10 : data.map((e) => (e['planned'] as num? ?? 0).toDouble()).reduce((a, b) => a > b ? a : b) + 2,
+                  barTouchData: BarTouchData(enabled: false),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (val, meta) => Text('S${val.toInt()+1}', style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                      ),
+                    ),
+                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  gridData: const FlGridData(show: false),
+                  borderData: FlBorderData(show: false),
+                  barGroups: data.asMap().entries.map((e) => BarChartGroupData(
+                    x: e.key,
+                    barRods: [
+                      BarChartRodData(toY: (e.value['planned'] as num? ?? 0).toDouble(), color: Colors.white.withOpacity(0.1), width: 8),
+                      BarChartRodData(toY: (e.value['realized'] as num? ?? 0).toDouble(), color: AppTheme.primaryTeal, width: 8),
+                    ],
+                  )).toList(),
+                ),
+              ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoadVsPseChart(List<dynamic>? data) {
+    if (data == null || data.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Eficiência: Carga vs PSE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 150,
+          child: LineChart(
+            LineChartData(
+              lineBarsData: [
+                LineChartBarData(
+                  spots: data.asMap().entries.map((e) => FlSpot(e.key.toDouble(), (e.value['avg_load'] as num? ?? 0).toDouble())).toList(),
+                  color: AppTheme.primaryTeal,
+                  barWidth: 3,
+                  isCurved: true,
+                  dotData: const FlDotData(show: true),
+                ),
+                LineChartBarData(
+                  spots: data.asMap().entries.map((e) => FlSpot(e.key.toDouble(), (e.value['avg_pse'] as num? ?? 0).toDouble() * 10)).toList(),
+                  color: Colors.orange,
+                  barWidth: 2,
+                  dashArray: [5, 5],
+                  isCurved: true,
+                  dotData: const FlDotData(show: false),
+                ),
+              ],
+              titlesData: const FlTitlesData(show: false),
+              gridData: const FlGridData(show: false),
+              borderData: FlBorderData(show: false),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVolumeByGroupChart(List<dynamic>? data) {
+    if (data == null || data.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Volume por Grupo (Sets Realizados)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 150,
+          child: data.isEmpty
+            ? const Center(child: Text('Sem volume registrado', style: TextStyle(color: Colors.grey, fontSize: 10)))
+            : BarChart(
+                BarChartData(
+                  gridData: const FlGridData(show: false),
+                  titlesData: FlTitlesData(
+                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (val, meta) {
+                          if (val.toInt() < data.length) {
+                            String label = data[val.toInt()]['exercise_group']?.toString() ?? '';
+                            if (label.length > 3) label = label.substring(0, 3);
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 8)),
+                            );
+                          }
+                          return const SizedBox();
+                        },
+                      ),
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  barGroups: data.asMap().entries.map((e) => BarChartGroupData(
+                    x: e.key,
+                    barRods: [
+                      BarChartRodData(
+                        toY: (e.value['volume'] as num? ?? 0).toDouble(),
+                        color: AppTheme.primaryTeal,
+                        width: 16,
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      ),
+                    ],
+                  )).toList(),
+                ),
+              ),
+        ),
+      ],
+    );
+  }
+
+
+  Widget _buildBigNumbersGrid(Map<String, dynamic>? kpis) {
+    if (kpis == null) return const SizedBox.shrink();
+    
+    final items = [
+      {'label': 'Aderência', 'value': '${kpis['adherence']}%', 'icon': Icons.bolt},
+      {'label': 'PSE Médio', 'value': '${kpis['avg_pse']}', 'icon': Icons.speed},
+      {'label': 'Power Index', 'value': '${kpis['power_index']}', 'icon': Icons.fitness_center},
+      {'label': 'Evolução', 'value': '+${kpis['best_evolution']?['percent']}%', 'icon': Icons.trending_up, 'sub': kpis['best_evolution']?['exercise']},
+      {'label': 'Streak', 'value': '${kpis['streak']} d', 'icon': Icons.fireplace},
+      {'label': 'Freq. Sem.', 'value': '${kpis['weekly_freq']}/w', 'icon': Icons.calendar_view_week},
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1.1,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.05)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(item['icon'] as IconData, size: 16, color: AppTheme.primaryTeal),
+              const SizedBox(height: 4),
+              Text(item['value'] as String, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+              const SizedBox(height: 2),
+              Text(item['label'] as String, style: const TextStyle(color: Colors.grey, fontSize: 9), textAlign: TextAlign.center),
+              if (item['sub'] != null)
+                Text(item['sub'] as String, style: const TextStyle(color: AppTheme.primaryTeal, fontSize: 7), overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCapabilitiesRadar(List<dynamic>? radarData) {
+    if (radarData == null || radarData.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Equilíbrio de Capacidades', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 200,
+          child: (radarData.length < 3)
+            ? const Center(child: Text('Necessário ao menos 3 categorias para o radar', style: TextStyle(color: Colors.grey, fontSize: 10)))
+            : RadarChart(
+                RadarChartData(
+                  radarShape: RadarShape.polygon,
+                  dataSets: [
+                    RadarDataSet(
+                      fillColor: AppTheme.primaryTeal.withOpacity(0.3),
+                      borderColor: AppTheme.primaryTeal,
+                      entryRadius: 3,
+                      dataEntries: radarData.map((e) => RadarEntry(value: (e['count'] as num? ?? 0).toDouble())).toList(),
+                    ),
+                  ],
+                  getTitle: (index, angle) {
+                    if (index < radarData.length) {
+                      return RadarChartTitle(text: radarData[index]['category']?.toString() ?? '', angle: angle);
+                    }
+                    return const RadarChartTitle(text: '');
+                  },
+                  radarBackgroundColor: Colors.transparent,
+                  borderData: FlBorderData(show: false),
+                ),
+              ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivityHeatmap(List<dynamic>? heatmapData) {
+    if (heatmapData == null || heatmapData.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Constância (Últimos 6 meses)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+        const SizedBox(height: 12),
+        AspectRatio(
+          aspectRatio: 3,
+          child: LayoutBuilder(builder: (context, constraints) {
+             return GridView.builder(
+               scrollDirection: Axis.horizontal,
+               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                 crossAxisCount: 7,
+                 mainAxisSpacing: 2,
+                 crossAxisSpacing: 2,
+               ),
+               itemCount: heatmapData.length,
+               itemBuilder: (context, index) {
+                 final item = heatmapData[index];
+                 final intensity = (item['intensity'] as num?)?.toDouble() ?? 0.0;
+                 return Container(
+                   decoration: BoxDecoration(
+                     color: intensity == 0 
+                        ? Colors.white.withOpacity(0.05) 
+                        : AppTheme.primaryTeal.withOpacity(0.2 + (intensity / 10).clamp(0.0, 0.8)),
+                     borderRadius: BorderRadius.circular(1),
+                   ),
+                 );
+               },
+             );
+          }),
+        ),
       ],
     );
   }
@@ -336,40 +757,97 @@ class _PlanningScreenState extends State<PlanningScreen> {
     return "📈 *Análise de Histórico*\n\n${hist['texto']}";
   }
 
+  String _sanitizePdfText(String? text) {
+    if (text == null) return "";
+    return text
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll('•', '*')
+        .replaceAll('✅', '[OK]')
+        .replaceAll('❌', '[X]')
+        .replaceAll('📈', '[HIST]')
+        .replaceAll('🎯', '[OBJ]')
+        .replaceAll('🧠', '[AI]')
+        .replaceAll('’', "'")
+        .replaceAll('“', '"')
+        .replaceAll('”', '"');
+  }
+
   Future<void> _generateAndSharePDF(Map<String, dynamic>? macro, Map<String, dynamic>? summary, String? progressJson) async {
     final pdf = pw.Document();
+    final font = await PdfGoogleFonts.robotoRegular();
+    final fontBold = await PdfGoogleFonts.robotoBold();
+
     Map<String, dynamic>? progressData;
     try { if (progressJson != null) progressData = jsonDecode(progressJson); } catch (_) {}
 
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
         build: (pw.Context context) {
           return [
-            pw.Header(level: 0, child: pw.Text('Holy Squat App - Planejamento', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.teal))),
-            pw.SizedBox(height: 20),
+            pw.Header(level: 0, child: pw.Text("Relatorio de Planejamento - Holy Squat", style: pw.TextStyle(font: fontBold, fontSize: 18, color: PdfColors.teal))),
+            pw.SizedBox(height: 10),
             
+            pw.Text("1. Visao Geral do Atleta (KPIs)", style: pw.TextStyle(font: fontBold, fontSize: 14)),
+            pw.SizedBox(height: 8),
+            _buildPdfBigNumbers(_athleteStats?['kpis'], font, fontBold),
+            pw.SizedBox(height: 15),
+
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  flex: 1,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text("Equilibrio de Capacidades", style: pw.TextStyle(font: fontBold, fontSize: 10)),
+                      pw.SizedBox(height: 5),
+                      _buildPdfRadarChart(_athleteStats?['radar'], 120, font),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(width: 20),
+                pw.Expanded(
+                  flex: 1,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text("Heatmap de Constancia", style: pw.TextStyle(font: fontBold, fontSize: 10)),
+                      pw.SizedBox(height: 5),
+                      _buildPdfHeatmap(_athleteStats?['heatmap']),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 20),
+
             if (progressData != null) ...[
-              pw.Header(level: 1, child: pw.Text('Análise de Progresso (Mesociclo Anterior)')),
-              pw.Text(progressData['texto'] ?? ''),
-              pw.Bullet(text: 'Aderencia: ${progressData['aderencia'] ?? 'N/A'}'),
-              pw.Bullet(text: 'Evolucao: ${progressData['evolucao'] ?? 'N/A'}'),
+              pw.Header(level: 1, child: pw.Text('2. Analise de Progresso (Mesociclo Anterior)')),
+              pw.Text(_sanitizePdfText(progressData['texto'] ?? ''), style: pw.TextStyle(font: font, fontSize: 9)),
+              pw.SizedBox(height: 12),
+              
+              if (progressData['kpis'] != null) ...[
+                pw.Text("Metricas de Performance:", style: pw.TextStyle(font: fontBold, fontSize: 10)),
+                pw.SizedBox(height: 6),
+                _buildPdfBigNumbers(progressData['kpis'], font, fontBold, isProgress: true),
+              ],
+              
               pw.SizedBox(height: 20),
             ],
 
-            pw.Header(level: 1, child: pw.Text('1. Analise de Historico')),
-            pw.Text(macro?['historico']?['texto'] ?? (macro?['analise'] ?? 'N/A')),
-            pw.SizedBox(height: 20),
-
-            pw.Header(level: 1, child: pw.Text('2. Visao Geral do Plano')),
-            pw.Bullet(text: 'Objetivo: ${summary?['objetivoPrincipal'] ?? 'N/A'}'),
-            pw.Bullet(text: 'Duracao: ${summary?['duracaoSemanas'] ?? 'N/A'} semanas'),
+            pw.Header(level: 1, child: pw.Text('3. Planejamento Macro')),
+            pw.Bullet(text: 'Objetivo: ${summary?['objetivoPrincipal'] ?? 'N/A'}', style: pw.TextStyle(font: font, fontSize: 9)),
+            pw.Bullet(text: 'Duracao: ${summary?['duracaoSemanas'] ?? 'N/A'} semanas', style: pw.TextStyle(font: font, fontSize: 9)),
             pw.SizedBox(height: 10),
-            pw.Text('Mesociclos:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+            pw.Text('Mesociclos:', style: pw.TextStyle(font: fontBold, fontSize: 10)),
             if (summary?['blocos'] is List)
               ...((summary?['blocos'] as List).map((b) => pw.Padding(
-                padding: const pw.EdgeInsets.only(left: 10, top: 5),
-                child: pw.Text('- ${b['mesociclo']}: ${b['foco']}', style: const pw.TextStyle(fontSize: 10)),
+                padding: const pw.EdgeInsets.only(left: 10, top: 4),
+                child: pw.Text('- ${_sanitizePdfText(b['mesociclo'])}: ${_sanitizePdfText(b['foco'])}', style: const pw.TextStyle(fontSize: 9)),
               ))),
             
             pw.SizedBox(height: 20),
@@ -381,19 +859,32 @@ class _PlanningScreenState extends State<PlanningScreen> {
                   ['Sem', 'Foco', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'],
                   ...((summary?['mesociclo1_consolidado'] as List).map((s) => [
                     s['semana'].toString(),
-                    s['foco'].toString(),
-                    s['seg'].toString(),
-                    s['ter'].toString(),
-                    s['qua'].toString(),
-                    s['qui'].toString(),
-                    s['sex'].toString(),
-                    s['sab'].toString(),
-                    s['dom'].toString(),
+                    _sanitizePdfText(s['foco']?.toString()),
+                    _sanitizePdfText(s['seg']?.toString()),
+                    _sanitizePdfText(s['ter']?.toString()),
+                    _sanitizePdfText(s['qua']?.toString()),
+                    _sanitizePdfText(s['qui']?.toString()),
+                    _sanitizePdfText(s['sex']?.toString()),
+                    _sanitizePdfText(s['sab']?.toString()),
+                    _sanitizePdfText(s['dom']?.toString()),
                   ])),
                 ],
-                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white, fontSize: 8),
                 headerDecoration: const pw.BoxDecoration(color: PdfColors.teal),
-                cellStyle: const pw.TextStyle(fontSize: 8),
+                cellStyle: const pw.TextStyle(fontSize: 7),
+                columnWidths: {
+                  0: const pw.FixedColumnWidth(25),
+                  1: const pw.FlexColumnWidth(2.5),
+                  2: const pw.FlexColumnWidth(2),
+                  3: const pw.FlexColumnWidth(2),
+                  4: const pw.FlexColumnWidth(2),
+                  5: const pw.FlexColumnWidth(2),
+                  6: const pw.FlexColumnWidth(2),
+                  7: const pw.FlexColumnWidth(2),
+                  8: const pw.FlexColumnWidth(2),
+                },
+                cellAlignment: pw.Alignment.topLeft,
+                cellPadding: const pw.EdgeInsets.all(3),
               ),
           ];
         },
@@ -436,7 +927,6 @@ class _PlanningScreenState extends State<PlanningScreen> {
 
     final data = tableData as List;
 
-    // 1. Agrupar por Mesociclo (mantendo a ordem original de inserção)
     final Map<String, List<Map<String, dynamic>>> byMeso = {};
     for (var row in data) {
       if (row is Map) {
@@ -452,24 +942,18 @@ class _PlanningScreenState extends State<PlanningScreen> {
       final mesoName = mesoEntry.key;
       final mesoRows = mesoEntry.value;
 
-      // 2. Agrupar por semana intra-meso usando o campo 'week'.
-      //    Fallback: se todos os registros tiverem week == 0 ou nulo, agrupa por
-      //    semana calendária derivando da diferença de dias da primeira data.
       final bool hasWeekField = mesoRows.any((r) {
         final w = r['week'];
         return w != null && (w is int ? w > 0 : int.tryParse(w.toString(), radix: 10) != null && int.parse(w.toString()) > 0);
       });
 
       final Map<int, Map<String, Map<String, dynamic>>> byWeekByDate = {};
-      // byWeekByDate[semana][date] → row com o maior/único focoPrincipal do dia
 
       if (hasWeekField) {
-        // Caminho principal: usa campo 'week' como semana intra-meso
         for (final row in mesoRows) {
           final week = (row['week'] as num?)?.toInt() ?? 1;
           final dateKey = row['date']?.toString() ?? '';
           byWeekByDate.putIfAbsent(week, () => {});
-          // Se já existe uma entrada para essa data, concatena os focos (dupla sessão)
           if (byWeekByDate[week]!.containsKey(dateKey)) {
             final existing = byWeekByDate[week]![dateKey]!;
             final existingFoco = existing['focoPrincipal']?.toString() ?? existing['workout']?.toString() ?? '';
@@ -482,7 +966,6 @@ class _PlanningScreenState extends State<PlanningScreen> {
           }
         }
       } else {
-        // Fallback calendário: calcula semana pela diferença de dias da primeira data
         DateTime? firstDate;
         for (final row in mesoRows) {
           final ds = row['date']?.toString() ?? '';
@@ -516,7 +999,6 @@ class _PlanningScreenState extends State<PlanningScreen> {
         }
       }
 
-      // 3. Construir os widgets do mesociclo
       final buffer = StringBuffer();
       buffer.writeln('🏋️‍♂️ *Planejamento - $mesoName*');
 
@@ -529,16 +1011,13 @@ class _PlanningScreenState extends State<PlanningScreen> {
       for (final weekNum in sortedWeeks) {
         final dateMap = byWeekByDate[weekNum]!;
 
-        // 4. Ordenar as datas da semana e expandir para 7 dias (Seg–Dom)
         final sortedDates = dateMap.keys.toList()..sort();
         List<Map<String, dynamic>> weekRows = [];
 
         if (sortedDates.isNotEmpty) {
-          // Encontra a segunda-feira da semana a partir da primeira data da semana
           DateTime? firstOfWeek;
           try {
             firstOfWeek = DateTime.parse(sortedDates.first);
-            // Se não começa na segunda, volta até a segunda
             while (firstOfWeek!.weekday != DateTime.monday) {
               firstOfWeek = firstOfWeek.subtract(const Duration(days: 1));
             }
@@ -552,7 +1031,6 @@ class _PlanningScreenState extends State<PlanningScreen> {
               if (dateMap.containsKey(dateStr)) {
                 weekRows.add(dateMap[dateStr]!);
               } else {
-                // Dia sem sessão → Descanso
                 weekRows.add({
                   'date': dateStr,
                   'day': dayNames[i],
@@ -564,7 +1042,6 @@ class _PlanningScreenState extends State<PlanningScreen> {
               }
             }
           } else {
-            // Sem data parseável, usa os dados como estão
             weekRows = dateMap.values.toList();
           }
         }
@@ -647,33 +1124,20 @@ class _PlanningScreenState extends State<PlanningScreen> {
     );
   }
 
-  Future<void> _generateNextMeso() async {
-    if (_currentPlan == null) return;
+  Future<void> _generateNextMeso(Map<String, dynamic> coach, Map<String, dynamic> plan) async {
     setState(() {
       _isLoading = true;
-      _loadingText = 'Iniciando geração...';
     });
 
     try {
       final controller = WorkoutController(WorkoutRepository());
       
-      // Listener para atualizar o texto na tela de forma reativa
-      controller.addListener(() {
-        if (mounted && controller.loadingMessage != _loadingText) {
-          setState(() {
-            _loadingText = controller.loadingMessage;
-          });
-        }
-      });
-
-      final table = _currentPlan!['workouts_plan_table'];
-      List currentTable = (table is List) ? table : [];
-
       await controller.gerarProximoCiclo(
-        emailUtilizador: 'samuelhsm@gmail.com', // Mocked user email
-        planoId: _currentPlan!['id'],
-        actualPlanSummaryJson: _currentPlan!['actual_plan_summary'] ?? '{}',
-        currentWorkoutsTable: currentTable,
+        planoId: plan['id'],
+        actualPlanSummaryJson: plan['actual_plan_summary'] ?? '{}',
+        currentWorkoutsTable: (plan['workouts_plan_table'] is List) ? plan['workouts_plan_table'] : [],
+        aiCoachName: coach['ai_coach_name'],
+        emailUtilizador: SupabaseService.client.auth.currentUser?.email ?? UserState.email.value,
       );
 
       if (controller.state == WorkoutState.success) {
@@ -696,10 +1160,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _loadingText = '');
-      }
-      await _loadPlan(); 
+      await _loadData(); 
     }
   }
 
@@ -764,5 +1225,134 @@ class _PlanningScreenState extends State<PlanningScreen> {
         }).toList(),
       ],
     );
+  }
+
+  pw.Widget _buildPdfBigNumbers(Map<String, dynamic>? kpis, pw.Font font, pw.Font fontBold, {bool isProgress = false}) {
+    if (kpis == null) return pw.SizedBox();
+    
+    final items = isProgress ? [
+      {'l': 'Conclusao', 'v': '${kpis['completion_rate']}%'},
+      {'l': 'Freq. Sem.', 'v': '${kpis['weekly_freq']} sv'},
+      {'l': 'Negligencia', 'v': '${kpis['neglected_type']}'},
+      {'l': 'Delta Carga', 'v': '${kpis['load_delta']}%'},
+      {'l': 'Recup. PR', 'v': '${kpis['pr_recovery']}%'},
+    ] : [
+      {'l': 'Aderencia', 'v': '${kpis['adherence']}%'},
+      {'l': 'PSE Medio', 'v': '${kpis['avg_pse']}'},
+      {'l': 'Power Idx', 'v': '${kpis['power_index']}'},
+      {'l': 'Evolucao', 'v': '+${kpis['best_evolution']?['percent']}%'},
+      {'l': 'Streak', 'v': '${kpis['streak']} d'},
+      {'l': 'Freq/Sem', 'v': '${kpis['weekly_freq']}/w'},
+    ];
+
+    return pw.GridView(
+      crossAxisCount: isProgress ? 5 : 3,
+      childAspectRatio: isProgress ? 2.0 : 2.5,
+      children: items.map((it) => pw.Container(
+        margin: const pw.EdgeInsets.all(2),
+        padding: const pw.EdgeInsets.all(5),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+        ),
+        child: pw.Column(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            pw.Text(it['v']!.toString(), style: pw.TextStyle(font: fontBold, fontSize: isProgress ? 8 : 10)),
+            pw.Text(it['l']!.toString(), style: pw.TextStyle(font: font, fontSize: 6, color: PdfColors.grey700)),
+          ],
+        ),
+      )).toList(),
+    );
+  }
+
+  pw.Widget _buildPdfHeatmap(List<dynamic>? data) {
+    if (data == null || data.isEmpty) return pw.SizedBox();
+    
+    return pw.Wrap(
+      spacing: 1,
+      runSpacing: 1,
+      children: data.take(120).map((it) {
+        final intensity = (it['intensity'] as num?)?.toDouble() ?? 0.0;
+        final baseColor = PdfColor.fromHex('#2CC1BC');
+        final color = intensity == 0 
+            ? PdfColors.grey100 
+            : PdfColor(baseColor.red, baseColor.green, baseColor.blue, 0.2 + (intensity / 10).clamp(0.0, 0.8));
+        return pw.Container(
+          width: 5,
+          height: 5,
+          color: color,
+        );
+      }).toList(),
+    );
+  }
+
+  pw.Widget _buildPdfRadarChart(List<dynamic>? data, double size, pw.Font font) {
+    if (data == null || data.isEmpty) return pw.SizedBox();
+
+    return pw.Container(
+      width: size,
+      height: size,
+      child: pw.CustomPaint(
+        size: PdfPoint(size, size),
+        painter: (PdfGraphics canvas, PdfPoint size) {
+          final count = data.length;
+          final center = PdfPoint(size.x / 2, size.y / 2);
+          final radius = (size.x / 2) * 0.8;
+          final angleStep = (2 * math.pi) / count;
+
+          canvas.setLineWidth(0.2);
+          canvas.setStrokeColor(PdfColors.grey300);
+          for (int level = 1; level <= 3; level++) {
+            final r = radius * (level / 3);
+            for (int i = 0; i < count; i++) {
+              final x1 = center.x + r * math.cos(angleStep * i);
+              final y1 = center.y + r * math.sin(angleStep * i);
+              final x2 = center.x + r * math.cos(angleStep * (i + 1));
+              final y2 = center.y + r * math.sin(angleStep * (i + 1));
+              canvas.moveTo(x1, y1);
+              canvas.lineTo(x2, y2);
+              canvas.strokePath();
+            }
+          }
+
+          final baseColor = PdfColor.fromHex('#2CC1BC');
+          canvas.setLineWidth(1);
+          canvas.setStrokeColor(baseColor);
+          canvas.setFillColor(PdfColor(baseColor.red, baseColor.green, baseColor.blue, 0.3));
+          
+          if (data.isEmpty) {
+            _drawPdfNoDataPlaceholder(canvas, size, font);
+            return;
+          }
+          final values = data.map((e) => (e['count'] as num? ?? 0).toDouble()).toList();
+          final maxVal = values.isNotEmpty ? values.reduce(math.max) : 0.0;
+          if (maxVal == 0) {
+            _drawPdfNoDataPlaceholder(canvas, size, font);
+            return;
+          }
+
+          for (int i = 0; i < count; i++) {
+            final val = (data[i]['count'] as num).toDouble();
+            final r = radius * (val / maxVal);
+            final x = center.x + r * math.cos(angleStep * i);
+            final y = center.y + r * math.sin(angleStep * i);
+            if (i == 0) canvas.moveTo(x, y);
+            else canvas.lineTo(x, y);
+          }
+          canvas.closePath();
+          canvas.fillPath();
+          canvas.strokePath();
+        },
+      ),
+    );
+  }
+
+  void _drawPdfNoDataPlaceholder(PdfGraphics canvas, PdfPoint center, pw.Font font) {
+    canvas.setStrokeColor(PdfColors.grey400);
+    canvas.setFillColor(PdfColors.grey400);
+    // Draw a simple box as placeholder since string drawing is complex without easy access to PdfFont here
+    canvas.drawRect(center.x - 25, center.y - 25, 50, 50);
+    canvas.strokePath();
   }
 }

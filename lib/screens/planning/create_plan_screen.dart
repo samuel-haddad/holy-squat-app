@@ -4,9 +4,12 @@ import 'package:holy_squat_app/controllers/workout_controller.dart';
 import 'package:holy_squat_app/repositories/workout_repository.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:holy_squat_app/core/user_state.dart';
+import 'package:holy_squat_app/services/supabase_service.dart';
 
 class CreatePlanScreen extends StatefulWidget {
-  const CreatePlanScreen({super.key});
+  final Map<String, dynamic>? initialCoach;
+  const CreatePlanScreen({super.key, this.initialCoach});
 
   @override
   State<CreatePlanScreen> createState() => _CreatePlanScreenState();
@@ -20,6 +23,13 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
   final _notesController = TextEditingController();
   final List<Map<String, dynamic>> _competitions = [];
 
+  // Training Context
+  late TextEditingController _activeHoursController;
+  late String _activeHoursUnit;
+  late TextEditingController _sessionsPerDayController;
+  List<String> _selectedWhere = [];
+  final List<String> _whereOptions = ['box', 'academia', 'corrida de rua'];
+
   // Coach selection
   List<Map<String, dynamic>> _coaches = [];
   Map<String, dynamic>? _selectedCoach;
@@ -28,17 +38,30 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialize context from UserState
+    _activeHoursController = TextEditingController(text: UserState.activeHoursValue.value.toString());
+    _activeHoursUnit = UserState.activeHoursUnit.value;
+    _sessionsPerDayController = TextEditingController(text: UserState.sessionsPerDay.value.toString());
+    _selectedWhere = List<String>.from(UserState.whereTrain.value);
+    
     _loadCoaches();
   }
 
   Future<void> _loadCoaches() async {
     try {
       final repo = WorkoutRepository();
-      final coaches = await repo.fetchAiCoaches();
-      print('[Coach] Carregados: ${coaches.length} coaches → $coaches');
+      final allCoaches = await repo.fetchAiCoaches();
+
       if (mounted) {
         setState(() {
-          _coaches = coaches;
+          _coaches = allCoaches;
+          // Pre-selecionar o coach se foi passado via construtor
+          if (widget.initialCoach != null) {
+            _selectedCoach = allCoaches.firstWhere(
+              (c) => c['id'] == widget.initialCoach!['id'],
+              orElse: () => allCoaches.first,
+            );
+          }
           _loadingCoaches = false;
         });
       }
@@ -54,6 +77,8 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
   void dispose() {
     _objetivoController.dispose();
     _notesController.dispose();
+    _activeHoursController.dispose();
+    _sessionsPerDayController.dispose();
     for (var comp in _competitions) {
       comp['nameController'].dispose();
     }
@@ -158,13 +183,18 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
     final endDateFormatted = _endDate != null ? DateFormat('yyyy-MM-dd').format(_endDate!) : '';
 
     await controller.criarNovoPlano(
-      emailUtilizador: 'samuelhsm@gmail.com',
+      emailUtilizador: SupabaseService.client.auth.currentUser?.email ?? UserState.email.value,
       objetivoGeral: _objetivoController.text,
       dataInicio: startDateFormatted,
       dataFim: endDateFormatted,
       competicoes: competicoesFormatadas,
       notasAdicionais: _notesController.text,
+      aiCoachId: _selectedCoach!['id'] as int?,
       aiCoachName: _selectedCoach!['ai_coach_name'] as String,
+      activeHoursValue: double.tryParse(_activeHoursController.text) ?? 1.0,
+      activeHoursUnit: _activeHoursUnit,
+      sessionsPerDay: int.tryParse(_sessionsPerDayController.text) ?? 1,
+      whereTrain: _selectedWhere,
     );
 
     if (mounted) {
@@ -264,6 +294,21 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
               _buildDatePicker('End date', _endDate, () => _selectDate(context, false), false),
               const SizedBox(height: 32),
 
+              // ── Training Context ───────────────────────────────────
+              const Text(
+                'Contexto de Treino',
+                style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+              const SizedBox(height: 16),
+              _buildActiveHoursField(),
+              const SizedBox(height: 16),
+              _buildTextField('Sessões por dia', _sessionsPerDayController, keyboardType: TextInputType.number),
+              const SizedBox(height: 16),
+              const Text('Onde você treina?', style: TextStyle(color: Colors.white70, fontSize: 14)),
+              const SizedBox(height: 8),
+              _buildWhereCheckboxes(),
+              const SizedBox(height: 32),
+
               // ── Competitions ────────────────────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -353,6 +398,93 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildActiveHoursField() {
+    return Row(
+      children: [
+        Expanded(
+          flex: 2,
+          child: _buildTextField(
+            'Horas ativas/sessão',
+            _activeHoursController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: AppTheme.cardColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _activeHoursUnit,
+                dropdownColor: AppTheme.cardColor,
+                style: const TextStyle(color: Colors.white),
+                onChanged: (val) => setState(() => _activeHoursUnit = val!),
+                items: ['hour', 'min'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWhereCheckboxes() {
+    return Wrap(
+      spacing: 8,
+      children: _whereOptions.map((option) {
+        final isSelected = _selectedWhere.contains(option);
+        return FilterChip(
+          label: Text(option),
+          selected: isSelected,
+          onSelected: (selected) {
+            setState(() {
+              if (selected) {
+                _selectedWhere.add(option);
+              } else {
+                _selectedWhere.remove(option);
+              }
+            });
+          },
+          selectedColor: AppTheme.primaryTeal.withOpacity(0.3),
+          checkmarkColor: AppTheme.primaryTeal,
+          labelStyle: TextStyle(color: isSelected ? AppTheme.primaryTeal : Colors.white),
+          backgroundColor: AppTheme.cardColor,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildTextField(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType, bool required = true}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          maxLines: maxLines,
+          keyboardType: keyboardType,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            fillColor: AppTheme.cardColor,
+            filled: true,
+            isDense: true,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          ),
+          validator: required ? (v) => v == null || v.isEmpty ? 'Required' : null : null,
+        ),
+      ],
     );
   }
 

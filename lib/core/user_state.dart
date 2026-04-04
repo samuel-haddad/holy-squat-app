@@ -14,7 +14,6 @@ class UserState {
   static final ValueNotifier<bool> stravaConnected = ValueNotifier(false);
 
   // New Skills & Training fields
-  static final ValueNotifier<int?> aiCoachId = ValueNotifier(null);
   static final ValueNotifier<String> anamnesis = ValueNotifier('');
   static final ValueNotifier<double> activeHoursValue = ValueNotifier(1.0);
   static final ValueNotifier<String> activeHoursUnit = ValueNotifier('hour');

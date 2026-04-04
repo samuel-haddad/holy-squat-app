@@ -295,6 +295,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                 'Feito';
                           }
 
+                          final timeEx = w['time_exercise']?.toString() ?? '-';
+                          final rest = w['rest']?.toString() ?? '-';
+                          final restRound = w['rest_round']?.toString() ?? '-';
+
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 16.0),
                             child: _buildDetailedExercise(
@@ -309,6 +313,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                               isCompleted,
                               resultText,
                               w['adaptacaoLesao'],
+                              timeEx: timeEx,
+                              rest: rest,
+                              restRound: restRound,
                             ),
                           );
                         });
@@ -359,8 +366,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     String wodExerciseId,
     bool isCompleted,
     String? resultText,
-    String? adaptacaoLesao,
-  ) {
+    String? adaptacaoLesao, {
+    String timeEx = '-',
+    String rest = '-',
+    String restRound = '-',
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.cardColor,
@@ -404,17 +414,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             ),
           ],
           const SizedBox(height: 8),
-          const Text(
-            'Time:',
-            style: TextStyle(color: Colors.white, fontSize: 14),
+          Text(
+            'Time: $timeEx',
+            style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
-          const Text(
-            'Rest:',
-            style: TextStyle(color: Colors.white, fontSize: 14),
+          Text(
+            'Rest: $rest',
+            style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
-          const Text(
-            'Round rest:',
-            style: TextStyle(color: Colors.white, fontSize: 14),
+          Text(
+            'Round rest: $restRound',
+            style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
           Text(
             'Duração: $duration',
