@@ -5,7 +5,7 @@ class ExercicioDetalhado {
   final String day;
   final int session;
   final String sessionType;
-  final int duration;
+  final num duration;
   final int workoutIdx;
   final String exercise;
   final String exerciseTitle;
@@ -13,13 +13,13 @@ class ExercicioDetalhado {
   final String exerciseType;
   final int sets;
   final String details;
-  final int timeExercise;
+  final num timeExercise;
   final String exUnit;
-  final int rest;
+  final num rest;
   final String restUnit;
-  final int restRound;
+  final num restRound;
   final String restRoundUnit;
-  final int totalTime;
+  final num totalTime;
   final String location;
   final String stage;
   final String adaptacaoLesao;

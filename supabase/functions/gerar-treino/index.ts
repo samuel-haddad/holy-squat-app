@@ -7,18 +7,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const allowedSessionTypes = "Acessório, Acessórios/Blindagem, Calistenia, Cardio, Cardio-Mobilidade, Core Strength, Core/Prep, Crossfit, Descanso, Endurance, Força/Heavy, Força/Metcon, Força/Skill, Full Body Pump, Full Session, Ginástica/Metcon, Hipertrofia/Blindagem, LPO, LPO/Força/Metcon, LPO/Metcon, LPO/Potência, Mobilidade, Mobilidade Flow, Mobilidade-Cardio, Mobilidade-Core, Mobilidade-Inferiores, Mobilidade/Prep, Multi, Musculação, Musculação-Cardio, Musculação-Funcional, Musculação/Força, Natação, Prehab/Força, Prehab/Mobilidade, Recuperação Ativa, Reintrodução/FBB, Skill, Skill/Metcon";
+const allowedSessionTypes = "Acessório, Acessórios/Blindagem, Calistenia, Cardio, Cardio-Mobilidade, Core, Core Strength, Core/Prep, Crossfit, Descanso, Endurance, EMOM, FBB, Força/Heavy, Força/Metcon, Força/Skill, Full Body Pump, Full Session, Ginástica/Metcon, Hipertrofia/Blindagem, LPO, LPO/Força/Metcon, LPO/Metcon, LPO/Potência, Metcon, Mobilidade, Mobilidade Flow, Mobilidade-Cardio, Mobilidade-Core, Mobilidade-Inferiores, Mobilidade/Prep, Multi, Musculação, Musculação-Cardio, Musculação-Funcional, Musculação/Força, Natação, Prehab, Prehab/Força, Prehab/Mobilidade, Recuperação Ativa, Reintrodução/FBB, Skill, Skill/Metcon";
 
 const DATA_CONTRACT = `
-[CONTRATO DE CAMPOS - OBRIGATÓRIOS]
+[RESTRIÇÃO DE NOMENCLATURA]
+- session_type: Escolha obrigatoriamente um valor desta lista: [${allowedSessionTypes}]. Proibido inventar termos.
+
+
+[CONTRATO DE CAMPOS - REGRAS DETERMINÍSTICAS]
 - ts (Sets): Número de séries/rounds. Nunca null.
-- re/ru (Rest/Unit): Descanso entre séries (ex: 60, "seg"). Se não houver, use 0.
-- te/eu (Time/Unit): Tempo de execução ESTIMADO por série (ex: 2, "min" ou 30, "seg"). NUNCA 0.
-- tt (Total Time): Tempo total estimado do bloco (sets * tempo_exec + descansos) em minutos. NUNCA 0.
-- idx (Index): Ordem SEQUENCIAL GLOBAL do exercício na sessão (1, 2, 3...).
-- al (Adaptation): Se o atleta tiver lesões ou limitações, descreva a adaptação aqui.
-- de (Details): Prescrição técnica (reps, carga, intenção).
-- sg (Stage): O estágio do operacional. Use: "warmup", "skill", "strength", "workout" ou "cooldown".
+- re/ru (Rest/Unit): Descanso entre séries (ex: 60, "seg").
+- te/tu (Time Exercise/Unit): Duração da EXECUÇÃO de 1 série (ex: 45, "seg").
+- tt (Total Time): Deve ser calculado rigorosamente pela fórmula: tt = (time_exercise + rest + rest_round) * sets.
+- CONVERSÃO PARA MINUTOS: Todas as variáveis da fórmula acima DEVEM ser convertidas para minutos antes do cálculo. 
+  Exemplo: 30 segundos = 0.5 minutos. 
+  Exemplo Real: 4 sets de 45 seg (0.75 min) com 15 seg de descanso (0.25 min) = (0.75 + 0.25) * 4 = 4.0 minutos.
+- VALIDAÇÃO: A soma de todos os 'tt' de uma sessão não pode ser maior que a 'duration' (duração total) daquela sessão.
 `;
 
 const FEW_SHOT_EXAMPLES = `
@@ -38,9 +42,14 @@ async function generateWithProvider(
   actionLabel: string,
   maxTokens: number = 16000
 ): Promise<any> {
+  // DINÂMICA DE TEMPERATURA: 
+  // 0.2 para o Claude (evitar alucinação de volume)
+  // 0.7 para o Gemini (manter um pouco de fluidez analítica)
+  const targetTemperature = provider === 'anthropic' ? 0.2 : 0.7;
+
   if (provider === 'google') {
     const model = genAI.getGenerativeModel(
-      { model: llmModel, generationConfig: { responseMimeType: "application/json" } }
+      { model: llmModel, generationConfig: { responseMimeType: "application/json", temperature: targetTemperature } }
     );
     const result = await model.generateContent([prompt]);
     const usage = result.response.usageMetadata;
@@ -59,6 +68,7 @@ async function generateWithProvider(
       body: JSON.stringify({
         model: llmModel,
         max_tokens: maxTokens,
+        temperature: targetTemperature,
         system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -72,7 +82,7 @@ async function generateWithProvider(
     console.log(`[TOKENS] ${actionLabel} | model: ${llmModel} | maxTok: ${maxTokens} | input: ${data.usage?.input_tokens} | output: ${data.usage?.output_tokens} | stop: ${stopReason}`);
 
     let rawText: string = data.content[0].text.trim();
-    
+
     // 1. Markdown strip
     if (rawText.startsWith('```')) {
       rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
@@ -196,6 +206,20 @@ serve(async (req) => {
         Você é o AI Coach do Holy Squat App especialista em periodização de CrossFit.
         [DATA DE HOJE: ${today}]
 
+        [HIERARQUIA DE PRIORIDADE - LEI ZERO]
+        1. RESTRIÇÕES DO USUÁRIO: O perfil indica ${profile.sessions_per_day} sessões por dia. Gere exatamente esta quantidade.
+        2. SEGURANÇA E LESÕES: O usuário tem histórico em ${profile.lesoes}. Foco em Prehab e proteção tendínea (efeito de corticóides).
+        3. NOMENCLATURA: Use apenas os session_type da lista oficial fornecida no contrato.
+
+        [CONTEXTO CIENTÍFICO (RAG)]
+        ${knowledgeContext}
+        
+        [ESTRUTURA DE SESSÕES DIÁRIAS]
+        Como o usuário treina 2x por dia, siga este padrão:
+        - Sessão 1 (Morning/Home): Foco em Mobilidade, Prehab, Core ou SMR. Máximo 4 exercícios. Duração sugerida: 20-30min.
+        - Sessão 2 (Main/Box): Foco em Força, LPO ou Metcon. Máximo 6 exercícios. Duração sugerida: 45-60min.
+        *NOTA: Nunca prescreva treinos em DUPLA ou PARTNER WODs. O treino é individual.*
+
         [KPIs DETERMINÍSTICOS DO ATLETA - USE ESTES DADOS PARA ANÁLISE]
         - Aderência Global: ${athleteStats.adherence}%
         - PSE Médio (10 sessões): ${athleteStats.avg_pse}
@@ -301,10 +325,16 @@ ${diasStr}
             }
           ]
         }
+
+        [REGRAS DE DENSIDADE E VOLUME]
+        - LIMITE DE VOLUME: Máximo de 6 exercícios por sessão principal (Sessão 2) e 4 exercícios por sessão de mobilidade/prep (Sessão 1).
+- TREINO INDIVIDUAL: Proibido prescrever 'Partner WODs' ou exercícios que dependam de outra pessoa.
+- COERÊNCIA DE TEMPO: Se o 'tt' calculado para um exercício for 10 minutos, subtraia isso da duração total da sessão imediatamente para planejar o próximo.
+        - TRANSIÇÃO: Reserve mentalmente 2 minutos de transição entre exercícios (não precisa colocar na tabela, mas considere isso para não exceder a duration).
       `;
 
       console.log(`gerar_exercicios_semana: ${ctx.nome} semana ${ctx.semanaNum}/${ctx.totalSemanas} | coach: ${ai_coach_name ?? 'default'}`);
-      
+
       const compactPrompt = `
         Você é o AI Coach. Gere os exercícios para a Semana ${ctx.semanaNum} do meso "${ctx.nome}".
         
@@ -336,7 +366,7 @@ ${diasStr}
       `;
 
       const responseData = await generateWithProvider(compactPrompt, provider, llmModel, genAI, `semana_${ctx.semanaNum}`, 16000);
-      
+
       // Expansão: Mapeia as chaves curtas de volta para o formato longo esperado pelo App
       // E reinjeta os campos constantes (week, mesocycle)
       const fullExercicios = (responseData.exs || []).map((short: any) => ({
@@ -366,9 +396,9 @@ ${diasStr}
         adaptacaoLesao: short.al
       }));
 
-      return new Response(JSON.stringify({ "exerciciosDetalhados": fullExercicios }), { 
-        headers: { ...corsHeaders, "Content-Type": "application/json" }, 
-        status: 200 
+      return new Response(JSON.stringify({ "exerciciosDetalhados": fullExercicios }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200
       });
     }
 
