@@ -3,10 +3,12 @@ import 'package:holy_squat_app/widgets/theme_toggle_button.dart';
 import 'package:intl/intl.dart';
 import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/screens/workout_result_form_screen.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:holy_squat_app/widgets/app_bottom_nav.dart';
 import 'package:holy_squat_app/services/supabase_service.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/foundation.dart'; // Import kIsWeb
 
 class SessionDetailScreen extends StatefulWidget {
   final Map<String, dynamic> sessionData;
@@ -61,7 +63,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (t.contains('recuperação') || t.contains('recovery')) return 'assets/sessions_icons/recovery_session_icon.png';
       if (t.contains('corrida') || t.contains('run')) return 'assets/sessions_icons/run_session_icon.png';
       if (t.contains('core')) return 'assets/sessions_icons/core_session_icon.png';
-      if (t.contains('relax')) return 'assets/sessions_icons/relax_session_icon.png';
+      if (t.contains('relax') || t.contains('descanso')) return 'assets/sessions_icons/relax_session_icon.png';
       if (t.contains('swimming') || t.contains('natação') || t.contains('nataçao')) return 'assets/sessions_icons/swimming_session_icon.png';
       return 'assets/sessions_icons/crossfit_session_icon.png';
     }
@@ -491,69 +493,106 @@ class _VideoPlayerItem extends StatefulWidget {
 }
 
 class _VideoPlayerItemState extends State<_VideoPlayerItem> {
-  String? _videoId;
-  String _thumbUrl = 'https://img.youtube.com/vi/placeholder/0.jpg';
+  YoutubePlayerController? _youtubeController;
+  
+  String? _driveImageUrl;
+  String? _youtubeVideoId;
+  bool _isYoutube = false;
+  bool _isDrive = false;
+  bool _isWindows = false;
 
   @override
   void initState() {
     super.initState();
     try {
-      String url = widget.videoLink;
-      if (url.contains('youtu.be/')) {
-        _videoId = url.split('youtu.be/').last.split('?').first;
-      } else if (url.contains('shorts/')) {
-        _videoId = url.split('shorts/').last.split('?').first.split('/').first;
-      } else if (url.contains('v=')) {
-        _videoId = url.split('v=').last.split('&').first;
-      }
-
-      if (_videoId != null && _videoId!.length >= 11) {
-        _videoId = _videoId!.substring(0, 11);
-        _thumbUrl = 'https://img.youtube.com/vi/$_videoId/hqdefault.jpg';
-      } else {
-        _videoId = null;
+      if (!kIsWeb) {
+        _isWindows = Platform.isWindows;
       }
     } catch (_) {}
+    _initializePlayer();
   }
 
-  Future<void> _startVideo() async {
-    final Uri url = Uri.parse(widget.videoLink);
-    if (kIsWeb) {
-      // Logic for web could stay the same if we used conditional imports,
-      // but to keep it simple and fix Windows, let's just use launchUrl for all if preferred,
-      // or we can just skip the IFrame logic if not on Web.
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url);
+  Future<void> _initializePlayer() async {
+    final String url = widget.videoLink.trim();
+
+    // Usar o método oficial do pacote para extrair o ID do YouTube
+    final String? videoId = YoutubePlayerController.convertUrlToId(url);
+
+    if (videoId != null) {
+      _isYoutube = true;
+      _youtubeVideoId = videoId;
+      
+      if (!_isWindows) {
+        try {
+          _youtubeController = YoutubePlayerController.fromVideoId(
+            videoId: videoId,
+            autoPlay: false,
+            params: const YoutubePlayerParams(
+              showFullscreenButton: true,
+              mute: false,
+              showControls: true,
+            ),
+          );
+        } catch (_) {}
+        if (mounted) setState(() {});
       }
-    } else {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url);
-      }
+    } else if (url.contains('drive.google.com')) {
+      _isDrive = true;
+      try {
+        final idMatch = RegExp(r'\/d\/([a-zA-Z0-9_-]+)').firstMatch(url);
+        if (idMatch != null) {
+          final id = idMatch.group(1);
+          _driveImageUrl = 'https://drive.google.com/uc?id=$id';
+        }
+      } catch (_) {}
+      if (mounted) setState(() {});
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    // We don't need _isPlaying anymore if we use launchUrl
+  void dispose() {
+    _youtubeController?.close();
+    super.dispose();
+  }
 
-    return GestureDetector(
-      onTap: _startVideo,
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Container(
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        decoration: BoxDecoration(
           color: Colors.black,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: _buildContent(),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (_isYoutube) {
+      if (_isWindows && _youtubeVideoId != null) {
+        final thumbUrl = 'https://img.youtube.com/vi/$_youtubeVideoId/hqdefault.jpg';
+        return GestureDetector(
+          onTap: () async {
+            final Uri url = Uri.parse(widget.videoLink);
+            if (await canLaunchUrl(url)) {
+              await launchUrl(url);
+            }
+          },
           child: Stack(
             alignment: Alignment.center,
             children: [
               Image.network(
-                _thumbUrl,
+                thumbUrl,
                 fit: BoxFit.cover,
                 width: double.infinity,
                 errorBuilder: (context, error, stackTrace) => Container(
                   color: Colors.grey[800],
                   child: const Center(
                     child: Text(
-                      'Video Link Available',
+                      'Thumbnail indisponível',
                       style: TextStyle(color: Colors.white70),
                     ),
                   ),
@@ -562,6 +601,46 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
               const Icon(Icons.play_circle_fill, color: Colors.red, size: 60),
             ],
           ),
+        );
+      } else if (_youtubeController != null) {
+        return YoutubePlayer(
+          controller: _youtubeController!,
+          aspectRatio: 16 / 9,
+        );
+      }
+    }
+
+    if (_isDrive && _driveImageUrl != null) {
+      return Image.network(
+        _driveImageUrl!,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => _buildFallback('Erro ao carregar imagem do Drive'),
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white24),
+          );
+        },
+      );
+    }
+
+    return _buildFallback('Link não suportado: ${widget.videoLink}');
+  }
+
+  Widget _buildFallback(String message) {
+    return Container(
+      color: Colors.grey[900],
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.broken_image, color: Colors.white24, size: 40),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: const TextStyle(color: Colors.white24, fontSize: 12),
+            ),
+          ],
         ),
       ),
     );

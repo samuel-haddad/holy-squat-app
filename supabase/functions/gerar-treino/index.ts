@@ -369,31 +369,39 @@ ${diasStr}
 
       // Expansão: Mapeia as chaves curtas de volta para o formato longo esperado pelo App
       // E reinjeta os campos constantes (week, mesocycle)
-      const fullExercicios = (responseData.exs || []).map((short: any) => ({
-        date: short.dt,
-        week: ctx.semanaNum,
-        mesocycle: ctx.nome,
-        day: short.dy,
-        session: short.se,
-        session_type: short.st,
-        duration: short.du,
-        workout_idx: short.idx,
-        exercise: short.ex,
-        exercise_title: short.et,
-        exercise_group: short.eg,
-        exercise_type: short.ey,
-        sets: short.ts,
-        details: short.de,
-        time_exercise: short.te,
-        ex_unit: short.eu,
-        rest: short.re,
-        rest_unit: short.ru,
-        rest_round: short.rr,
-        rest_round_unit: short.rru,
-        total_time: short.tt,
-        location: short.lo,
-        stage: short.sg,
-        adaptacaoLesao: short.al
+      const fullExercicios = await Promise.all((responseData.exs || []).map(async (short: any) => {
+        // Busca o link mais próximo na biblioteca
+        const { data: link } = await supabaseClient.rpc('get_closest_exercise_link', { 
+          search_name: short.et || short.ex 
+        });
+
+        return {
+          date: short.dt,
+          week: ctx.semanaNum,
+          mesocycle: ctx.nome,
+          day: short.dy,
+          session: short.se,
+          session_type: short.st,
+          duration: short.du,
+          workout_idx: short.idx,
+          exercise: short.ex,
+          exercise_title: short.et,
+          exercise_group: short.eg,
+          exercise_type: short.ey,
+          sets: short.ts,
+          details: short.de,
+          time_exercise: short.te,
+          ex_unit: short.eu,
+          rest: short.re,
+          rest_unit: short.ru,
+          rest_round: short.rr,
+          rest_round_unit: short.rru,
+          total_time: short.tt,
+          location: short.lo,
+          stage: short.sg,
+          workout_link: link || "",
+          adaptacaoLesao: short.al
+        };
       }));
 
       return new Response(JSON.stringify({ "exerciciosDetalhados": fullExercicios }), {

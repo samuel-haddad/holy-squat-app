@@ -199,7 +199,7 @@ class _WodScreenState extends State<WodScreen> {
        if (t.contains('recuperação') || t.contains('recovery')) return 'assets/sessions_icons/recovery_session_icon.png';
        if (t.contains('corrida') || t.contains('run')) return 'assets/sessions_icons/run_session_icon.png';
        if (t.contains('core')) return 'assets/sessions_icons/core_session_icon.png';
-       if (t.contains('relax')) return 'assets/sessions_icons/relax_session_icon.png';
+       if (t.contains('relax') || t.contains('descanso')) return 'assets/sessions_icons/relax_session_icon.png';
        if (t.contains('swimming') || t.contains('natação') || t.contains('nataçao')) return 'assets/sessions_icons/swimming_session_icon.png';
        return 'assets/sessions_icons/crossfit_session_icon.png';
     }

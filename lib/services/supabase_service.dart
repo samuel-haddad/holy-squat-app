@@ -533,4 +533,147 @@ class SupabaseService {
       rethrow;
     }
   }
+
+  // --- EDIT PLAN METHODS ---
+
+  static Future<List<Map<String, dynamic>>> getIcons() async {
+    final response = await client.from('icons').select().order('session_type');
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  static Future<List<Map<String, dynamic>>> getSessionsWithFilters({
+    required DateTime start,
+    DateTime? end,
+    required String coach,
+  }) async {
+    final user = client.auth.currentUser;
+    if (user == null || user.email == null) return [];
+
+    var query = client
+        .from('sessions')
+        .select('*, icons(img)')
+        .eq('user_email', user.email!)
+        .eq('ai_coach_name', coach)
+        .gte('date', DateFormat('yyyy-MM-dd').format(start));
+
+    if (end != null) {
+      query = query.lte('date', DateFormat('yyyy-MM-dd').format(end));
+    }
+
+    final response = await query.order('date', ascending: true);
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  static Future<List<Map<String, dynamic>>> getWorkoutsWithFilters({
+    required DateTime start,
+    DateTime? end,
+    required String coach,
+  }) async {
+    final user = client.auth.currentUser;
+    if (user == null || user.email == null) return [];
+
+    var sessionQuery = client
+        .from('sessions')
+        .select('date_session_sessiontype_key')
+        .eq('user_email', user.email!)
+        .eq('ai_coach_name', coach)
+        .gte('date', DateFormat('yyyy-MM-dd').format(start));
+
+    if (end != null) {
+      sessionQuery = sessionQuery.lte('date', DateFormat('yyyy-MM-dd').format(end));
+    }
+
+    final sessionResponse = await sessionQuery;
+    final List<String> sessionKeys = (sessionResponse as List)
+        .map((s) => s['date_session_sessiontype_key'] as String)
+        .toList();
+
+    if (sessionKeys.isEmpty) return [];
+
+    final response = await client
+        .from('workouts')
+        .select()
+        .inFilter('date_session_sessiontype_key', sessionKeys)
+        .order('date', ascending: true);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  static Future<void> updateSessionsBatch({
+    required Map<String, dynamic> originalAttributes,
+    required Map<String, dynamic> updates,
+    required DateTime start,
+    DateTime? end,
+    required String coach,
+  }) async {
+    final user = client.auth.currentUser;
+    if (user == null || user.email == null) return;
+
+    var query = client
+        .from('sessions')
+        .update(updates)
+        .eq('user_email', user.email!)
+        .eq('ai_coach_name', coach)
+        .eq('session_type', originalAttributes['session_type'])
+        .eq('session', originalAttributes['session'])
+        .gte('date', DateFormat('yyyy-MM-dd').format(start));
+
+    if (end != null) {
+      query = query.lte('date', DateFormat('yyyy-MM-dd').format(end));
+    }
+
+    await query;
+  }
+
+  static Future<void> updateWorkoutsBatch({
+    required Map<String, dynamic> originalAttributes,
+    required Map<String, dynamic> updates,
+    required DateTime start,
+    DateTime? end,
+    required String coach,
+  }) async {
+    final user = client.auth.currentUser;
+    if (user == null || user.email == null) return;
+
+    var sessionQuery = client
+        .from('sessions')
+        .select('date_session_sessiontype_key')
+        .eq('user_email', user.email!)
+        .eq('ai_coach_name', coach)
+        .gte('date', DateFormat('yyyy-MM-dd').format(start));
+
+    if (end != null) {
+      sessionQuery = sessionQuery.lte('date', DateFormat('yyyy-MM-dd').format(end));
+    }
+
+    final sessionResponse = await sessionQuery;
+    final List<String> sessionKeys = (sessionResponse as List)
+        .map((s) => s['date_session_sessiontype_key'] as String)
+        .toList();
+
+    if (sessionKeys.isEmpty) return;
+
+    var finalQuery = client
+        .from('workouts')
+        .update(updates)
+        .inFilter('date_session_sessiontype_key', sessionKeys);
+
+    // Grouping fields for matching
+    final List<String> groupFields = [
+      'mesocycle', 'day', 'exercise', 'sets', 'details', 
+      'time_exercise', 'ex_unit', 'rest', 'rest_unit', 'rest_round', 
+      'rest_round_unit', 'total_time', 'location', 'stage'
+    ];
+
+    for (var field in groupFields) {
+      if (originalAttributes[field] == null) {
+        finalQuery = finalQuery.isFilter(field, null);
+      } else {
+        finalQuery = finalQuery.eq(field, originalAttributes[field]);
+      }
+    }
+
+    await finalQuery;
+  }
 }
+
