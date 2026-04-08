@@ -14,7 +14,7 @@ from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader, You
 load_dotenv()
 
 # ==========================================
-# 1. Configurações e Credenciais
+# 1. Configs and Credentials
 # ==========================================
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -53,8 +53,8 @@ def get_gemini_embeddings_batch(texts: list[str]) -> list[list[float]]:
             )
             return [emb.values for emb in response.embeddings]
         except Exception as e:
-            print(f"      [!] Falha na rede ou API: {e}")
-            print(f"      [Zzz] Retentando em {espera}s...")
+            print(f"      [!] Network or API failure: {e}")
+            print(f"      [Zzz] Retrying in {espera}s...")
             time.sleep(espera)
             espera += 10 
     return []
@@ -71,14 +71,14 @@ def sanitizar_texto_para_banco(texto: str) -> str:
     return texto.replace('\x00', '').replace('\u0000', '')
 
 def process_and_upload(loader, source_identifier: str):
-    print(f"\n⚡ Iniciando processamento turbo: {source_identifier}")
+    print(f"\n⚡ Starting turbo processing: {source_identifier}")
     limpar_dados_parciais(source_identifier)
     
     try:
         pages = loader.load()
         chunks = text_splitter.split_documents(pages)
         total_chunks = len(chunks)
-        print(f"-> Dividido em {total_chunks} blocos semânticos.")
+        print(f"-> Divided into {total_chunks} semantic blocks.")
         
         batch_size = 100 
         
@@ -89,7 +89,7 @@ def process_and_upload(loader, source_identifier: str):
             vetores = get_gemini_embeddings_batch(textos_do_lote)
             
             if not vetores or len(vetores) != len(textos_do_lote):
-                print(f"Falha irrecuperável. Abortando {source_identifier}.")
+                print(f"Unrecoverable failure. Aborting {source_identifier}.")
                 return False
             
             records_to_insert = []
@@ -104,48 +104,48 @@ def process_and_upload(loader, source_identifier: str):
                 })
             
             supabase.table("knowledge_base").insert(records_to_insert).execute()
-            print(f"-> Inseridos {len(records_to_insert)} blocos ({min(i + batch_size, total_chunks)}/{total_chunks}).")
+            print(f"-> Inserted {len(records_to_insert)} blocks ({min(i + batch_size, total_chunks)}/{total_chunks}).")
 
-        print(f"-> ✅ {source_identifier} concluído com sucesso!")
+        print(f"-> ✅ {source_identifier} completed successfully!")
         return True
         
     except Exception as e:
-        print(f"Erro ao processar conteúdo de {source_identifier}: {e}")
+        print(f"Error processing content from {source_identifier}: {e}")
         return False
 
 def get_loader_for_url(url: str):
     url_lower = url.lower()
     
-    # Adiciona https:// caso o link venha quebrado (Ex: www.aim7.com)
+    # Adds https:// if the link is broken (Ex: www.aim7.com)
     if not url_lower.startswith("http://") and not url_lower.startswith("https://"):
         url = "https://" + url
         url_lower = url.lower()
 
     if "youtube.com" in url_lower or "youtu.be" in url_lower:
-        print("   [Roteador] Detetado link do YouTube.")
+        print("   [Router] YouTube link detected.")
         return YoutubeLoader.from_youtube_url(url, add_video_info=True, language=["pt", "en", "es"])
     
     elif url_lower.endswith(".pdf"):
-        print("   [Roteador] Detetado PDF web.")
-        # Usamos cabeçalhos para fingir ser um Chrome e evitar o erro 406
+        print("   [Router] Web PDF detected.")
+        # We use headers to pretend to be a Chrome browser and avoid a 406 error
         headers = {"User-Agent": os.environ["USER_AGENT"]}
         return PyPDFLoader(url, headers=headers)
     
     else:
-        print("   [Roteador] Detetado site padrão.")
-        # O requests_kwargs={'verify': False} ignora erros de certificado SSL (Erro do DOI)
+        print("   [Router] Standard website detected.")
+        # requests_kwargs={'verify': False} ignores SSL certificate errors (DOI error)
         return WebBaseLoader(url, requests_kwargs={'verify': False})
 
 # ==========================================
-# 3. Execução do Pipeline
+# 3. Pipeline Execution
 # ==========================================
 if __name__ == "__main__":
     
     import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) # Esconde os avisos vermelhos de SSL no terminal
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) # Hides red SSL warnings in the terminal
 
     if os.path.exists(RAW_PDF_DIR):
-        print("=== INICIANDO INGESTÃO DE PDFs (MODO TURBO) ===")
+        print("=== STARTING PDF INGESTION (TURBO MODE) ===")
         for filename in os.listdir(RAW_PDF_DIR):
             if filename.endswith(".pdf"):
                 full_path = os.path.join(RAW_PDF_DIR, filename)
@@ -155,22 +155,22 @@ if __name__ == "__main__":
                     if sucesso:
                         shutil.move(full_path, os.path.join(DONE_PDF_DIR, filename))
                     else:
-                        print("-> ❌ Falha. Arquivo mantido na fila.")
+                        print("-> ❌ Failure. File kept in queue.")
                 except Exception as e:
-                    print(f"❌ Falha fatal ao tentar abrir o ficheiro local {filename}: {e}")
+                    print(f"❌ Fatal failure when trying to open the local file {filename}: {e}")
     
     # --- PROCESSAMENTO DE URLs ---
-    URLS_DEAD_FILE = "./raw_data/urls_mortas.txt" # O cemitério de links
+    URLS_DEAD_FILE = "./raw_data/urls_mortas.txt" # The graveyard of links
 
     if os.path.exists(URLS_FILE):
-        print("\n=== INICIANDO INGESTÃO DE LINKS WEB ===")
+        print("\n=== STARTING WEB LINKS INGESTION ===")
         
         urls_ja_concluidas = set()
         if os.path.exists(URLS_DONE_FILE):
             with open(URLS_DONE_FILE, "r") as f_done:
                 urls_ja_concluidas = set(line.strip() for line in f_done.readlines())
                 
-        # Carrega também as URLs mortas para não tentar de novo
+        # Also loads dead URLs so we do not try again
         urls_mortas = set()
         if os.path.exists(URLS_DEAD_FILE):
             with open(URLS_DEAD_FILE, "r") as f_dead:
@@ -184,11 +184,11 @@ if __name__ == "__main__":
                     continue
                     
                 if url in urls_ja_concluidas:
-                    print(f"✅ Saltando URL já processada: {url}")
+                    print(f"✅ Skipping already processed URL: {url}")
                     continue
                     
                 if url in urls_mortas:
-                    print(f"💀 Saltando URL morta/sem legendas: {url}")
+                    print(f"💀 Skipping dead/no-subtitle URL: {url}")
                     continue
 
                 try:
@@ -199,14 +199,14 @@ if __name__ == "__main__":
                         with open(URLS_DONE_FILE, "a") as f_done:
                             f_done.write(url + "\n")
                     else:
-                        print(f"-> ❌ Falha no processamento. Movendo para a lista de mortos: {url}")
+                        print(f"-> ❌ Processing failure. Moving to dead links list: {url}")
                         with open(URLS_DEAD_FILE, "a") as f_dead:
                             f_dead.write(url + "\n")
                             
                 except Exception as e:
-                    print(f"❌ Falha fatal de ligação com a URL {url}: {e}")
-                    print("-> Movendo para a lista de mortos.")
+                    print(f"❌ Connection fatal failure with URL {url}: {e}")
+                    print("-> Moving to dead links list.")
                     with open(URLS_DEAD_FILE, "a") as f_dead:
                         f_dead.write(url + "\n")
                     
-    print("\n🚀 Pipeline de Ingestão Finalizado!")
+    print("\n🚀 Ingestion Pipeline Finished!")
