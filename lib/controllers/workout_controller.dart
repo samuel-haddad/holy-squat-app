@@ -1,7 +1,9 @@
 // lib/controllers/workout_controller.dart
 
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/ai_workout_response.dart';
 import '../repositories/workout_repository.dart';
 import '../services/supabase_service.dart';
@@ -17,6 +19,10 @@ class WorkoutController extends ChangeNotifier {
   AIWorkoutResponse? _planoGerado;
   Map<String, dynamic>? _athleteStats;
 
+  // Background job tracking
+  RealtimeChannel? _jobChannel;
+  Completer<void>? _jobCompleter;
+
   WorkoutState get state => _state;
   bool get isLoading => _state == WorkoutState.loading;
   String get errorMessage => _errorMessage;
@@ -26,20 +32,33 @@ class WorkoutController extends ChangeNotifier {
 
   WorkoutController(this._repository);
 
+  // Step-specific loading messages
+  static const _newPlanStepMessages = {
+    1: '🧠 Ação 1/4 — Analisando histórico esportivo...',
+    2: '📋 Ação 2/4 — Projetando blocos do macrociclo...',
+    3: '📆 Ação 3/4 — Gerando calendário semanal...',
+    4: '⚡ Ação 4/4 — Gerando exercícios detalhados...',
+  };
+
+  static const _nextCycleStepMessages = {
+    1: '🧠 Ação 1/2 — Analisando progresso e gerando calendário...',
+    2: '⚡ Ação 2/2 — Gerando exercícios detalhados...',
+  };
+
   // =========================================================
-  // Busca estatísticas para o dashboard (KPIs, Radar, Heatmap)
+  // Fetches statistics for the dashboard (KPIs, Radar, Heatmap)
   // =========================================================
   Future<void> fetchPlanningStats(String email) async {
     try {
       _athleteStats = await _repository.fetchAthletePlanningStats(email);
       notifyListeners();
     } catch (e) {
-      print('Erro ao buscar estatísticas do atleta: $e');
+      print('Error fetching athlete statistics: $e');
     }
   }
 
   // =========================================================
-  // AÇÃO 1: Criar Novo Plano
+  // CREATE NEW PLAN — Background orchestration via webhooks
   // =========================================================
   Future<void> criarNovoPlano({
     required String emailUtilizador,
@@ -56,124 +75,51 @@ class WorkoutController extends ChangeNotifier {
     List<String>? whereTrain,
   }) async {
     _state = WorkoutState.loading;
-    _loadingMessage = '🧠 Analisando seu histórico e estruturando plano...';
+    _loadingMessage = '🚀 Iniciando geração do plano em background...';
     notifyListeners();
 
     try {
-      // ── PASSO 0: Buscar estatísticas determinísticas ──
       await fetchPlanningStats(emailUtilizador);
 
-      // ── FASE 1: estrutura + visaoSemanal ──
-      final fase1 = await _repository.criarPlanoFase1(
-        emailUtilizador: emailUtilizador,
-        objetivoGeral: objetivoGeral,
-        dataInicio: dataInicio,
-        dataFim: dataFim,
-        competicoes: competicoes,
-        notasAdicionais: notasAdicionais,
+      // 1. Create background job
+      final jobId = await _repository.criarJobGeracao(
+        jobType: 'new_plan',
+        totalSteps: 4,
         aiCoachName: aiCoachName,
-        activeHoursValue: activeHoursValue,
-        activeHoursUnit: activeHoursUnit,
-        sessionsPerDay: sessionsPerDay,
-        whereTrain: whereTrain,
-      );
-      _planoGerado = fase1;
-      notifyListeners();
-
-      // ── Extrair info do Meso 1 ──
-      final blocos = (fase1.visaoGeralPlano['blocos'] as List<dynamic>?) ?? [];
-      final meso1 = blocos.isNotEmpty ? (blocos.first as Map<String, dynamic>) : <String, dynamic>{};
-      final meso1Nome = meso1['mesociclo']?.toString() ?? 'Mesociclo 1';
-      final meso1Foco = meso1['foco']?.toString() ?? '';
-
-      // ── Agrupar visaoSemanal por semana ──
-      final Map<int, List<Map<String, dynamic>>> weekGroups = {};
-      for (final dia in fase1.visaoSemanal) {
-        if (!dia.isDescansoAtivo) {
-          weekGroups.putIfAbsent(dia.week, () => []).add(dia.toJson());
-        }
-      }
-      final weeksOrdered = weekGroups.keys.toList()..sort();
-      final totalSemanas = weeksOrdered.length;
-
-      // ── Gerar exercícios em PARALELO (Otimização para versões pagas) ──
-      _loadingMessage = '⚡ Gerando exercícios em paralelo (Semanas 1 a $totalSemanas)...';
-      notifyListeners();
-
-      final List<ExercicioDetalhado> todosExercicios = [];
-      
-      final List<Future<List<ExercicioDetalhado>>> futureWeeks = weeksOrdered.map((weekNum) {
-        return _repository.gerarExerciciosSemana(
-          emailUtilizador: emailUtilizador,
-          diasSemana: weekGroups[weekNum]!,
-          mesoContext: {
-            'nome': meso1Nome,
+        inputParams: {
+          'email_utilizador': emailUtilizador,
+          'ai_coach_name': aiCoachName,
+          'diretrizes_plano': {
             'objetivo': objetivoGeral,
-            'dataInicio': dataInicio,
-            'dataFim': dataFim,
-            'semanaNum': weekNum,
-            'totalSemanas': totalSemanas,
-            'focoSemana': meso1Foco,
-            'contexto_atleta': _athleteStats?['kpis'], // Injeta KPIs no contexto da IA
+            'data_inicio': dataInicio,
+            'data_fim': dataFim,
+            'competicoes': competicoes,
+            'notas': notasAdicionais ?? '',
           },
-          aiCoachName: aiCoachName,
-        );
-      }).toList();
+          'perfil_atleta': {
+            'sessions_per_day': sessionsPerDay,
+            'where_train': whereTrain,
+            'active_hours_value': activeHoursValue,
+            'active_hours_unit': activeHoursUnit,
+          },
+        },
+      );
 
-      // Aguarda todas as semanas concluírem em paralelo
-      final results = await Future.wait(futureWeeks);
-      for (final res in results) {
-        todosExercicios.addAll(res);
-      }
-
-      // ── Montar resposta final ──
-      final finalResponse = AIWorkoutResponse.fromJson({
-        ...fase1.toJson(),
-        'exerciciosDetalhados': todosExercicios.map((e) => e.toJson()).toList(),
-      });
-      _planoGerado = finalResponse;
-
-      _loadingMessage = '💾 Salvando plano na base de dados...';
+      _loadingMessage = _newPlanStepMessages[1]!;
       notifyListeners();
 
-      // ── Salvar metadados do plano ──
-      final novoPlanoId = await SupabaseService.saveTrainingPlan({
-        'start_date': dataInicio,
-        'end_date': dataFim.isEmpty ? null : dataFim,
-        'notes': notasAdicionais,
-        'competitions': competicoes.map((c) => {'name': c, 'date': null}).toList(),
-        'actual_plan_summary': jsonEncode(finalResponse.visaoGeralPlano),
-        'workouts_plan_text': jsonEncode(finalResponse.analiseMacro),
-        'workouts_plan_table': finalResponse.visaoSemanal.map((v) => v.toJson()).toList(),
-      }, aiCoachName: aiCoachName);
+      // 2. Subscribe to Realtime and wait for completion
+      await _subscribeAndWait(jobId, _newPlanStepMessages);
 
-      // ── Limpar sessões IA futuras antigas ──
-      final hoje = DateTime.now();
-      final hojeStr = '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
-      try {
-        await SupabaseService.client
-            .from('sessions')
-            .delete()
-            .eq('user_email', emailUtilizador)
-            .eq('ai_coach_name', aiCoachName ?? 'Human Coach')
-            .not('plan_id', 'is', null)
-            .gt('date', hojeStr);
-      } catch (e) {
-        print('Erro ao limpar sessões IA antigas: $e');
+      // 3. Fetch final result and build response
+      final job = await _repository.fetchJobResult(jobId);
+      if (job == null) throw Exception('Job result not found');
+
+      if (job['status'] == 'error') {
+        throw Exception(job['error_message'] ?? 'Unknown server error');
       }
 
-      // ── Salvar exercícios ──
-      if (finalResponse.exerciciosDetalhados.isNotEmpty) {
-        _loadingMessage = '💾 Salvando ${finalResponse.exerciciosDetalhados.length} exercícios...';
-        notifyListeners();
-        await _repository.salvarExerciciosGerados(
-          finalResponse.exerciciosDetalhados,
-          emailUtilizador,
-          planId: novoPlanoId,
-          aiCoachName: aiCoachName,
-        );
-      }
-
+      _planoGerado = _buildResponseFromNewPlanJob(job);
       _state = WorkoutState.success;
       _loadingMessage = '';
 
@@ -181,12 +127,13 @@ class WorkoutController extends ChangeNotifier {
       _errorMessage = 'Falha ao gerar o plano: ${e.toString()}';
       _state = WorkoutState.error;
     } finally {
+      _cleanupJobChannel();
       notifyListeners();
     }
   }
 
   // =========================================================
-  // AÇÃO 2: Gerar Próximo Ciclo
+  // GENERATE NEXT CYCLE — Background orchestration via webhooks
   // =========================================================
   Future<void> gerarProximoCiclo({
     required String emailUtilizador,
@@ -196,117 +143,177 @@ class WorkoutController extends ChangeNotifier {
     String? aiCoachName,
   }) async {
     _state = WorkoutState.loading;
-    _loadingMessage = '🧠 Analisando progresso e estruturando próximo meso...';
+    _loadingMessage = '🚀 Iniciando geração do próximo ciclo em background...';
     notifyListeners();
 
     try {
-      // 1. Identificar o último mesociclo gerado no plano
-      String? ultimoMeso;
-      if (currentWorkoutsTable.isNotEmpty) {
-        ultimoMeso = currentWorkoutsTable.last['mesocycle']?.toString();
-      }
+      // Identify mesos already generated
+      final mesosJaGerados = currentWorkoutsTable
+          .map((e) => e['mesocycle']?.toString() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
 
-      // 2. Buscar estatísticas determinísticas do último ciclo
-      Map<String, dynamic>? performanceStats;
-      if (ultimoMeso != null) {
-        performanceStats = await _repository.fetchMesocycleStats(planoId, ultimoMeso);
-      }
-
-      // ── FASE 1 ──
-      final fase1 = await _repository.gerarProximoMesocicloFase1(
-        emailUtilizador: emailUtilizador,
-        planoId: planoId,
-        actualPlanSummaryJson: actualPlanSummaryJson,
-        mesosJaGerados: currentWorkoutsTable
-            .map((e) => e['mesocycle']?.toString() ?? '')
-            .where((e) => e.isNotEmpty)
-            .toSet()
-            .toList(),
+      // 1. Create background job
+      final jobId = await _repository.criarJobGeracao(
+        jobType: 'next_cycle',
+        totalSteps: 2,
         aiCoachName: aiCoachName,
-        performanceStats: performanceStats, // Injeta as estatísticas
+        inputParams: {
+          'email_utilizador': emailUtilizador,
+          'ai_coach_name': aiCoachName,
+          'plano_id': planoId,
+          'actual_plan_summary_json': actualPlanSummaryJson,
+          'mesos_ja_gerados': mesosJaGerados,
+          'current_workouts_table': currentWorkoutsTable,
+        },
       );
-      _planoGerado = fase1;
+
+      _loadingMessage = _nextCycleStepMessages[1]!;
       notifyListeners();
 
-      final rawFase1 = fase1.toJson();
-      final mesoCtxBase = (rawFase1['_mesoContext'] as Map<String, dynamic>?) ?? {};
+      // 2. Subscribe and wait
+      await _subscribeAndWait(jobId, _nextCycleStepMessages);
 
-      final Map<int, List<Map<String, dynamic>>> weekGroups = {};
-      for (final dia in fase1.visaoSemanal) {
-        if (!dia.isDescansoAtivo) {
-          weekGroups.putIfAbsent(dia.week, () => []).add(dia.toJson());
-        }
-      }
-      final weeksOrdered = weekGroups.keys.toList()..sort();
-      final totalSemanas = weeksOrdered.length;
+      // 3. Fetch final result
+      final job = await _repository.fetchJobResult(jobId);
+      if (job == null) throw Exception('Job result not found');
 
-      // ── Gerar exercícios em PARALELO (Próximo Ciclo) ──
-      _loadingMessage = '⚡ Gerando exercícios do novo ciclo em paralelo (1 a $totalSemanas)...';
-      notifyListeners();
-
-      final List<ExercicioDetalhado> todosExercicios = [];
-      final List<Future<List<ExercicioDetalhado>>> futureWeeks = weeksOrdered.map((weekNum) {
-        return _repository.gerarExerciciosSemana(
-          emailUtilizador: emailUtilizador,
-          diasSemana: weekGroups[weekNum]!,
-          mesoContext: {
-            ...mesoCtxBase,
-            'semanaNum': weekNum,
-            'totalSemanas': totalSemanas,
-          },
-          aiCoachName: aiCoachName,
-        );
-      }).toList();
-
-      final results = await Future.wait(futureWeeks);
-      for (final res in results) {
-        todosExercicios.addAll(res);
+      if (job['status'] == 'error') {
+        throw Exception(job['error_message'] ?? 'Unknown server error');
       }
 
-      final finalResponse = AIWorkoutResponse.fromJson({
-        ...rawFase1,
-        'exerciciosDetalhados': todosExercicios.map((e) => e.toJson()).toList(),
-      });
-      _planoGerado = finalResponse;
-
-      _loadingMessage = '💾 Salvando novo ciclo...';
-      notifyListeners();
-
-      await SupabaseService.updateTrainingPlan(planoId, {
-        'progress_analysis': jsonEncode(finalResponse.analiseMesocicloAnterior),
-        'actual_plan_summary': jsonEncode(finalResponse.visaoGeralPlano),
-        'workouts_plan_table': [
-          ...currentWorkoutsTable,
-          ...finalResponse.visaoSemanal.map((v) => v.toJson()).toList(),
-        ],
-      });
-
-      if (finalResponse.exerciciosDetalhados.isNotEmpty) {
-        _loadingMessage = '💾 Salvando ${finalResponse.exerciciosDetalhados.length} exercícios...';
-        notifyListeners();
-        await _repository.salvarExerciciosGerados(
-          finalResponse.exerciciosDetalhados,
-          emailUtilizador,
-          planId: planoId,
-          aiCoachName: aiCoachName,
-        );
-      }
-
+      _planoGerado = _buildResponseFromNextCycleJob(job);
       _state = WorkoutState.success;
       _loadingMessage = '';
+
     } catch (e) {
       _errorMessage = 'Falha ao gerar o próximo ciclo: ${e.toString()}';
       _state = WorkoutState.error;
     } finally {
+      _cleanupJobChannel();
       notifyListeners();
     }
   }
 
+  // =========================================================
+  // Realtime subscription for job progress
+  // =========================================================
+  Future<void> _subscribeAndWait(
+    String jobId,
+    Map<int, String> stepMessages,
+  ) async {
+    _jobCompleter = Completer<void>();
+    final supabase = Supabase.instance.client;
+
+    _jobChannel = supabase
+        .channel('job:$jobId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'ai_generation_jobs',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: jobId,
+          ),
+          callback: (PostgresChangePayload payload) {
+            final newData = payload.newRecord;
+            final step = newData['current_step'] as int? ?? 1;
+            final status = newData['status'] as String? ?? 'processing';
+
+            // Update loading message based on step
+            if (stepMessages.containsKey(step)) {
+              _loadingMessage = stepMessages[step]!;
+              notifyListeners();
+            }
+
+            // Check for completion
+            if (status == 'completed') {
+              _loadingMessage = '💾 Dados salvos pelo servidor. Finalizando...';
+              notifyListeners();
+              if (!_jobCompleter!.isCompleted) {
+                _jobCompleter!.complete();
+              }
+            } else if (status == 'error') {
+              if (!_jobCompleter!.isCompleted) {
+                _jobCompleter!.complete();
+              }
+            }
+          },
+        )
+        .subscribe();
+
+    // Safety timeout: 10 minutes max wait
+    await _jobCompleter!.future.timeout(
+      const Duration(minutes: 10),
+      onTimeout: () {
+        throw Exception('Timeout: a geração excedeu 10 minutos.');
+      },
+    );
+  }
+
+  void _cleanupJobChannel() {
+    if (_jobChannel != null) {
+      Supabase.instance.client.removeChannel(_jobChannel!);
+      _jobChannel = null;
+    }
+    _jobCompleter = null;
+  }
+
+  // =========================================================
+  // Build AIWorkoutResponse from job results
+  // =========================================================
+  AIWorkoutResponse _buildResponseFromNewPlanJob(Map<String, dynamic> job) {
+    final step1 = job['step_1_result'] as Map<String, dynamic>? ?? {};
+    final step2 = job['step_2_result'] as Map<String, dynamic>? ?? {};
+    final step3 = job['step_3_result'] as Map<String, dynamic>? ?? {};
+    final step4 = job['step_4_result'] as Map<String, dynamic>? ?? {};
+
+    return AIWorkoutResponse.fromJson({
+      'analiseMacro': step1['analiseMacro'],
+      'visaoGeralPlano': step2['visaoGeralPlano'] ?? {},
+      'analiseCicloAnterior': step3['analiseCicloAnterior'],
+      'visaoGeralCiclo': step3['visaoGeralCiclo'],
+      'visaoSemanal': step3['visaoSemanal'] ?? [],
+      'exerciciosDetalhados': step4['exerciciosDetalhados'] ?? [],
+    });
+  }
+
+  AIWorkoutResponse _buildResponseFromNextCycleJob(Map<String, dynamic> job) {
+    final step1 = job['step_1_result'] as Map<String, dynamic>? ?? {};
+    final step2 = job['step_2_result'] as Map<String, dynamic>? ?? {};
+    final inputParams = job['input_params'] as Map<String, dynamic>? ?? {};
+
+    Map<String, dynamic> planSummary = {};
+    try {
+      planSummary = jsonDecode(inputParams['actual_plan_summary_json'] ?? '{}');
+    } catch (_) {}
+
+    return AIWorkoutResponse.fromJson({
+      'analiseCicloAnterior': step1['analiseCicloAnterior'],
+      'visaoGeralCiclo': step1['visaoGeralCiclo'],
+      'visaoGeralPlano': planSummary,
+      'visaoSemanal': step1['visaoSemanal'] ?? [],
+      'exerciciosDetalhados': step2['exerciciosDetalhados'] ?? [],
+    });
+  }
+
+  // =========================================================
+  // Reset
+  // =========================================================
   void resetState() {
+    _cleanupJobChannel();
     _state = WorkoutState.initial;
     _errorMessage = '';
     _loadingMessage = '';
     _planoGerado = null;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _cleanupJobChannel();
+    super.dispose();
   }
 }

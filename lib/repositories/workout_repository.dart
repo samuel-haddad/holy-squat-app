@@ -18,12 +18,12 @@ class WorkoutRepository {
         }
       }
     } catch (e) {
-      print('Aviso: refresh de sessão falhou: $e');
+      print('Warning: session refresh failed: $e');
     }
   }
 
   // =========================================================
-  // Busca coaches disponíveis na tabela ai_coach
+  // Fetches available coaches from the ai_coach table
   // =========================================================
   Future<List<Map<String, dynamic>>> fetchAiCoaches() async {
     final response = await _supabase
@@ -34,7 +34,7 @@ class WorkoutRepository {
   }
 
   // =========================================================
-  // Busca estatísticas para o dashboard de planejamento
+  // Fetches statistics for the planning dashboard
   // =========================================================
   Future<Map<String, dynamic>?> fetchAthletePlanningStats(String email) async {
     try {
@@ -45,7 +45,7 @@ class WorkoutRepository {
       );
       return response as Map<String, dynamic>?;
     } catch (e) {
-      print('Erro ao buscar athlete planning stats: $e');
+      print('Error fetching athlete planning stats: $e');
       return null;
     }
   }
@@ -62,13 +62,13 @@ class WorkoutRepository {
       );
       return response as Map<String, dynamic>?;
     } catch (e) {
-      print('Erro ao buscar mesocycle stats: $e');
+      print('Error fetching mesocycle stats: $e');
       return null;
     }
   }
 
   // =========================================================
-  // Migração: Atribui "Human Coach" a sessões sem coach
+  // Migration: Assigns "Human Coach" to sessions without a coach
   // =========================================================
   Future<void> migrateLegacySessions() async {
     try {
@@ -76,30 +76,30 @@ class WorkoutRepository {
           .from('sessions')
           .update({'ai_coach_name': 'Human Coach'})
           .isFilter('ai_coach_name', null);
-      print('✅ Migração de sessões legadas concluída.');
+      print('✅ Legacy sessions migration complete.');
     } catch (e) {
-      print('❌ Erro na migração: $e');
+      print('❌ Migration error: $e');
     }
   }
 
   // =========================================================
-  // Limpeza: Remove dados de um coach específico para evitar fantasmas
+  // Cleanup: Removes data from a specific coach to avoid ghosts
   // =========================================================
   Future<void> cleanupCoachData(String email, String aiCoachName) async {
     await _refreshSessionIfNeeded();
     
-    // Remove sessões (workouts são vinculados pela key e devem ser limpos se houver cascata ou manualmente)
-    // Para garantir, limpamos workouts primeiro se não houver cascata no banco
+    // Remove sessions (workouts are linked by key and should be cleaned if cascading or manually)
+    // To ensure safety, we clean workouts first if there's no DB cascade
     await _supabase
         .from('workouts')
         .delete()
         .eq('user_email', email)
-        .eq('mesocycle', 'Histórico'); // Opcional, mas por segurança limpamos tudo do coach
+        .eq('mesocycle', 'Histórico'); // Optional, but for safety we clean everything from the coach
         
-    // Como a tabela workouts não tem ai_coach_name, limpamos via subquerie ou apenas as sessões
-    // Na verdade, a melhor forma é limpar as sessões do coach, e os workouts associados.
+    // Since the workouts table doesn't have an ai_coach_name, we clean via subqueries or just the sessions
+    // Actually, the best way is to clean the coach's sessions, and the associated workouts.
     
-    // 1. Buscar as chaves das sessões desse coach
+    // 1. Fetch the keys of the sessions for this coach
     final sessions = await _supabase
         .from('sessions')
         .select('date_session_sessiontype_key')
@@ -109,96 +109,146 @@ class WorkoutRepository {
     final List<String> keys = (sessions as List).map((s) => s['date_session_sessiontype_key'] as String).toList();
     
     if (keys.isNotEmpty) {
-      // 2. Limpar workouts vinculados a essas sessões
+      // 2. Clean workouts linked to these sessions
       await _supabase.from('workouts').delete().inFilter('date_session_sessiontype_key', keys);
       
-      // 3. Limpar as sessões
+      // 3. Clean the sessions
       await _supabase.from('sessions').delete().inFilter('date_session_sessiontype_key', keys);
     }
     
-    print('🧹 Limpeza de dados para $aiCoachName concluída.');
+    print('🧹 Data cleanup for $aiCoachName complete.');
   }
 
   // =========================================================
-  // FASE 1: Criar Plano — estrutura + visaoSemanal
+  // BACKGROUND JOBS: Create and monitor orchestrated generation
   // =========================================================
-  Future<AIWorkoutResponse> criarPlanoFase1({
-    required String emailUtilizador,
-    required String objetivoGeral,
-    required String dataInicio,
-    required String dataFim,
-    required List<String> competicoes,
-    String? notasAdicionais,
+
+  /// Creates a background generation job. The server-side orchestrator
+  /// (orchestrate-treino) will process it step by step via pg_net triggers.
+  /// Returns the job UUID.
+  Future<String> criarJobGeracao({
+    required String jobType,
+    required Map<String, dynamic> inputParams,
+    required int totalSteps,
     String? aiCoachName,
-    double? activeHoursValue,
-    String? activeHoursUnit,
-    int? sessionsPerDay,
-    List<String>? whereTrain,
+  }) async {
+    await _refreshSessionIfNeeded();
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception('User not authenticated');
+
+    final response = await _supabase.from('ai_generation_jobs').insert({
+      'user_id': user.id,
+      'user_email': user.email,
+      'ai_coach_name': aiCoachName,
+      'job_type': jobType,
+      'total_steps': totalSteps,
+      'input_params': inputParams,
+    }).select('id').single();
+
+    return response['id'] as String;
+  }
+
+  /// Fetches the full job record (used after completion to extract results).
+  Future<Map<String, dynamic>?> fetchJobResult(String jobId) async {
+    await _refreshSessionIfNeeded();
+    final response = await _supabase
+        .from('ai_generation_jobs')
+        .select('*')
+        .eq('id', jobId)
+        .maybeSingle();
+    return response;
+  }
+
+  // =========================================================
+  // ACTION 1: gerar_analise_historica (DIRECT CALL FALLBACK)
+  // Analyzes the athlete's sports history (heavy DB queries).
+  // =========================================================
+  Future<Map<String, dynamic>> gerarAnaliseHistorica({
+    required String emailUtilizador,
+    String? aiCoachName,
   }) async {
     await _refreshSessionIfNeeded();
     final response = await _supabase.functions.invoke(
       'gerar-treino',
       body: {
-        'acao': 'criar_plano_fase1',
+        'acao': 'gerar_analise_historica',
         'email_utilizador': emailUtilizador,
         'ai_coach_name': aiCoachName,
-        'diretrizes_plano': {
-          'objetivo': objetivoGeral,
-          'data_inicio': dataInicio,
-          'data_fim': dataFim,
-          'competicoes': competicoes,
-          'notas': notasAdicionais ?? '',
-          'contexto_atleta': {
-            'horas_ativas_sessao': activeHoursValue,
-            'unidade_tempo': activeHoursUnit,
-            'sessoes_dia': sessionsPerDay,
-            'locais_treino': whereTrain,
-          },
-        },
       },
     );
     if (response.status != 200) {
-      throw Exception('Fase 1 falhou: ${response.status} - ${response.data}');
+      throw Exception('Action gerar_analise_historica failed: ${response.status} - ${response.data}');
     }
-    return AIWorkoutResponse.fromJson(response.data as Map<String, dynamic>);
+    return response.data as Map<String, dynamic>;
   }
 
   // =========================================================
-  // FASE 1: Próximo Meso — estrutura + visaoSemanal
+  // ACTION 2: criar_plano
+  // Projects the macrocycle blocks. Receives analysis from Action 1.
   // =========================================================
-  Future<AIWorkoutResponse> gerarProximoMesocicloFase1({
+  Future<Map<String, dynamic>> criarPlano({
     required String emailUtilizador,
-    required String planoId,
-    required String actualPlanSummaryJson,
-    required List<String> mesosJaGerados,
+    required Map<String, dynamic> analiseHistorica,
+    required Map<String, dynamic> diretrizesPlano,
+    Map<String, dynamic>? perfilAtleta,
     String? aiCoachName,
+  }) async {
+    await _refreshSessionIfNeeded();
+    final response = await _supabase.functions.invoke(
+      'gerar-treino',
+      body: {
+        'acao': 'criar_plano',
+        'email_utilizador': emailUtilizador,
+        'analise_historica': analiseHistorica,
+        'diretrizes_plano': diretrizesPlano,
+        'perfil_atleta': perfilAtleta,
+        'ai_coach_name': aiCoachName,
+      },
+    );
+    if (response.status != 200) {
+      throw Exception('Action criar_plano failed: ${response.status} - ${response.data}');
+    }
+    return response.data as Map<String, dynamic>;
+  }
+
+  // =========================================================
+  // ACTION 3: gerar_proximo_ciclo
+  // Generates the weekly calendar for a specific mesocycle.
+  // =========================================================
+  Future<AIWorkoutResponse> gerarProximoCiclo({
+    required String emailUtilizador,
+    required Map<String, dynamic> blocoAtual,
     Map<String, dynamic>? performanceStats,
+    Map<String, dynamic>? diasTreino,
+    String? dataInicioMeso,
+    String? aiCoachName,
   }) async {
     await _refreshSessionIfNeeded();
     final response = await _supabase.functions.invoke(
       'gerar-treino',
       body: {
-        'acao': 'gerar_proximo_meso_fase1',
+        'acao': 'gerar_proximo_ciclo',
         'email_utilizador': emailUtilizador,
-        'plano_id': planoId,
-        'actual_plan_summary_json': actualPlanSummaryJson,
-        'mesos_ja_gerados': mesosJaGerados,
-        'ai_coach_name': aiCoachName,
+        'bloco_atual': blocoAtual,
         'performance_stats': performanceStats,
+        'dias_treino': diasTreino,
+        'data_inicio_meso': dataInicioMeso,
+        'ai_coach_name': aiCoachName,
       },
     );
     if (response.status != 200) {
-      throw Exception('Próximo Meso Fase 1 falhou: ${response.status} - ${response.data}');
+      throw Exception('Action gerar_proximo_ciclo failed: ${response.status} - ${response.data}');
     }
     return AIWorkoutResponse.fromJson(response.data as Map<String, dynamic>);
   }
 
   // =========================================================
-  // SEMANA: Exercícios de UMA semana (loop no controller)
+  // ACTION 4: gerar_detalhamento
+  // Fills the exercise matrix for one week using short keys.
   // =========================================================
-  Future<List<ExercicioDetalhado>> gerarExerciciosSemana({
+  Future<List<ExercicioDetalhado>> gerarDetalhamento({
     required String emailUtilizador,
-    required List<Map<String, dynamic>> diasSemana,
+    required List<Map<String, dynamic>> visaoSemanal,
     required Map<String, dynamic> mesoContext,
     String? aiCoachName,
   }) async {
@@ -206,15 +256,15 @@ class WorkoutRepository {
     final response = await _supabase.functions.invoke(
       'gerar-treino',
       body: {
-        'acao': 'gerar_exercicios_semana',
+        'acao': 'gerar_detalhamento',
         'email_utilizador': emailUtilizador,
-        'dias_semana': diasSemana,
+        'visao_semanal': visaoSemanal,
         'meso_context': mesoContext,
         'ai_coach_name': aiCoachName,
       },
     );
     if (response.status != 200) {
-      throw Exception('Semana ${mesoContext['semanaNum']} falhou: ${response.status} - ${response.data}');
+      throw Exception('Action gerar_detalhamento failed: ${response.status} - ${response.data}');
     }
     final jsonData = response.data as Map<String, dynamic>;
     final rawList = jsonData['exerciciosDetalhados'] as List<dynamic>? ?? [];
@@ -222,7 +272,7 @@ class WorkoutRepository {
   }
 
   // =========================================================
-  // Salvar exercícios + sessões na base de dados
+  // Save exercises + sessions to the database
   // =========================================================
   Future<void> salvarExerciciosGerados(
     List<ExercicioDetalhado> exercicios,
@@ -250,7 +300,7 @@ class WorkoutRepository {
         final ex = exercicios[i];
         var safeSessionType = ex.sessionType.trim();
         if (!validSessionTypes.contains(safeSessionType)) {
-          print('⚠️ session_type inválido: "$safeSessionType" → usando "Crossfit"');
+          print('⚠️ invalid session_type: "$safeSessionType" → using "Crossfit"');
           safeSessionType = 'Crossfit';
         }
 
@@ -263,7 +313,7 @@ class WorkoutRepository {
             'session_type': safeSessionType,
             'user_email': emailUtilizador,
             if (planId != null) 'plan_id': planId,
-            if (aiCoachName != null) 'ai_coach_name': aiCoachName,  // ← NEW
+            if (aiCoachName != null) 'ai_coach_name': aiCoachName,
           };
         }
 
@@ -286,7 +336,7 @@ class WorkoutRepository {
         await _supabase.from('workouts').insert(recordsToInsert);
       }
     } catch (e) {
-      print('Erro ao salvar exercícios: $e');
+      print('Error saving exercises: $e');
       rethrow;
     }
   }

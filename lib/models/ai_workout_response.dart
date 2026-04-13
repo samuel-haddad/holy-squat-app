@@ -80,8 +80,8 @@ class ExercicioDetalhado {
     );
   }
   
-  // Opcional, mas muito útil: Um método para transformar o objeto de volta em JSON 
-  // para quando formos fazer o INSERT no banco de dados do Supabase.
+  // Optional, but very useful: A method to transform the object back into JSON
+  // for when we INSERT into the Supabase database.
   Map<String, dynamic> toJson() {
     return {
       'date': date,
@@ -118,8 +118,8 @@ class VisaoSemanal {
   final String sessionType;
   final String focoPrincipal;
   final bool isDescansoAtivo;
-  final String mesocycle; // NOVO: Nome do mesociclo
-  final int week;        // NOVO: Número da semana
+  final String mesocycle; // NEW: Name of the mesocycle
+  final int week;        // NEW: Week number
 
   VisaoSemanal({
     required this.date,
@@ -156,10 +156,12 @@ class VisaoSemanal {
   }
 }
 
-// A classe principal que engloba a resposta inteira da IA
+// The main class that encapsulates the entire AI response
 class AIWorkoutResponse {
   final Map<String, dynamic>? analiseMacro;
   final Map<String, dynamic>? analiseMesocicloAnterior;
+  final Map<String, dynamic>? analiseCicloAnterior; // NEW: Action 3 output
+  final List<Map<String, dynamic>>? visaoGeralCiclo; // NEW: Action 3 weekly overview per meso
   final Map<String, dynamic> visaoGeralPlano;
   final List<VisaoSemanal> visaoSemanal;
   final List<ExercicioDetalhado> exerciciosDetalhados;
@@ -167,6 +169,8 @@ class AIWorkoutResponse {
   AIWorkoutResponse({
     this.analiseMacro,
     this.analiseMesocicloAnterior,
+    this.analiseCicloAnterior,
+    this.visaoGeralCiclo,
     required this.visaoGeralPlano,
     required this.visaoSemanal,
     required this.exerciciosDetalhados,
@@ -176,6 +180,10 @@ class AIWorkoutResponse {
     return AIWorkoutResponse(
       analiseMacro: json['analiseMacro'],
       analiseMesocicloAnterior: json['analiseMesocicloAnterior'],
+      analiseCicloAnterior: json['analiseCicloAnterior'],
+      visaoGeralCiclo: (json['visaoGeralCiclo'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList(),
       visaoGeralPlano: json['visaoGeralPlano'] ?? {},
       visaoSemanal: (json['visaoSemanal'] as List<dynamic>?)
               ?.map((e) => VisaoSemanal.fromJson(e))
@@ -188,11 +196,13 @@ class AIWorkoutResponse {
     );
   }
 
-  // NOVO: Efeito dominó! Ele chama o toJson() das listas filhas.
+  // Domino effect! It calls the toJson() of the child lists.
   Map<String, dynamic> toJson() {
     return {
       if (analiseMacro != null) 'analiseMacro': analiseMacro,
       if (analiseMesocicloAnterior != null) 'analiseMesocicloAnterior': analiseMesocicloAnterior,
+      if (analiseCicloAnterior != null) 'analiseCicloAnterior': analiseCicloAnterior,
+      if (visaoGeralCiclo != null) 'visaoGeralCiclo': visaoGeralCiclo,
       'visaoGeralPlano': visaoGeralPlano,
       'visaoSemanal': visaoSemanal.map((e) => e.toJson()).toList(),
       'exerciciosDetalhados': exerciciosDetalhados.map((e) => e.toJson()).toList(),

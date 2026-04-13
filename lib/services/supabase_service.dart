@@ -493,7 +493,7 @@ class SupabaseService {
       if (aiCoachName != null) {
         query = query.eq('ai_coach_name', aiCoachName);
       } else {
-        // Fallback para planos antigos sem coach
+        // Fallback for older plans without a coach
         query = query.eq('ai_coach_name', 'Human Coach');
       }
 

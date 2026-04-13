@@ -39,13 +39,13 @@ class _PlanningScreenState extends State<PlanningScreen> {
     setState(() => _isLoading = true);
     try {
       final repo = WorkoutRepository();
-      // Obter email dinâmico
+      // Get dynamic email
       final String userEmail = SupabaseService.client.auth.currentUser?.email ?? UserState.email.value;
 
-      // 1. Carregar Coaches
+      // 1. Load Coaches
       _aiCoaches = await repo.fetchAiCoaches();
 
-      // 2. Carregar o último plano de cada coach e estatísticas
+      // 2. Load the latest plan for each coach and statistics
       final Map<String, Map<String, dynamic>?> plans = {};
       for (var coach in _aiCoaches) {
         final name = coach['ai_coach_name'] as String;
@@ -53,7 +53,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
         plans[name] = plan;
       }
 
-      // 3. Buscar estatísticas do atleta dinamicamente
+      // 3. Fetch athlete statistics dynamically
       _athleteStats = await repo.fetchAthletePlanningStats(userEmail);
       
       debugPrint('Dashboard Stats: ${jsonEncode(_athleteStats)}');
@@ -1167,26 +1167,26 @@ class _PlanningScreenState extends State<PlanningScreen> {
   Widget _buildWorkoutsTable(List weekData) {
     if (weekData.isEmpty) return const SizedBox.shrink();
     
-    // 1. Agrupar por Dia para lidar com múltiplas sessões no mesmo dia
+    // 1. Group by Day to handle multiple sessions on the same day
     Map<String, List<String>> sessionsByDay = {};
     for (var row in weekData) {
       if (row is Map) {
         String day = row['day']?.toString() ?? 'N/A';
-        // Suporta tanto o novo campo 'focoPrincipal' quanto o antigo 'workout'
+        // Supports both the new 'focoPrincipal' field and the old 'workout' field
         String workout = (row['focoPrincipal'] ?? row['workout'])?.toString() ?? '';
         if (!sessionsByDay.containsKey(day)) sessionsByDay[day] = [];
         sessionsByDay[day]!.add(workout);
       }
     }
 
-    // 2. Descobrir o número máximo de sessões num único dia para montar as colunas
+    // 2. Find the maximum number of sessions in a single day to build the columns
     int maxSessions = 0;
     for (var sessions in sessionsByDay.values) {
       if (sessions.length > maxSessions) maxSessions = sessions.length;
     }
     if (maxSessions == 0) maxSessions = 1;
 
-    // Cabeçalhos (Dia, Treino 1, Treino 2...)
+    // Headers (Day, Workout 1, Workout 2...)
     List<Widget> headerCells = [
       const Padding(padding: EdgeInsets.all(8), child: Text('Dia', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold))),
     ];

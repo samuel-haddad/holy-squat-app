@@ -7,7 +7,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const allowedSessionTypes = "Acessório, Acessórios/Blindagem, Calistenia, Cardio, Cardio-Mobilidade, Core, Core Strength, Core/Prep, Crossfit, Descanso, Endurance, EMOM, FBB, Força/Heavy, Força/Metcon, Força/Skill, Full Body Pump, Full Session, Ginástica/Metcon, Hipertrofia/Blindagem, LPO, LPO/Força/Metcon, LPO/Metcon, LPO/Potência, Metcon, Mobilidade, Mobilidade Flow, Mobilidade-Cardio, Mobilidade-Core, Mobilidade-Inferiores, Mobilidade/Prep, Multi, Musculação, Musculação-Cardio, Musculação-Funcional, Musculação/Força, Natação, Prehab, Prehab/Força, Prehab/Mobilidade, Recuperação Ativa, Reintrodução/FBB, Skill, Skill/Metcon";
+const allowedSessionTypes = `
+Acessório, Acessórios-Blindagem, Calistenia, 
+Cardio, Cardio-Mobilidade, Core, Core Strength, Core-Prep, 
+Crossfit, Descanso, Endurance, EMOM, FBB, 
+Força-Heavy, Força-Metcon, Força-Skill, 
+Full Body Pump, Full Session, Ginástica-Metcon, 
+Hipertrofia, Hipertrofia-Blindagem, 
+LPO, LPO-Força-Metcon, LPO-Metcon, LPO-Potência, Metcon, 
+Mobilidade, Mobilidade-Flow, Mobilidade-Cardio, Mobilidade-Core, 
+Mobilidade-Inferiores, Mobilidade-Prep, Multi, Musculação, 
+Musculação-Cardio, Musculação-Funcional, Musculação-Força, 
+Natação, Prehab, Prehab-Força, Prehab-Mobilidade, Recuperação Ativa, 
+Reintrodução-FBB, Skill, Skill-Metcon`;
+
+const COACH_PERSONA = `Você é o AI Coach do Holy Squat App. Seu perfil: Coach Level de Crossfit, com grande conhecimento sobre reabilitação de lesões, em especial de ombro e joelho, especializado na integração do treinamento de força tradicional, com ênfase em isolamento, bodybuilding funcional e protocolos de Prehab para CrossFit. Seu foco são protocolos de Concurrent Training que buscam mitigar o "efeito de interferência" entre eles.`;
 
 const DATA_CONTRACT = `
 [RESTRIÇÃO DE NOMENCLATURA]
@@ -28,11 +42,11 @@ const DATA_CONTRACT = `
 const FEW_SHOT_EXAMPLES = `
 [EXEMPLOS DE ALTA QUALIDADE]
 {"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Mobilidade-Cardio","du":45,"idx":1,"ex":"Alongamento total","et":"Warmup","eg":"Full body","ey":"Mobilidade","ts":1,"de":"Foco em quadril e ombros","te":5,"eu":"min","re":0,"ru":"min","rr":0,"rru":"min","tt":5,"lo":"Casa","sg":"warmup","al":""}
-{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força/Skill","du":60,"idx":2,"ex":"Back Squat","et":"Força de Pernas","eg":"Lower Body","ey":"Força","ts":4,"de":"4x6 @75% 1RM","te":2,"eu":"min","re":90,"ru":"seg","rr":0,"rru":"min","tt":12,"lo":"Box","sg":"strength","al":""}
+{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":2,"ex":"Back Squat","et":"Força de Pernas","eg":"Lower Body","ey":"Força","ts":4,"de":"4x6 @75% 1RM","te":2,"eu":"min","re":90,"ru":"seg","rr":0,"rru":"min","tt":12,"lo":"Box","sg":"strength","al":""}
 `;
 
 // =========================================================
-// Helper: gera conteúdo com o provider correto (Google ou Anthropic)
+// Helper: generate content with the correct provider (Google or Anthropic)
 // =========================================================
 async function generateWithProvider(
   prompt: string,
@@ -42,9 +56,9 @@ async function generateWithProvider(
   actionLabel: string,
   maxTokens: number = 16000
 ): Promise<any> {
-  // DINÂMICA DE TEMPERATURA: 
-  // 0.2 para o Claude (evitar alucinação de volume)
-  // 0.7 para o Gemini (manter um pouco de fluidez analítica)
+  // TEMPERATURE DYNAMICS: 
+  // 0.2 for Claude (avoid volume hallucinations)
+  // 0.7 for Gemini (maintain some analytical fluidity)
   const targetTemperature = provider === 'anthropic' ? 0.2 : 0.7;
 
   if (provider === 'google') {
@@ -106,7 +120,7 @@ async function generateWithProvider(
 }
 
 // =========================================================
-// Helper: query na base de conhecimento (sempre Google Embeddings)
+// Helper: query the knowledge base (always Google Embeddings)
 // =========================================================
 async function queryKnowledgeBase(queryText: string, genAI: any, supabaseClient: any) {
   if (!queryText) return "";
@@ -143,24 +157,13 @@ serve(async (req) => {
     )
 
     const payload = await req.json()
-    const {
-      acao,
-      email_utilizador,
-      diretrizes_plano,
-      plano_id,
-      mesos_ja_gerados,
-      actual_plan_summary_json,
-      dias_semana,
-      meso_context,
-      ai_coach_name,
-      performance_stats,
-    } = payload
+    const { acao, ai_coach_name } = payload
 
-    // ── Sempre instanciar genAI para embeddings (knowledge base) ──
+    // ── Always instantiate genAI for embeddings (knowledge base) ──
     const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY')!)
     const today = new Date().toISOString().split('T')[0];
 
-    // ── Buscar configuração do coach na tabela ai_coach ────────────
+    // ── Fetch coach configuration from ai_coach table ────────────
     let provider = 'google';
     let llmModel = 'gemini-pro-latest';
 
@@ -181,12 +184,15 @@ serve(async (req) => {
     }
 
     // =========================================================
-    // AÇÃO: criar_plano_fase1
+    // ACTION 1: gerar_analise_historica
+    // Analyzes the athlete's sports history. Heavy DB queries live here.
     // =========================================================
-    if (acao === 'criar_plano_fase1') {
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-      const dateStr = sixMonthsAgo.toISOString().split('T')[0];
+    if (acao === 'gerar_analise_historica') {
+      const { email_utilizador } = payload;
+
+      const twelveMonthsAgo = new Date();
+      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+      const dateStr = twelveMonthsAgo.toISOString().split('T')[0];
 
       const [profileRes, prRes, benchRes, benchDefRes, workoutsRes, logsRes, athleteStatsRes] = await Promise.all([
         supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single(),
@@ -200,27 +206,24 @@ serve(async (req) => {
 
       const profile = profileRes.data || {};
       const athleteStats = payload.athlete_stats_summary || (athleteStatsRes?.data?.kpis) || {};
-      const knowledgeContext = await queryKnowledgeBase(diretrizes_plano?.objetivo || "", genAI, supabaseClient);
+
+      // RAG: query knowledge base based on athlete's context
+      const ragQuery = `${profile.about_me || ''} ${profile.skills_training || ''} ${profile.lesoes || ''}`;
+      const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, supabaseClient);
 
       const prompt = `
-        Você é o AI Coach do Holy Squat App especialista em periodização de CrossFit.
+        ${COACH_PERSONA}
         [DATA DE HOJE: ${today}]
 
-        [HIERARQUIA DE PRIORIDADE - LEI ZERO]
-        1. RESTRIÇÕES DO USUÁRIO: O perfil indica ${profile.sessions_per_day} sessões por dia. Gere exatamente esta quantidade.
-        2. SEGURANÇA E LESÕES: O usuário tem histórico em ${profile.lesoes}. Foco em Prehab e proteção tendínea (efeito de corticóides).
-        3. NOMENCLATURA: Use apenas os session_type da lista oficial fornecida no contrato.
+        [MISSÃO — ANÁLISE DO HISTÓRICO ESPORTIVO]
+        Analise detalhadamente o histórico do atleta abaixo e gere uma análise macro com gráficos 
+        baseados na aderência, carga e volume. Esta análise será usada como entrada para a próxima 
+        etapa de planejamento.
 
         [CONTEXTO CIENTÍFICO (RAG)]
         ${knowledgeContext}
-        
-        [ESTRUTURA DE SESSÕES DIÁRIAS]
-        Como o usuário treina 2x por dia, siga este padrão:
-        - Sessão 1 (Morning/Home): Foco em Mobilidade, Prehab, Core ou SMR. Máximo 4 exercícios. Duração sugerida: 20-30min.
-        - Sessão 2 (Main/Box): Foco em Força, LPO ou Metcon. Máximo 6 exercícios. Duração sugerida: 45-60min.
-        *NOTA: Nunca prescreva treinos em DUPLA ou PARTNER WODs. O treino é individual.*
 
-        [KPIs DETERMINÍSTICOS DO ATLETA - USE ESTES DADOS PARA ANÁLISE]
+        [KPIs DETERMINÍSTICOS DO ATLETA]
         - Aderência Global: ${athleteStats.adherence}%
         - PSE Médio (10 sessões): ${athleteStats.avg_pse}
         - Power Index: ${athleteStats.power_index}
@@ -234,64 +237,226 @@ serve(async (req) => {
         - Sessões/dia: ${profile.sessions_per_day} | Duração: ${profile.active_hours_value} ${profile.active_hours_unit}
         - About: ${profile.about_me || 'Não informado'}
         - Skills: ${profile.skills_training || 'Não informado'}
+        - Lesões: ${profile.lesoes || 'Nenhuma registrada'}
         - PRs: ${JSON.stringify(prRes.data || [])}
         - Benchmarks: ${JSON.stringify(benchRes.data || [])}
-        - Histórico 6 meses: ${JSON.stringify(workoutsRes.data || [])}
+        - Definições de Benchmarks: ${JSON.stringify(benchDefRes.data || [])}
+        - Histórico 12 meses: ${JSON.stringify(workoutsRes.data || [])}
         - Logs performance: ${JSON.stringify(logsRes.data || [])}
+
+        [FORMATO — JSON PURO SEM MARKDOWN]
+        {
+          "analiseMacro": {
+            "analise": "string — análise detalhada do histórico esportivo, pontos fortes, fracos e recomendações",
+            "historico": {
+              "texto": "string — resumo narrativo da evolução do atleta",
+              "graficos": [
+                { "tipo": "linha|barra", "titulo": "string", "dados": [{ "x": "string", "y": 0 }] }
+              ]
+            }
+          }
+        }
+      `;
+
+      console.log(`gerar_analise_historica | coach: ${ai_coach_name ?? 'default'}`);
+      const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_analise_historica', 8000);
+      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
+    }
+
+    // =========================================================
+    // ACTION 2: criar_plano
+    // Projects the macrocycle blocks. Receives analysis from Action 1.
+    // =========================================================
+    else if (acao === 'criar_plano') {
+      const {
+        email_utilizador,
+        analise_historica,
+        diretrizes_plano,
+        perfil_atleta,
+      } = payload;
+
+      // Self-fetch profile from DB for safety/completeness
+      const { data: profileDb } = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('email', email_utilizador)
+        .single();
+
+      const profile = { ...(profileDb || {}), ...(perfil_atleta || {}) };
+      const analise = analise_historica || {};
+
+      const prompt = `
+        ${COACH_PERSONA}
+        [DATA DE HOJE: ${today}]
+
+        [MISSÃO — PROJETAR BLOCOS DO MACROCICLO]
+        Com base na análise do histórico (fornecida abaixo), projete um macrociclo completo dividido 
+        em mesociclos. Defina nome, duração em semanas e foco de cada bloco.
+
+        [HIERARQUIA DE PRIORIDADE - LEI ZERO]
+        1. RESTRIÇÕES DO USUÁRIO: O perfil indica ${profile.sessions_per_day} sessões por dia. Gere exatamente esta quantidade.
+        2. SEGURANÇA E LESÕES: O usuário tem histórico em ${profile.lesoes}. Foco em Prehab e proteção tendínea.
+        3. NOMENCLATURA: Use apenas os session_type da lista oficial: [${allowedSessionTypes}]
+
+        [ANÁLISE DO HISTÓRICO (resultado da etapa anterior)]
+        ${JSON.stringify(analise)}
+
+        [PERFIL DO ATLETA]
+        - Nome: ${profile.name}
+        - Local: ${JSON.stringify(profile.where_train)}
+        - Sessões/dia: ${profile.sessions_per_day} | Duração: ${profile.active_hours_value} ${profile.active_hours_unit}
+        - About: ${profile.about_me || 'Não informado'}
+        - Skills: ${profile.skills_training || 'Não informado'}
+        - Lesões: ${profile.lesoes || 'Nenhuma registrada'}
 
         [DIRETRIZES DO PLANO]
         - Objetivo: ${diretrizes_plano?.objetivo}
         - Início: ${diretrizes_plano?.data_inicio} | Fim: ${diretrizes_plano?.data_fim}
         - Competições: ${JSON.stringify(diretrizes_plano?.competicoes)}
         - Notas: ${diretrizes_plano?.notas}
-        ${knowledgeContext}
-
-        [MISSÃO — APENAS ESTRUTURA E CALENDÁRIO]
-        Gere SOMENTE o planejamento estrutural. Os exercícios detalhados serão gerados por semana separadamente.
-
-        1. analiseMacro: análise do histórico com gráficos.
-        2. analiseMesocicloAnterior: { "aderencia": "", "evolucao": "", "texto": "", "graficos": [] }
-        3. visaoGeralPlano:
-           - blocos: TODOS os mesociclos com nome, duracaoSemanas, foco.
-           - mesociclo1_consolidado: 1 linha por semana do Meso 1.
-        4. visaoSemanal: TODOS os 7 dias de TODAS as semanas do Mesociclo 1.
-           - isDescansoAtivo: true para dias de repouso.
-           - week = intra-mesociclo (começa em 1).
-           - ANO: ${today.split('-')[0]}.
-        5. exerciciosDetalhados: [] (VAZIO)
 
         [FORMATO — JSON PURO SEM MARKDOWN]
         {
-          "analiseMacro": { "analise": "string", "historico": { "texto": "string", "graficos": [{ "tipo": "linha", "titulo": "string", "dados": [{ "x": "string", "y": 0 }] }] } },
-          "analiseMesocicloAnterior": { "aderencia": "", "evolucao": "", "texto": "", "graficos": [] },
           "visaoGeralPlano": {
-            "objetivoPrincipal": "string", "duracaoSemanas": 0,
+            "objetivoPrincipal": "string",
+            "duracaoSemanas": 0,
             "fases": [{ "nome": "string", "duracao": "string", "foco": "string" }],
-            "blocos": [{ "mesociclo": "string", "duracaoSemanas": 0, "foco": "string" }],
-            "mesociclo1_consolidado": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }]
-          },
-          "visaoSemanal": [{ "date": "YYYY-MM-DD", "day": "Segunda-feira", "session_type": "string", "focoPrincipal": "string", "isDescansoAtivo": false, "mesocycle": "string", "week": 1 }],
-          "exerciciosDetalhados": []
+            "blocos": [
+              { "mesociclo": "string — ex: Meso 1 — Adaptação", "duracaoSemanas": 4, "foco": "string" }
+            ]
+          }
         }
       `;
 
-      console.log(`criar_plano_fase1 | coach: ${ai_coach_name ?? 'default'}`);
-      const planData = await generateWithProvider(prompt, provider, llmModel, genAI, 'criar_plano_fase1', 16000);
-      return new Response(JSON.stringify(planData), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 })
+      console.log(`criar_plano | coach: ${ai_coach_name ?? 'default'}`);
+      const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'criar_plano', 8000);
+      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
     // =========================================================
-    // AÇÃO: gerar_exercicios_semana
+    // ACTION 3: gerar_proximo_ciclo
+    // Generates the weekly calendar for a specific mesocycle.
     // =========================================================
-    else if (acao === 'gerar_exercicios_semana') {
-      const ctx = meso_context || {};
-      const diasStr = (dias_semana || [])
-        .map((d: any) => `  - ${d.date} (${d.day}) | ${d.session_type} | ${d.focoPrincipal} | semana ${d.week}`)
-        .join('\n');
+    else if (acao === 'gerar_proximo_ciclo') {
+      const {
+        email_utilizador,
+        bloco_atual,
+        performance_stats,
+        dias_treino,
+        data_inicio_meso,
+      } = payload;
+
+      // Fetch profile from DB for session structure
+      const { data: profileDb } = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('email', email_utilizador)
+        .single();
+
+      const profile = profileDb || {};
+      const bloco = bloco_atual || {};
+      const perfStats = performance_stats || {};
+      const treino = dias_treino || {};
+      const sessionsPerDay = treino.sessions_per_day || profile.sessions_per_day || 1;
+      const whereTrain = treino.where_train || profile.where_train || [];
 
       const prompt = `
-        Você é o AI Coach do Holy Squat App. Gere os exercícios para a Semana ${ctx.semanaNum} de ${ctx.totalSemanas} do mesociclo "${ctx.nome}".
+        ${COACH_PERSONA}
         [DATA DE HOJE: ${today}]
+
+        [MISSÃO — GERAR CALENDÁRIO SEMANAL DO MESOCICLO]
+        Gere o calendário semanal completo para o mesociclo especificado abaixo.
+        Se houver estatísticas do ciclo anterior, faça uma análise motivacional e técnica.
+
+        [ESTRUTURA DE SESSÕES DIÁRIAS]
+        Como o usuário treina ${sessionsPerDay}x por dia, siga este padrão:
+        - Sessão 1 (Morning/Home): Foco em Mobilidade, Prehab, Core ou SMR. Aprox 4 exercícios. Duração: 20-30min.
+        - Sessão 2 (Main/Box): Foco em Força, LPO ou Metcon. Aprox 6 exercícios. Duração: 45-60min.
+        *NOTA: Nunca prescreva treinos em DUPLA ou PARTNER WODs. O treino é individual.*
+        Aos sábados o usuário pode fazer uma sessão única mais longa de até 2 horas.
+
+        [BLOCO ATUAL DO MESOCICLO]
+        - Nome: ${bloco.mesociclo}
+        - Duração: ${bloco.duracaoSemanas} semanas
+        - Foco: ${bloco.foco}
+        - Data início do meso: ${data_inicio_meso || today}
+
+        [ATLETA]
+        - Nome: ${profile.name}
+        - Local: ${JSON.stringify(whereTrain)}
+        - Sessões/dia: ${sessionsPerDay}
+
+        [KPIs DO CICLO ANTERIOR]
+        ${JSON.stringify(perfStats)}
+        (Se os dados acima estiverem vazios ou zerados, o atleta não treinou ou não registrou logs.
+         Nesse caso, analiseCicloAnterior.texto deve dizer que não há dados de progresso para este ciclo.)
+
+        [REGRAS DE CALENDÁRIO]
+        - week = intra-mesociclo (começa em 1).
+        - mesocycle = "${bloco.mesociclo}".
+        - ANO: ${today.split('-')[0]}.
+        - session_type: Use APENAS valores de [${allowedSessionTypes}].
+        - isDescansoAtivo: true para dias de repouso.
+
+        [FORMATO — JSON PURO SEM MARKDOWN]
+        {
+          "analiseCicloAnterior": {
+            "aderencia": "string — porcentagem ou 'N/A'",
+            "evolucao": "string — pontos de evolução observados",
+            "texto": "string — análise motivacional e técnica baseada nos KPIs"
+          },
+          "visaoGeralCiclo": [
+            { "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }
+          ],
+          "visaoSemanal": [
+            {
+              "date": "YYYY-MM-DD",
+              "day": "Segunda-feira",
+              "session": 1,
+              "session_type": "string",
+              "focoPrincipal": "string",
+              "isDescansoAtivo": false,
+              "mesocycle": "${bloco.mesociclo}",
+              "week": 1
+            }
+          ]
+        }
+      `;
+
+      console.log(`gerar_proximo_ciclo | meso: ${bloco.mesociclo} | coach: ${ai_coach_name ?? 'default'}`);
+      const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_proximo_ciclo', 12000);
+      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
+    }
+
+    // =========================================================
+    // ACTION 4: gerar_detalhamento
+    // Fills the exercise matrix for one week using short keys.
+    // =========================================================
+    else if (acao === 'gerar_detalhamento') {
+      const {
+        visao_semanal,
+        meso_context,
+      } = payload;
+
+      const ctx = meso_context || {};
+      const diasArr = visao_semanal || [];
+      const diasStr = diasArr
+        .map((d: any) => `  - ${d.date} (${d.day}) | session ${d.session || 1} | ${d.session_type} | ${d.focoPrincipal} | semana ${d.week}`)
+        .join('\n');
+
+      // RAG: query knowledge base for exercise recommendations
+      const ragQuery = `${ctx.focoSemana || ''} ${ctx.objetivo || ''} exercícios crossfit`;
+      const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, supabaseClient);
+
+      const prompt = `
+        ${COACH_PERSONA} Gere os exercícios para a Semana ${ctx.semanaNum} de ${ctx.totalSemanas} do mesociclo "${ctx.nome}".
+        [DATA DE HOJE: ${today}]
+
+        [CONTEXTO CIENTÍFICO (RAG)]
+        ${knowledgeContext}
+
+        ${DATA_CONTRACT}
+        ${FEW_SHOT_EXAMPLES}
 
         [CONTEXTO]
         - Objetivo: ${ctx.objetivo}
@@ -302,44 +467,6 @@ serve(async (req) => {
 
         [DIAS DE TREINO DESTA SEMANA]
 ${diasStr}
-
-        [MISSÃO]
-        Gere exercícios COMPLETOS para cada dia de treino listado.
-        - workout_idx: índice sequencial por sessão (começa em 1).
-        - week = ${ctx.semanaNum} (intra-mesociclo).
-        - mesocycle = "${ctx.nome}".
-        - session_type (use apenas): [${allowedSessionTypes}]
-        - ANO: ${today.split('-')[0]}.
-
-        [FORMATO — JSON PURO SEM MARKDOWN]
-        {
-          "exerciciosDetalhados": [
-            {
-              "date": "YYYY-MM-DD", "week": ${ctx.semanaNum}, "mesocycle": "${ctx.nome}",
-              "day": "string", "session": 1, "session_type": "string", "duration": 60,
-              "workout_idx": 1, "exercise": "string", "exercise_title": "string",
-              "exercise_group": "string", "exercise_type": "string", "sets": 0,
-              "details": "string", "time_exercise": 0, "ex_unit": "min",
-              "rest": 0, "rest_unit": "seg", "rest_round": 0, "rest_round_unit": "min",
-              "total_time": 0, "location": "string", "stage": "workout", "adaptacaoLesao": ""
-            }
-          ]
-        }
-
-        [REGRAS DE DENSIDADE E VOLUME]
-        - LIMITE DE VOLUME: Máximo de 6 exercícios por sessão principal (Sessão 2) e 4 exercícios por sessão de mobilidade/prep (Sessão 1).
-- TREINO INDIVIDUAL: Proibido prescrever 'Partner WODs' ou exercícios que dependam de outra pessoa.
-- COERÊNCIA DE TEMPO: Se o 'tt' calculado para um exercício for 10 minutos, subtraia isso da duração total da sessão imediatamente para planejar o próximo.
-        - TRANSIÇÃO: Reserve mentalmente 2 minutos de transição entre exercícios (não precisa colocar na tabela, mas considere isso para não exceder a duration).
-      `;
-
-      console.log(`gerar_exercicios_semana: ${ctx.nome} semana ${ctx.semanaNum}/${ctx.totalSemanas} | coach: ${ai_coach_name ?? 'default'}`);
-
-      const compactPrompt = `
-        Você é o AI Coach. Gere os exercícios para a Semana ${ctx.semanaNum} do meso "${ctx.nome}".
-        
-        ${DATA_CONTRACT}
-        ${FEW_SHOT_EXAMPLES}
 
         [FORMATO COMPACTO - JSON PURO]
         {
@@ -361,46 +488,51 @@ ${diasStr}
         5. Se ts > 1, o campo rest (re) DEVE ser > 0.
         6. Use APENAS as chaves curtas.
         7. O campo 'tt' (total_time) DEVE ser a soma estimada do bloco. NUNCA use 0 para exercícios ativos.
-        8. Dias de treino:
+        8. LIMITE DE VOLUME: Aprox 6 exercícios por sessão principal e 4 por sessão de mobilidade/prep.
+        9. TREINO INDIVIDUAL: Proibido prescrever 'Partner WODs' ou exercícios que dependam de outra pessoa.
+        10. COERÊNCIA DE TEMPO: Reserve 2min de transição entre exercícios (não precisa colocar na tabela).
+        11. Dias de treino:
 ${diasStr}
       `;
 
-      const responseData = await generateWithProvider(compactPrompt, provider, llmModel, genAI, `semana_${ctx.semanaNum}`, 16000);
+      console.log(`gerar_detalhamento: ${ctx.nome} semana ${ctx.semanaNum}/${ctx.totalSemanas} | coach: ${ai_coach_name ?? 'default'}`);
 
-      // Expansão: Mapeia as chaves curtas de volta para o formato longo esperado pelo App
-      // E reinjeta os campos constantes (week, mesocycle)
+      const responseData = await generateWithProvider(prompt, provider, llmModel, genAI, `detalhamento_s${ctx.semanaNum}`, 16000);
+
+      // Expansion: Maps short keys back to the long format expected by the App
+      // And reinjects constant fields (week, mesocycle)
       const fullExercicios = await Promise.all((responseData.exs || []).map(async (short: any) => {
-        // Busca o link mais próximo na biblioteca
+        // Fetches the closest link in the library
         const { data: link } = await supabaseClient.rpc('get_closest_exercise_link', { 
           search_name: short.et || short.ex 
         });
 
         return {
-          date: short.dt,
-          week: ctx.semanaNum,
+          date: short.dt || today, 
+          week: Number(ctx.semanaNum) || 1,
           mesocycle: ctx.nome,
-          day: short.dy,
-          session: short.se,
-          session_type: short.st,
-          duration: short.du,
-          workout_idx: short.idx,
-          exercise: short.ex,
-          exercise_title: short.et,
-          exercise_group: short.eg,
-          exercise_type: short.ey,
-          sets: short.ts,
-          details: short.de,
-          time_exercise: short.te,
-          ex_unit: short.eu,
-          rest: short.re,
-          rest_unit: short.ru,
-          rest_round: short.rr,
-          rest_round_unit: short.rru,
-          total_time: short.tt,
-          location: short.lo,
-          stage: short.sg,
+          day: short.dy || "",
+          session: Number(short.se) || 1,
+          session_type: short.st || "Metcon",
+          duration: Number(short.du) || 60,
+          workout_idx: Number(short.idx) || 1,
+          exercise: short.ex || "Exercício não especificado",
+          exercise_title: short.et || short.ex || "",
+          exercise_group: short.eg || "Geral",
+          exercise_type: short.ey || "Acessório",
+          sets: Number(short.ts) || 1,
+          details: short.de || "",
+          time_exercise: Number(short.te) || 0,
+          ex_unit: short.eu || "min",
+          rest: Number(short.re) || 0,
+          rest_unit: short.ru || "seg",
+          rest_round: Number(short.rr) || 0,
+          rest_round_unit: short.rru || "min",
+          total_time: Number(short.tt) || 0,
+          location: short.lo || "Box",
+          stage: short.sg || "workout",
           workout_link: link || "",
-          adaptacaoLesao: short.al
+          adaptacaoLesao: short.al || ""
         };
       }));
 
@@ -411,106 +543,8 @@ ${diasStr}
     }
 
     // =========================================================
-    // AÇÃO: gerar_proximo_meso_fase1
+    // UNKNOWN ACTION
     // =========================================================
-    else if (acao === 'gerar_proximo_meso_fase1') {
-      const planRes = await supabaseClient.from('training_plans').select('*').eq('id', plano_id || '').single();
-      const planData = planRes.data || {};
-      const startDate = planData.start_date;
-
-      const twelveMonthsBefore = new Date(startDate);
-      twelveMonthsBefore.setFullYear(twelveMonthsBefore.getFullYear() - 1);
-      const preMacroDateStr = twelveMonthsBefore.toISOString().split('T')[0];
-
-      const [prRes, benchRes, benchDefRes, postWorkoutsRes, postLogsRes, profileRes, athleteStatsRes] = await Promise.all([
-        supabaseClient.from('pr_log').select('exercise, value, unit, date').eq('user_email', email_utilizador),
-        supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador),
-        supabaseClient.from('benchmarks').select('*'),
-        supabaseClient.from('workouts').select('date, exercise, exercise_title, sets').eq('user_email', email_utilizador).gte('date', startDate).lte('date', today).order('date', { ascending: false }).limit(80),
-        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, pse').eq('user_email', email_utilizador).gte('workout_date', startDate).lte('workout_date', today).order('workout_date', { ascending: false }).limit(80),
-        supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single(),
-        supabaseClient.rpc('get_athlete_planning_stats', { p_email: email_utilizador })
-      ]);
-
-      const athleteStats = payload.athlete_stats_summary || (athleteStatsRes?.data?.kpis) || {};
-
-      let planSummary: any = {};
-      try {
-        planSummary = actual_plan_summary_json
-          ? JSON.parse(actual_plan_summary_json)
-          : (planData.actual_plan_summary ? JSON.parse(planData.actual_plan_summary) : {});
-      } catch (e) { console.error("parse plan summary error:", e); }
-
-      const todosOsMesos: any[] = planSummary.blocos || [];
-      const mesosJaGeradosArr: string[] = mesos_ja_gerados || [];
-      const proximoMeso = todosOsMesos.find((b: any) => !mesosJaGeradosArr.includes(b.mesociclo));
-      const duracaoProximoMeso = proximoMeso?.duracaoSemanas || 4;
-      const nomeProximoMeso = proximoMeso?.mesociclo || 'Próximo Meso';
-      const profile = profileRes.data || {};
-
-      const prompt = `
-        Você é o AI Coach do Holy Squat App gerando o PRÓXIMO MESOCICLO.
-        [DATA DE HOJE: ${today}]
-
-        [KPIs DETERMINÍSTICOS DO ATLETA - USE ESTES DADOS PARA ANÁLISE]
-        - Aderência Global: ${athleteStats.adherence}%
-        - PSE Médio (10 sessões): ${athleteStats.avg_pse}
-        - Power Index: ${athleteStats.power_index}
-        - Melhor Evolução: ${athleteStats.best_evolution?.exercise} (+${athleteStats.best_evolution?.percent}%)
-        - Streak Atual: ${athleteStats.streak} dias
-        - Frequência Semanal: ${athleteStats.weekly_freq} treinos/semana
-
-        [PLANO MACRO]
-        - Período: ${planData.start_date} a ${planData.end_date}
-        - Todos os mesos: ${JSON.stringify(todosOsMesos)}
-        - Já gerados: ${mesosJaGeradosArr.join(', ') || 'Nenhum'}
-        - PRÓXIMO: "${nomeProximoMeso}" — ${duracaoProximoMeso} semanas | ${proximoMeso?.foco || ''}
-
-        [ATLETA]
-        - Nome: ${profile.name} | Local: ${JSON.stringify(profile.where_train)}
-        - Sessões/dia: ${profile.sessions_per_day}
-        - PRs: ${JSON.stringify(prRes.data || [])}
-        - Progresso no macro: ${JSON.stringify(postWorkoutsRes.data || [])}
-        - Logs PSE: ${JSON.stringify(postLogsRes.data || [])}
-
-        [KPIs DETERMINÍSTICOS DO CICLO ANTERIOR]
-        ${JSON.stringify(performance_stats || {})}
-        (Se os dados acima estiverem vazios ou zerados, o atleta não treinou ou não registrou logs. Nesse caso, a analiseMesocicloAnterior.texto deve dizer que não há dados de progresso para este ciclo).
-
-        [MISSÃO — ESTRUTURA + CALENDÁRIO (sem exercícios)]
-        Retorne JSON com:
-        1. analiseMacro: Perspectiva do plano todo.
-        2. analiseMesocicloAnterior: 
-           - texto: Uma análise motivadora e técnica BASEADA nos KPIs de performance_stats acima.
-           - kpis: OS MESMOS kpis recebidos no performance_stats.
-           - charts: OS MESMOS charts recebidos no performance_stats.
-        3. visaoGeralPlano: Atualização dos blocos e consolidação.
-        4. visaoSemanal: Calendário detalhado.
-        
-        - week = intra-mesociclo (começa em 1).
-        - mesocycle = "${nomeProximoMeso}".
-        - ANO: ${today.split('-')[0]}.
-
-        [FORMATO — JSON PURO]
-        {
-          "analiseMacro": { "analise": "string", "historico": { "texto": "string", "graficos": [] } },
-          "analiseMesocicloAnterior": { 
-            "texto": "string", 
-            "kpis": { "completion_rate": 0, "weekly_freq": 0, "neglected_type": "", "load_delta": 0, "pr_recovery": 0 },
-            "charts": { "planned_vs_realized": [], "load_vs_pse": [], "volume_by_group": [] }
-          },
-          "visaoGeralPlano": { "objetivoPrincipal": "string", "duracaoSemanas": 0, "fases": [], "blocos": [], "mesociclo1_consolidado": [] },
-          "visaoSemanal": [{ "date": "YYYY-MM-DD", "day": "string", "session_type": "string", "focoPrincipal": "string", "isDescansoAtivo": false, "mesocycle": "${nomeProximoMeso}", "week": 1 }],
-          "exerciciosDetalhados": [],
-          "_mesoContext": { "nome": "${nomeProximoMeso}", "semanas": ${duracaoProximoMeso}, "startDate": "${planData.start_date}", "endDate": "${planData.end_date}", "sessionsPerDay": ${profile.sessions_per_day || 1}, "whereTrain": ${JSON.stringify(profile.where_train || [])} }
-        }
-      `;
-
-      console.log(`gerar_proximo_meso_fase1 | coach: ${ai_coach_name ?? 'default'}`);
-      const fase1Data = await generateWithProvider(prompt, provider, llmModel, genAI, 'proximo_meso_fase1', 16000);
-      return new Response(JSON.stringify(fase1Data), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 })
-    }
-
     else {
       return new Response(JSON.stringify({ error: `Ação desconhecida: ${acao}` }), { headers: corsHeaders, status: 400 })
     }

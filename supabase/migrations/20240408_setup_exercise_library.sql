@@ -1,7 +1,7 @@
--- Habilitar a extensão para busca por similaridade
+-- Enable the extension for similarity search
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- Criar a tabela de biblioteca de exercícios
+-- Create the exercise library table
 CREATE TABLE IF NOT EXISTS public.exercise_library (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
@@ -9,10 +9,10 @@ CREATE TABLE IF NOT EXISTS public.exercise_library (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Criar índice GIN para busca rápida por trigramas (fuzzy search)
+-- Create GIN index for fast search by trigrams (fuzzy search)
 CREATE INDEX IF NOT EXISTS idx_exercise_library_name_trgm ON public.exercise_library USING GIN (name gin_trgm_ops);
 
--- Função RPC para buscar o link mais próximo baseado no nome
+-- RPC function to fetch the closest link based on the name
 CREATE OR REPLACE FUNCTION get_closest_exercise_link(search_name TEXT)
 RETURNS TEXT AS $$
     SELECT link 

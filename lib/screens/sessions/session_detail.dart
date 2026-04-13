@@ -515,7 +515,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
   Future<void> _initializePlayer() async {
     final String url = widget.videoLink.trim();
 
-    // Usar o método oficial do pacote para extrair o ID do YouTube
+    // Use the official package method to extract the YouTube ID
     final String? videoId = YoutubePlayerController.convertUrlToId(url);
 
     if (videoId != null) {
