@@ -1,10 +1,9 @@
-// lib/controllers/workout_controller.dart
-
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/ai_workout_response.dart';
+import '../models/training_session.dart';
 import '../repositories/workout_repository.dart';
 import '../services/supabase_service.dart';
 
@@ -19,7 +18,6 @@ class WorkoutController extends ChangeNotifier {
   AIWorkoutResponse? _planoGerado;
   Map<String, dynamic>? _athleteStats;
 
-  // Background job tracking
   RealtimeChannel? _jobChannel;
   Completer<void>? _jobCompleter;
 
@@ -32,21 +30,19 @@ class WorkoutController extends ChangeNotifier {
 
   WorkoutController(this._repository);
 
-  // Step-specific loading messages
-  static const _newPlanStepMessages = {
-    1: '🧠 Ação 1/4 — Analisando histórico esportivo...',
-    2: '📋 Ação 2/4 — Projetando blocos do macrociclo...',
-    3: '📆 Ação 3/4 — Gerando calendário semanal...',
-    4: '⚡ Ação 4/4 — Gerando exercícios detalhados...',
+  // Step messages for each job type
+  static const _createPlanSteps = {
+    1: '🧠 Ação 1/2 — Analisando histórico esportivo...',
+    2: '📋 Ação 2/2 — Projetando blocos do macrociclo...',
   };
 
-  static const _nextCycleStepMessages = {
-    1: '🧠 Ação 1/2 — Analisando progresso e gerando calendário...',
+  static const _generateCycleSteps = {
+    1: '📆 Ação 1/2 — Gerando calendário semanal...',
     2: '⚡ Ação 2/2 — Gerando exercícios detalhados...',
   };
 
   // =========================================================
-  // Fetches statistics for the dashboard (KPIs, Radar, Heatmap)
+  // Stats
   // =========================================================
   Future<void> fetchPlanningStats(String email) async {
     try {
@@ -58,7 +54,7 @@ class WorkoutController extends ChangeNotifier {
   }
 
   // =========================================================
-  // CREATE NEW PLAN — Background orchestration via webhooks
+  // CREATE PLAN (Ações 1+2) — "3, 2, 1... GO!" button
   // =========================================================
   Future<void> criarNovoPlano({
     required String emailUtilizador,
@@ -69,22 +65,18 @@ class WorkoutController extends ChangeNotifier {
     String? notasAdicionais,
     int? aiCoachId,
     String? aiCoachName,
-    double? activeHoursValue,
-    String? activeHoursUnit,
-    int? sessionsPerDay,
-    List<String>? whereTrain,
+    List<TrainingSession>? trainingSessions,
   }) async {
     _state = WorkoutState.loading;
-    _loadingMessage = '🚀 Iniciando geração do plano em background...';
+    _loadingMessage = '🚀 Iniciando análise e planejamento...';
     notifyListeners();
 
     try {
       await fetchPlanningStats(emailUtilizador);
 
-      // 1. Create background job
       final jobId = await _repository.criarJobGeracao(
-        jobType: 'new_plan',
-        totalSteps: 4,
+        jobType: 'create_plan',
+        totalSteps: 2,
         aiCoachName: aiCoachName,
         inputParams: {
           'email_utilizador': emailUtilizador,
@@ -96,30 +88,20 @@ class WorkoutController extends ChangeNotifier {
             'competicoes': competicoes,
             'notas': notasAdicionais ?? '',
           },
-          'perfil_atleta': {
-            'sessions_per_day': sessionsPerDay,
-            'where_train': whereTrain,
-            'active_hours_value': activeHoursValue,
-            'active_hours_unit': activeHoursUnit,
-          },
+          'training_sessions': (trainingSessions ?? []).map((s) => s.toJson()).toList(),
         },
       );
 
-      _loadingMessage = _newPlanStepMessages[1]!;
+      _loadingMessage = _createPlanSteps[1]!;
       notifyListeners();
 
-      // 2. Subscribe to Realtime and wait for completion
-      await _subscribeAndWait(jobId, _newPlanStepMessages);
+      await _subscribeAndWait(jobId, _createPlanSteps);
 
-      // 3. Fetch final result and build response
       final job = await _repository.fetchJobResult(jobId);
       if (job == null) throw Exception('Job result not found');
+      if (job['status'] == 'error') throw Exception(job['error_message'] ?? 'Unknown server error');
 
-      if (job['status'] == 'error') {
-        throw Exception(job['error_message'] ?? 'Unknown server error');
-      }
-
-      _planoGerado = _buildResponseFromNewPlanJob(job);
+      _planoGerado = _buildResponseFromCreatePlanJob(job);
       _state = WorkoutState.success;
       _loadingMessage = '';
 
@@ -133,7 +115,7 @@ class WorkoutController extends ChangeNotifier {
   }
 
   // =========================================================
-  // GENERATE NEXT CYCLE — Background orchestration via webhooks
+  // GENERATE CYCLE (Ações 3+4) — "Next Cycle" button
   // =========================================================
   Future<void> gerarProximoCiclo({
     required String emailUtilizador,
@@ -143,20 +125,18 @@ class WorkoutController extends ChangeNotifier {
     String? aiCoachName,
   }) async {
     _state = WorkoutState.loading;
-    _loadingMessage = '🚀 Iniciando geração do próximo ciclo em background...';
+    _loadingMessage = '🚀 Iniciando geração do ciclo de treino...';
     notifyListeners();
 
     try {
-      // Identify mesos already generated
       final mesosJaGerados = currentWorkoutsTable
           .map((e) => e['mesocycle']?.toString() ?? '')
           .where((e) => e.isNotEmpty)
           .toSet()
           .toList();
 
-      // 1. Create background job
       final jobId = await _repository.criarJobGeracao(
-        jobType: 'next_cycle',
+        jobType: 'generate_cycle',
         totalSteps: 2,
         aiCoachName: aiCoachName,
         inputParams: {
@@ -169,26 +149,21 @@ class WorkoutController extends ChangeNotifier {
         },
       );
 
-      _loadingMessage = _nextCycleStepMessages[1]!;
+      _loadingMessage = _generateCycleSteps[1]!;
       notifyListeners();
 
-      // 2. Subscribe and wait
-      await _subscribeAndWait(jobId, _nextCycleStepMessages);
+      await _subscribeAndWait(jobId, _generateCycleSteps);
 
-      // 3. Fetch final result
       final job = await _repository.fetchJobResult(jobId);
       if (job == null) throw Exception('Job result not found');
+      if (job['status'] == 'error') throw Exception(job['error_message'] ?? 'Unknown server error');
 
-      if (job['status'] == 'error') {
-        throw Exception(job['error_message'] ?? 'Unknown server error');
-      }
-
-      _planoGerado = _buildResponseFromNextCycleJob(job);
+      _planoGerado = _buildResponseFromGenerateCycleJob(job);
       _state = WorkoutState.success;
       _loadingMessage = '';
 
     } catch (e) {
-      _errorMessage = 'Falha ao gerar o próximo ciclo: ${e.toString()}';
+      _errorMessage = 'Falha ao gerar o ciclo: ${e.toString()}';
       _state = WorkoutState.error;
     } finally {
       _cleanupJobChannel();
@@ -197,12 +172,9 @@ class WorkoutController extends ChangeNotifier {
   }
 
   // =========================================================
-  // Realtime subscription for job progress
+  // Realtime subscription
   // =========================================================
-  Future<void> _subscribeAndWait(
-    String jobId,
-    Map<int, String> stepMessages,
-  ) async {
+  Future<void> _subscribeAndWait(String jobId, Map<int, String> stepMessages) async {
     _jobCompleter = Completer<void>();
     final supabase = Supabase.instance.client;
 
@@ -222,34 +194,25 @@ class WorkoutController extends ChangeNotifier {
             final step = newData['current_step'] as int? ?? 1;
             final status = newData['status'] as String? ?? 'processing';
 
-            // Update loading message based on step
             if (stepMessages.containsKey(step)) {
               _loadingMessage = stepMessages[step]!;
               notifyListeners();
             }
 
-            // Check for completion
             if (status == 'completed') {
-              _loadingMessage = '💾 Dados salvos pelo servidor. Finalizando...';
+              _loadingMessage = '💾 Dados salvos. Finalizando...';
               notifyListeners();
-              if (!_jobCompleter!.isCompleted) {
-                _jobCompleter!.complete();
-              }
+              if (!_jobCompleter!.isCompleted) _jobCompleter!.complete();
             } else if (status == 'error') {
-              if (!_jobCompleter!.isCompleted) {
-                _jobCompleter!.complete();
-              }
+              if (!_jobCompleter!.isCompleted) _jobCompleter!.complete();
             }
           },
         )
         .subscribe();
 
-    // Safety timeout: 10 minutes max wait
     await _jobCompleter!.future.timeout(
       const Duration(minutes: 10),
-      onTimeout: () {
-        throw Exception('Timeout: a geração excedeu 10 minutos.');
-      },
+      onTimeout: () => throw Exception('Timeout: geração excedeu 10 minutos.'),
     );
   }
 
@@ -262,33 +225,27 @@ class WorkoutController extends ChangeNotifier {
   }
 
   // =========================================================
-  // Build AIWorkoutResponse from job results
+  // Build responses from job results
   // =========================================================
-  AIWorkoutResponse _buildResponseFromNewPlanJob(Map<String, dynamic> job) {
+  AIWorkoutResponse _buildResponseFromCreatePlanJob(Map<String, dynamic> job) {
     final step1 = job['step_1_result'] as Map<String, dynamic>? ?? {};
     final step2 = job['step_2_result'] as Map<String, dynamic>? ?? {};
-    final step3 = job['step_3_result'] as Map<String, dynamic>? ?? {};
-    final step4 = job['step_4_result'] as Map<String, dynamic>? ?? {};
 
     return AIWorkoutResponse.fromJson({
       'analiseMacro': step1['analiseMacro'],
       'visaoGeralPlano': step2['visaoGeralPlano'] ?? {},
-      'analiseCicloAnterior': step3['analiseCicloAnterior'],
-      'visaoGeralCiclo': step3['visaoGeralCiclo'],
-      'visaoSemanal': step3['visaoSemanal'] ?? [],
-      'exerciciosDetalhados': step4['exerciciosDetalhados'] ?? [],
+      'visaoSemanal': [],
+      'exerciciosDetalhados': [],
     });
   }
 
-  AIWorkoutResponse _buildResponseFromNextCycleJob(Map<String, dynamic> job) {
+  AIWorkoutResponse _buildResponseFromGenerateCycleJob(Map<String, dynamic> job) {
     final step1 = job['step_1_result'] as Map<String, dynamic>? ?? {};
     final step2 = job['step_2_result'] as Map<String, dynamic>? ?? {};
     final inputParams = job['input_params'] as Map<String, dynamic>? ?? {};
 
     Map<String, dynamic> planSummary = {};
-    try {
-      planSummary = jsonDecode(inputParams['actual_plan_summary_json'] ?? '{}');
-    } catch (_) {}
+    try { planSummary = jsonDecode(inputParams['actual_plan_summary_json'] ?? '{}'); } catch (_) {}
 
     return AIWorkoutResponse.fromJson({
       'analiseCicloAnterior': step1['analiseCicloAnterior'],
@@ -300,7 +257,7 @@ class WorkoutController extends ChangeNotifier {
   }
 
   // =========================================================
-  // Reset
+  // Reset / Dispose
   // =========================================================
   void resetState() {
     _cleanupJobChannel();
