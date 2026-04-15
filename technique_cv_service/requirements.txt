@@ -1,0 +1,8 @@
+fastapi>=0.104.1
+uvicorn>=0.24.0
+pydantic>=2.5.2
+mediapipe>=0.10.14
+opencv-python-headless>=4.8.1
+requests>=2.31.0
+numpy<2.0.0
+supabase>=2.3.0

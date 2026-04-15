@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/core/user_state.dart';
 import 'package:holy_squat_app/services/supabase_service.dart';
+import 'package:holy_squat_app/models/training_session.dart';
+import 'package:holy_squat_app/widgets/training_sessions_editor.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:typed_data';
@@ -34,6 +36,8 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
   List<String> _selectedWhere = [];
   late TextEditingController _additionalInfoController;
   PlatformFile? _backgroundFile;
+  List<TrainingSession> _trainingSessions = [];
+  bool _loadingSessions = true;
 
   final List<String> _whereOptions = ['box', 'academia', 'corrida de rua'];
 
@@ -54,6 +58,17 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     _sessionsPerDayController = TextEditingController(text: UserState.sessionsPerDay.value.toString());
     _selectedWhere = List<String>.from(UserState.whereTrain.value);
     _additionalInfoController = TextEditingController(text: UserState.additionalInfo.value);
+    _loadSessions();
+  }
+
+  Future<void> _loadSessions() async {
+    final sessions = await SupabaseService.fetchTrainingSessions();
+    if (mounted) {
+      setState(() {
+        _trainingSessions = sessions;
+        _loadingSessions = false;
+      });
+    }
   }
 
   @override
@@ -134,6 +149,17 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
               _buildWhereCheckboxes(),
               const SizedBox(height: 16),
               _buildTextField('Additional Info (Optional)', _additionalInfoController, maxLines: 2, required: false),
+
+              const SizedBox(height: 24),
+              _loadingSessions
+                  ? const Center(child: Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: CircularProgressIndicator(color: AppTheme.primaryTeal),
+                    ))
+                  : TrainingSessionsEditor(
+                      sessions: _trainingSessions,
+                      onChanged: (sessions) => _trainingSessions = sessions,
+                    ),
 
               const SizedBox(height: 48),
               _buildSaveButton(),
@@ -366,6 +392,7 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
                 }
               }
               await SupabaseService.upsertProfile();
+              await SupabaseService.upsertAllTrainingSessions(_trainingSessions);
               if (mounted) Navigator.pop(context);
             } catch (e) {
               if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));

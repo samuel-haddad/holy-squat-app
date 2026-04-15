@@ -5,11 +5,12 @@ import 'package:holy_squat_app/screens/profile_form_screen.dart';
 import 'package:holy_squat_app/widgets/app_bottom_nav.dart';
 import 'package:holy_squat_app/core/user_state.dart';
 import 'package:holy_squat_app/widgets/theme_toggle_button.dart';
+import 'package:holy_squat_app/models/training_session.dart';
+import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:typed_data';
-import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -20,9 +21,17 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  List<TrainingSession> _trainingSessions = [];
+
   @override
   void initState() {
     super.initState();
+    _loadSessions();
+  }
+
+  Future<void> _loadSessions() async {
+    final sessions = await SupabaseService.fetchTrainingSessions();
+    if (mounted) setState(() => _trainingSessions = sessions);
   }
 
 
@@ -47,7 +56,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           IconButton(
             icon: const Icon(Icons.edit, color: AppTheme.primaryTeal),
             onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileFormScreen())).then((_) => setState(() {}));
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileFormScreen())).then((_) {
+                setState(() {});
+                _loadSessions();
+              });
             },
           ),
         ],
@@ -83,6 +95,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   builder: (context, url, _) => url != null ? _buildFileRow(url) : const SizedBox.shrink(),
                 ),
                 _buildLongTextRow('Additional Info', UserState.additionalInfo.value),
+                if (_trainingSessions.isNotEmpty) ...[
+                  const Divider(color: Colors.white10),
+                  const Text('Training Sessions', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 8),
+                  ..._trainingSessions.map((s) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      s.summary,
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  )),
+                ],
               ],
             ),
             const SizedBox(height: 12),

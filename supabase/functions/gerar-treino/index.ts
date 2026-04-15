@@ -46,6 +46,18 @@ const FEW_SHOT_EXAMPLES = `
 `;
 
 // =========================================================
+// Helper: format training sessions for LLM
+// =========================================================
+function formatTrainingSessions(sessions: any[]): string {
+  if (!sessions || sessions.length === 0) {
+    throw new Error("Nenhuma sessão de treino configurada. Por favor, configure suas sessões no perfil ou no onboarding antes de prosseguir.");
+  }
+  return sessions.map((s: any) => 
+    `- Sessão ${s.session_number}: Locais=[${s.locations?.join(', ')}] | Duração=${s.duration_minutes}min | Dias=[${s.schedule?.join(', ')}] | Turno=${s.time_of_day}${s.notes ? ` | Notas: ${s.notes}` : ''}`
+  ).join('\n        ');
+}
+
+// =========================================================
 // Helper: generate content with the correct provider (Google or Anthropic)
 // =========================================================
 async function generateWithProvider(
@@ -207,6 +219,14 @@ serve(async (req) => {
       const profile = profileRes.data || {};
       const athleteStats = payload.athlete_stats_summary || (athleteStatsRes?.data?.kpis) || {};
 
+      // Fetch structured training sessions
+      const { data: sessionsData } = await supabaseClient
+        .from('training_sessions')
+        .select('session_number, locations, duration_minutes, schedule, time_of_day, notes')
+        .eq('user_id', profile.id)
+        .order('session_number', { ascending: true });
+      const trainingSessions = sessionsData || [];
+
       // RAG: query knowledge base based on athlete's context
       const ragQuery = `${profile.about_me || ''} ${profile.skills_training || ''} ${profile.lesoes || ''}`;
       const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, supabaseClient);
@@ -233,11 +253,13 @@ serve(async (req) => {
 
         [PERFIL DO ATLETA]
         - Nome: ${profile.name}
-        - Local: ${JSON.stringify(profile.where_train)}
-        - Sessões/dia: ${profile.sessions_per_day} | Duração: ${profile.active_hours_value} ${profile.active_hours_unit}
         - About: ${profile.about_me || 'Não informado'}
         - Skills: ${profile.skills_training || 'Não informado'}
         - Lesões: ${profile.lesoes || 'Nenhuma registrada'}
+
+        [SESSÕES DE TREINO DISPONÍVEIS]
+        ${formatTrainingSessions(trainingSessions)}
+
         - PRs: ${JSON.stringify(prRes.data || [])}
         - Benchmarks: ${JSON.stringify(benchRes.data || [])}
         - Definições de Benchmarks: ${JSON.stringify(benchDefRes.data || [])}
@@ -272,7 +294,7 @@ serve(async (req) => {
         email_utilizador,
         analise_historica,
         diretrizes_plano,
-        perfil_atleta,
+        training_sessions,
       } = payload;
 
       // Self-fetch profile from DB for safety/completeness
@@ -282,8 +304,9 @@ serve(async (req) => {
         .eq('email', email_utilizador)
         .single();
 
-      const profile = { ...(profileDb || {}), ...(perfil_atleta || {}) };
+      const profile = profileDb || {};
       const analise = analise_historica || {};
+      const sessions = training_sessions || [];
 
       const prompt = `
         ${COACH_PERSONA}
@@ -294,20 +317,20 @@ serve(async (req) => {
         em mesociclos. Defina nome, duração em semanas e foco de cada bloco.
 
         [HIERARQUIA DE PRIORIDADE - LEI ZERO]
-        1. RESTRIÇÕES DO USUÁRIO: O perfil indica ${profile.sessions_per_day} sessões por dia. Gere exatamente esta quantidade.
-        2. SEGURANÇA E LESÕES: O usuário tem histórico em ${profile.lesoes}. Foco em Prehab e proteção tendínea.
-        3. NOMENCLATURA: Use apenas os session_type da lista oficial: [${allowedSessionTypes}]
+        1. SEGURANÇA E LESÕES: O usuário tem histórico em ${profile.lesoes}. Foco em Prehab e proteção tendínea.
+        2. NOMENCLATURA: Use apenas os session_type da lista oficial: [${allowedSessionTypes}]
 
         [ANÁLISE DO HISTÓRICO (resultado da etapa anterior)]
         ${JSON.stringify(analise)}
 
         [PERFIL DO ATLETA]
         - Nome: ${profile.name}
-        - Local: ${JSON.stringify(profile.where_train)}
-        - Sessões/dia: ${profile.sessions_per_day} | Duração: ${profile.active_hours_value} ${profile.active_hours_unit}
         - About: ${profile.about_me || 'Não informado'}
         - Skills: ${profile.skills_training || 'Não informado'}
         - Lesões: ${profile.lesoes || 'Nenhuma registrada'}
+
+        [SESSÕES DE TREINO DISPONÍVEIS]
+        ${formatTrainingSessions(sessions)}
 
         [DIRETRIZES DO PLANO]
         - Objetivo: ${diretrizes_plano?.objetivo}
@@ -342,8 +365,9 @@ serve(async (req) => {
         email_utilizador,
         bloco_atual,
         performance_stats,
-        dias_treino,
+        training_sessions,
         data_inicio_meso,
+        contexto_macrociclo,
       } = payload;
 
       // Fetch profile from DB for session structure
@@ -356,9 +380,8 @@ serve(async (req) => {
       const profile = profileDb || {};
       const bloco = bloco_atual || {};
       const perfStats = performance_stats || {};
-      const treino = dias_treino || {};
-      const sessionsPerDay = treino.sessions_per_day || profile.sessions_per_day || 1;
-      const whereTrain = treino.where_train || profile.where_train || [];
+      const sessions = training_sessions || [];
+      const macroCtx = contexto_macrociclo || {};
 
       const prompt = `
         ${COACH_PERSONA}
@@ -368,12 +391,14 @@ serve(async (req) => {
         Gere o calendário semanal completo para o mesociclo especificado abaixo.
         Se houver estatísticas do ciclo anterior, faça uma análise motivacional e técnica.
 
+        [CONTEXTO DO MACROCICLO — MEMÓRIA DAS ETAPAS ANTERIORES]
+        Use as informações abaixo para manter coerência com o planejamento original:
+        - Análise Histórica do Atleta: ${JSON.stringify(macroCtx.analise_historica || 'Não fornecida')}
+        - Visão Geral do Plano: ${JSON.stringify(macroCtx.visao_geral_plano || 'Não fornecida')}
+
         [ESTRUTURA DE SESSÕES DIÁRIAS]
-        Como o usuário treina ${sessionsPerDay}x por dia, siga este padrão:
-        - Sessão 1 (Morning/Home): Foco em Mobilidade, Prehab, Core ou SMR. Aprox 4 exercícios. Duração: 20-30min.
-        - Sessão 2 (Main/Box): Foco em Força, LPO ou Metcon. Aprox 6 exercícios. Duração: 45-60min.
+        ${formatTrainingSessions(sessions)}
         *NOTA: Nunca prescreva treinos em DUPLA ou PARTNER WODs. O treino é individual.*
-        Aos sábados o usuário pode fazer uma sessão única mais longa de até 2 horas.
 
         [BLOCO ATUAL DO MESOCICLO]
         - Nome: ${bloco.mesociclo}
@@ -383,8 +408,6 @@ serve(async (req) => {
 
         [ATLETA]
         - Nome: ${profile.name}
-        - Local: ${JSON.stringify(whereTrain)}
-        - Sessões/dia: ${sessionsPerDay}
 
         [KPIs DO CICLO ANTERIOR]
         ${JSON.stringify(perfStats)}
@@ -462,8 +485,9 @@ serve(async (req) => {
         - Objetivo: ${ctx.objetivo}
         - Mesociclo: ${ctx.nome} | Semana ${ctx.semanaNum}/${ctx.totalSemanas}
         - Foco: ${ctx.focoSemana || 'Conforme planejamento'}
-        - Local: ${JSON.stringify(ctx.whereTrain)}
-        - Sessões/dia: ${ctx.sessionsPerDay || 1}
+
+        [SESSÕES DE TREINO DISPONÍVEIS]
+        ${formatTrainingSessions(ctx.trainingSessions || [])}
 
         [DIAS DE TREINO DESTA SEMANA]
 ${diasStr}

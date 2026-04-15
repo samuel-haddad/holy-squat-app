@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:holy_squat_app/core/user_state.dart';
+import 'package:holy_squat_app/models/training_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
@@ -674,6 +675,128 @@ class SupabaseService {
     }
 
     await finalQuery;
+  }
+
+  // --- TRAINING SESSIONS ---
+
+  static Future<List<TrainingSession>> fetchTrainingSessions() async {
+    final user = client.auth.currentUser;
+    if (user == null) return [];
+    try {
+      final response = await client
+          .from('training_sessions')
+          .select()
+          .eq('user_id', user.id)
+          .order('session_number', ascending: true);
+      return (response as List).map((e) => TrainingSession.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint("Error fetching training sessions: $e");
+      return [];
+    }
+  }
+
+  static Future<void> upsertTrainingSession(TrainingSession session) async {
+    final user = client.auth.currentUser;
+    if (user == null) return;
+    final data = session.toJson();
+    data['user_id'] = user.id;
+    await client.from('training_sessions').upsert(
+      data,
+      onConflict: 'user_id,session_number',
+    );
+  }
+
+  static Future<void> deleteTrainingSession(String id) async {
+    await client.from('training_sessions').delete().eq('id', id);
+  }
+
+  /// Batch upsert: deletes all existing sessions for the user and inserts the new list.
+  static Future<void> upsertAllTrainingSessions(List<TrainingSession> sessions) async {
+    final user = client.auth.currentUser;
+    if (user == null) return;
+
+    // Delete existing sessions for this user
+    await client.from('training_sessions').delete().eq('user_id', user.id);
+
+    if (sessions.isEmpty) return;
+
+    // Insert all new sessions
+    final rows = sessions.map((s) {
+      final data = s.toJson();
+      data['user_id'] = user.id;
+      data.remove('id'); // Let DB generate new IDs
+      return data;
+    }).toList();
+
+    await client.from('training_sessions').insert(rows);
+  }
+
+  // --- TECHNIQUE ANALYSIS METHODS ---
+
+  /// Uploads a raw video to the technique_videos bucket.
+  static Future<String?> uploadTechniqueVideo(File file, String fileName) async {
+    final user = client.auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final path = 'raw/${user.id}/$fileName';
+      debugPrint("Technique: Uploading raw video to $path");
+
+      await client.storage.from('technique_videos').upload(
+            path,
+            file,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
+
+      // Return the relative path used by the database
+      return path;
+    } catch (e) {
+      debugPrint("Error uploading technique video: $e");
+      return null;
+    }
+  }
+
+  /// Upserts a technique analysis request in the database.
+  /// This will trigger the Edge Function via Database Webhook.
+  static Future<void> requestTechniqueAnalysis({
+    required String exerciseName,
+    required String rawVideoPath,
+  }) async {
+    final user = client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      debugPrint("Technique: Requesting analysis for $exerciseName");
+      await client.from('technique_feedbacks').upsert({
+        'user_id': user.id,
+        'exercise_name': exerciseName,
+        'raw_video_path': rawVideoPath,
+        'status': 'pending',
+        'created_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'user_id,exercise_name');
+    } catch (e) {
+      debugPrint("Error requesting technique analysis: $e");
+    }
+  }
+
+  /// Fetches the latest feedback for a specific exercise.
+  static Future<Map<String, dynamic>?> getTechniqueFeedback(String exerciseName) async {
+    final user = client.auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final response = await client
+          .from('technique_feedbacks')
+          .select()
+          .eq('user_id', user.id)
+          .eq('exercise_name', exerciseName)
+          .maybeSingle();
+
+      return response;
+    } catch (e) {
+      debugPrint("Error fetching technique feedback: $e");
+      return null;
+    }
   }
 }
 

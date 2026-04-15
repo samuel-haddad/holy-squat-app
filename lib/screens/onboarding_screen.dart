@@ -3,6 +3,8 @@ import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/core/user_state.dart';
 import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:holy_squat_app/screens/main_screen.dart';
+import 'package:holy_squat_app/models/training_session.dart';
+import 'package:holy_squat_app/widgets/training_sessions_editor.dart';
 import 'package:file_picker/file_picker.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -33,6 +35,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   List<String> _selectedWhere = [];
   late TextEditingController _additionalInfoController;
   PlatformFile? _backgroundFile;
+  List<TrainingSession> _trainingSessions = [];
 
   final List<String> _whereOptions = ['box', 'academia', 'corrida de rua'];
 
@@ -115,6 +118,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       }
       
       await SupabaseService.upsertProfile();
+      await SupabaseService.upsertAllTrainingSessions(_trainingSessions);
       if (mounted) {
         Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen()), (route) => false);
       }
@@ -220,6 +224,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             _buildWhereCheckboxes(),
             const SizedBox(height: 16),
             _buildTextField('Additional Info (Optional)', _additionalInfoController, maxLines: 2, required: false),
+            const SizedBox(height: 24),
+            TrainingSessionsEditor(
+              sessions: _trainingSessions,
+              onChanged: (sessions) => _trainingSessions = sessions,
+            ),
             const SizedBox(height: 48),
             _buildNextButton(),
           ],

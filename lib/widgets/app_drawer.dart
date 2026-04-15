@@ -8,6 +8,7 @@ import 'package:holy_squat_app/screens/planning/planning_screen.dart';
 import 'package:holy_squat_app/screens/planning/edit_plan_screen.dart';
 import 'package:holy_squat_app/core/user_state.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:holy_squat_app/screens/technique/technique_list_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -42,36 +43,45 @@ class AppDrawer extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            _buildDrawerItem('WOD', () {
-              Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 0)), (route) => false);
-            }),
-            _buildDrawerItem('Calendar', () {
-              Navigator.pop(context); // close drawer
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const CalendarScreen()));
-            }),
-            _buildDrawerItem('Planning', () {
-              Navigator.pop(context); // close drawer
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const PlanningScreen()));
-            }),
-            _buildDrawerItem('Edit Plan', () {
-              Navigator.pop(context); // close drawer
-              // We'll point to EditPlanScreen once created
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const EditPlanScreen()));
-            }),
-            _buildDrawerItem('Sessions', () {
-              Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 1)), (route) => false);
-            }),
-            _buildDrawerItem('PRs', () {
-              Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 2)), (route) => false);
-            }),
-            _buildDrawerItem('Benchmark', () {
-              Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 3)), (route) => false);
-            }),
-            _buildDrawerItem('Dashboard', () {
-              Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 4)), (route) => false);
-            }),
-            const Spacer(),
+            const SizedBox(height: 10),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _buildDrawerItem('WOD', () {
+                    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 0)), (route) => false);
+                  }),
+                  _buildDrawerItem('Calendar', () {
+                    Navigator.pop(context); // close drawer
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CalendarScreen()));
+                  }),
+                  _buildDrawerItem('Planning', () {
+                    Navigator.pop(context); // close drawer
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const PlanningScreen()));
+                  }),
+                  _buildDrawerItem('Edit Plan', () {
+                    Navigator.pop(context); // close drawer
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const EditPlanScreen()));
+                  }),
+                  _buildDrawerItem('Sessions', () {
+                    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 1)), (route) => false);
+                  }),
+                  _buildDrawerItem('PRs', () {
+                    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 2)), (route) => false);
+                  }),
+                  _buildDrawerItem('Benchmark', () {
+                    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 3)), (route) => false);
+                  }),
+                  _buildDrawerItem('Dashboard', () {
+                    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 4)), (route) => false);
+                  }),
+                  _buildDrawerItem('Technique', () {
+                    Navigator.pop(context); // close drawer
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const TechniqueListScreen()));
+                  }),
+                ],
+              ),
+            ),
             ValueListenableBuilder<String?>(
               valueListenable: UserState.avatarUrl,
               builder: (context, avatarUrl, _) {

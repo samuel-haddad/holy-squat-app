@@ -1,0 +1,128 @@
+import cv2
+import mediapipe as mp
+import math
+import os
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
+# Modelo baixado anteriormente
+MODEL_PATH = "pose_landmarker_heavy.task"
+
+def calculate_angle(a, b, c):
+    """
+    Calcula o ângulo entre 3 pontos (a, b, c) onde b é o vértice.
+    Points are objects with x and y attributes.
+    """
+    radians = math.atan2(c.y - b.y, c.x - b.x) - math.atan2(a.y - b.y, a.x - b.x)
+    angle = abs(radians * 180.0 / math.pi)
+    if angle > 180.0:
+        angle = 360 - angle
+    return angle
+
+def process_video_with_mediapipe(input_path: str, output_path: str):
+    """
+    Roda a extração do Pose Estimation usando a moderna MediaPipe Tasks API.
+    """
+    if not os.path.exists(MODEL_PATH):
+        from download_utils import ensure_model_exists
+        ensure_model_exists()
+
+    cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise Exception(f"Failed to open video file: {input_path}")
+        
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
+    # VideoWriter setup
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    # Configuração do Pose Landmarker
+    base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
+    options = vision.PoseLandmarkerOptions(
+        base_options=base_options,
+        running_mode=vision.RunningMode.VIDEO
+    )
+
+    # Warehouse de métricas
+    metrics = {
+        "min_hip_angle": 180.0,
+        "min_knee_angle": 180.0,
+        "max_trunk_lean": 0.0,
+    }
+
+    with vision.PoseLandmarker.create_from_options(options) as landmarker:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # Converter para o formato MediaPipe Image e RGB
+            image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
+            
+            # Necessário para modo VIDEO: timestamp em ms
+            frame_timestamp_ms = int(cap.get(cv2.CAP_PROP_POS_MSEC))
+            
+            # Detectar pose
+            detection_result = landmarker.detect_for_video(mp_image, frame_timestamp_ms)
+            
+            # Criar cópia para desenho
+            annotated_image = frame.copy()
+
+            if detection_result.pose_landmarks:
+                # Pegamos a primeira pose detectada
+                landmarks = detection_result.pose_landmarks[0]
+                
+                # Mapeamento do PoseLandmarker (Indices padrão)
+                # 11: LEFT_SHOULDER, 23: LEFT_HIP, 25: LEFT_KNEE, 27: LEFT_ANKLE
+                try:
+                    shoulder = landmarks[11]
+                    hip = landmarks[23]
+                    knee = landmarks[25]
+                    ankle = landmarks[27]
+
+                    # Calculo de biomecânica
+                    knee_angle = calculate_angle(hip, knee, ankle)
+                    hip_angle = calculate_angle(shoulder, hip, knee)
+                    
+                    # Inclinação do tronco em relação à vertical
+                    # Criamos um ponto virtual vertical acima do quadril
+                    vertical_pt = type('Point', (object,), {'x': hip.x, 'y': hip.y - 0.5})()
+                    trunk_lean = calculate_angle(shoulder, hip, vertical_pt)
+                    
+                    # Atualização de recordes de profundidade
+                    if knee_angle < metrics["min_knee_angle"]:
+                        metrics["min_knee_angle"] = knee_angle
+                    if hip_angle < metrics["min_hip_angle"]:
+                        metrics["min_hip_angle"] = hip_angle
+                    if trunk_lean > metrics["max_trunk_lean"]:
+                        metrics["max_trunk_lean"] = trunk_lean
+
+                    # Desenho manual simples (Legacy draw_landmarks é instável com novos objetos)
+                    # Desenhamos conexões básicas do Squat
+                    def draw_line(p1, p2, color=(0, 255, 0)):
+                        cv2.line(annotated_image, 
+                                (int(p1.x * width), int(p1.y * height)), 
+                                (int(p2.x * width), int(p2.y * height)), 
+                                color, 3)
+
+                    draw_line(shoulder, hip)
+                    draw_line(hip, knee)
+                    draw_line(knee, ankle)
+                    # Desenhar nós
+                    for pt in [shoulder, hip, knee, ankle]:
+                        cv2.circle(annotated_image, (int(pt.x * width), int(pt.y * height)), 6, (0, 0, 255), -1)
+                
+                except IndexError:
+                    pass
+
+            out.write(annotated_image)
+
+    cap.release()
+    out.release()
+    
+    # Arredondar métricas para o LLM
+    return {k: round(v, 2) for k, v in metrics.items()}
