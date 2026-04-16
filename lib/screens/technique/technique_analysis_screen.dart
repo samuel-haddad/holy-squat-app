@@ -103,17 +103,26 @@ class _TechniqueAnalysisScreenState extends State<TechniqueAnalysisScreen> {
                   : Container(
                       height: 250, 
                       alignment: Alignment.center, 
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const CircularProgressIndicator(color: AppTheme.primaryTeal),
-                          const SizedBox(height: 16),
-                          Text(
-                            isProcessing ? 'AI is analyzing your movement...' : 'Loading video...',
-                            style: const TextStyle(color: Colors.white)
-                          ),
-                        ],
-                      )
+                      child: feedbackData?['status'] == 'failed'
+                        ? Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.error_outline, size: 60, color: Colors.red[300]),
+                              const SizedBox(height: 16),
+                              const Text("Analysis failed.", style: TextStyle(color: Colors.white, fontSize: 18)),
+                            ],
+                          )
+                        : Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const CircularProgressIndicator(color: AppTheme.primaryTeal),
+                              const SizedBox(height: 16),
+                              Text(
+                                isProcessing ? 'AI is analyzing your movement...' : 'Loading video...',
+                                style: const TextStyle(color: Colors.white)
+                              ),
+                            ],
+                          )
                     ),
             ),
             const SizedBox(height: 24),
