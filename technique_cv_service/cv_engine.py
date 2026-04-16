@@ -128,7 +128,7 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
     out.release()
     
     # Conversão rigorosa para H.264 para ser compatível com App Flutter (Mobile/Windows)
-    subprocess.run(["ffmpeg", "-y", "-i", temp_output, "-vcodec", "libx264", output_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["ffmpeg", "-y", "-i", temp_output, "-vcodec", "libx264", "-pix_fmt", "yuv420p", output_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if os.path.exists(temp_output):
         os.remove(temp_output)
     
