@@ -798,5 +798,23 @@ class SupabaseService {
       return null;
     }
   }
-}
+  /// Fetches all latest feedbacks for the user
+  static Future<List<Map<String, dynamic>>> getAllTechniqueFeedbacks() async {
+    final user = client.auth.currentUser;
+    if (user == null) return [];
 
+    try {
+      final response = await client
+          .from('technique_feedbacks')
+          .select()
+          .eq('user_id', user.id)
+          .eq('status', 'completed')
+          .order('updated_at', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint("Error fetching all technique feedbacks: $e");
+      return [];
+    }
+  }
+}
