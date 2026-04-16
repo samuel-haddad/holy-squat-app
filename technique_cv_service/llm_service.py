@@ -41,7 +41,7 @@ def generate_technique_feedback(exercise_name: str, metrics: Dict[str, Any]) -> 
     prompt = f"O atleta executou: {exercise_name}.\nMétricas calculadas pela Visão Computacional: {json.dumps(metrics, indent=2)}\nAnalise e gere o JSON técnico de acordo com as diretrizes."
 
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash", 
+        model_name="gemini-pro", 
         system_instruction=SYSTEM_PROMPT,
         generation_config={
             "response_mime_type": "application/json"

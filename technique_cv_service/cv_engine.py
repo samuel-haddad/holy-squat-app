@@ -35,9 +35,12 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    # VideoWriter setup
+    import subprocess
+
+    # VideoWriter setup - Inicializamos num wrapper mp4 basico primeiro
+    temp_output = output_path + "_raw.mp4"
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    out = cv2.VideoWriter(temp_output, fourcc, fps, (width, height))
 
     # Configuração do Pose Landmarker
     base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
@@ -123,6 +126,11 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
 
     cap.release()
     out.release()
+    
+    # Conversão rigorosa para H.264 para ser compatível com App Flutter (Mobile/Windows)
+    subprocess.run(["ffmpeg", "-y", "-i", temp_output, "-vcodec", "libx264", output_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if os.path.exists(temp_output):
+        os.remove(temp_output)
     
     # Arredondar métricas para o LLM
     return {k: round(v, 2) for k, v in metrics.items()}
