@@ -63,7 +63,7 @@ def process_video_task(payload: VideoProcessPayload):
         
         # 4. Geração de Feedback (Usando LLM via Gemini)
         print("Requesting AI Coach feedback (Gemini)...")
-        feedback_dict = generate_technique_feedback(payload.exercise_name, metrics)
+        feedback_dict = generate_technique_feedback(supabase, payload.exercise_name, metrics)
         resume = feedback_dict.get("resume_text", "Análise de movimento concluída.")
         improve_exercises = feedback_dict.get("improve_exercises", [])
 
