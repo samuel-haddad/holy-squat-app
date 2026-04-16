@@ -742,10 +742,13 @@ class SupabaseService {
       final path = 'raw/${user.id}/$fileName';
       debugPrint("Technique: Uploading raw video to $path");
 
+      final ext = fileName.split('.').last.toLowerCase();
+      final contentType = (ext == 'mov') ? 'video/quicktime' : 'video/mp4';
+
       await client.storage.from('technique_videos').upload(
             path,
             file,
-            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+            fileOptions: FileOptions(cacheControl: '3600', upsert: true, contentType: contentType),
           );
 
       // Return the relative path used by the database
