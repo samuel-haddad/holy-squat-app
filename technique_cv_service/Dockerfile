@@ -1,13 +1,10 @@
 # Usamos a imagem oficial do Python Slim
 FROM python:3.10-slim
 
-# Instalar dependências de sistema necessárias para o OpenCV (libGL)
+# Instalar dependências de sistema mínimas para OpenCV e MediaPipe
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgl1-mesa-glx \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Definir o diretório de trabalho na nuvem
