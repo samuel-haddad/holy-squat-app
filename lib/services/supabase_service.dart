@@ -812,7 +812,7 @@ class SupabaseService {
           .select()
           .eq('user_id', user.id)
           .eq('status', 'completed')
-          .order('updated_at', ascending: false);
+          .order('created_at', ascending: false);
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {

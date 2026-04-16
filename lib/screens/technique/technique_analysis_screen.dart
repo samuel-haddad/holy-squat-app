@@ -119,8 +119,15 @@ class _TechniqueAnalysisScreenState extends State<TechniqueAnalysisScreen> {
                               const SizedBox(height: 16),
                               Text(
                                 isProcessing ? 'AI is analyzing your movement...' : 'Loading video...',
-                                style: const TextStyle(color: Colors.white)
+                                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)
                               ),
+                              const SizedBox(height: 8),
+                              if (isProcessing)
+                                const Text(
+                                  "You can leave this screen and return later\nvia 'My Library' on the previous screen.",
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                                ),
                             ],
                           )
                     ),

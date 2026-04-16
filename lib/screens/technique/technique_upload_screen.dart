@@ -58,15 +58,12 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
         );
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Video sent! Processing in the background. Check your library shortly.'),
-              backgroundColor: AppTheme.primaryTeal,
-              behavior: SnackBarBehavior.floating,
-            ),
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => TechniqueAnalysisScreen(
+              exerciseName: selectedExercise!,
+            )),
           );
-          // Reload feedbacks so it might show the new one as pending if we implement pending view
-          _loadFeedbacks();
         }
       } else {
         throw Exception("Upload failed");
