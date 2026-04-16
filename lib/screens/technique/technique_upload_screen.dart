@@ -16,27 +16,9 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
   String? selectedExercise;
   bool isUploading = false;
   final ImagePicker _picker = ImagePicker();
-  List<Map<String, dynamic>> _recentFeedbacks = [];
-  bool isLoadingFeedbacks = true;
   
   // Lista Mock de exercícios (em prod, virá do bank/library)
   final List<String> exercises = ['Back Squat', 'Front Squat', 'Clean', 'Snatch', 'Deadlift'];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFeedbacks();
-  }
-
-  Future<void> _loadFeedbacks() async {
-    final feedbacks = await SupabaseService.getAllTechniqueFeedbacks();
-    if (mounted) {
-      setState(() {
-        _recentFeedbacks = feedbacks;
-        isLoadingFeedbacks = false;
-      });
-    }
-  }
 
   Future<void> _processFile(File file) async {
     if (selectedExercise == null) return;
@@ -160,42 +142,6 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
                 ),
               ),
             ],
-            
-            const SizedBox(height: 48),
-            
-            // SECTION: RECENT FEEDBACKS
-            const Text(
-              'My Library',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            if (isLoadingFeedbacks)
-              const Center(child: CircularProgressIndicator(color: AppTheme.primaryTeal))
-            else if (_recentFeedbacks.isEmpty)
-              const Text('No previous analysis found.', style: TextStyle(color: Colors.grey))
-            else
-              ..._recentFeedbacks.map((f) {
-                final exName = f['exercise_name'] ?? 'Unknown';
-                final date = f['updated_at'] != null ? DateTime.parse(f['updated_at']).toLocal().toString().split(' ')[0] : '';
-                return Card(
-                  color: AppTheme.cardColor,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    leading: const Icon(Icons.fitness_center, color: AppTheme.primaryTeal),
-                    title: Text(exName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    subtitle: Text('Analyzed on $date', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                    trailing: const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => TechniqueAnalysisScreen(exerciseName: exName)),
-                      );
-                    },
-                  ),
-                );
-              }).toList(),
             const SizedBox(height: 32),
           ],
         ),
