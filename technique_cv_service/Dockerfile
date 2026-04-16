@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libgl1 \
     libgles2 \
+    libegl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Definir o diretório de trabalho na nuvem
