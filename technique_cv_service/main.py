@@ -80,9 +80,14 @@ def process_video_task(payload: VideoProcessPayload):
 
     except Exception as e:
         print(f"Critical error in job {feedback_id}: {e}")
-        # Update status para failed
+        # Update status para failed e salva o erro para visualização remota
+        import traceback
+        error_msg = traceback.format_exc()
         try:
-            supabase.table("technique_feedbacks").update({"status": "failed"}).eq("id", feedback_id).execute()
+            supabase.table("technique_feedbacks").update({
+                "status": "failed",
+                "resume_text": f"SYSTEM ERROR: {e}\n{error_msg}"
+            }).eq("id", feedback_id).execute()
         except: pass
     finally:
         # Cleanup arquivos temporários
