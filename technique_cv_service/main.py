@@ -4,6 +4,7 @@ import os
 import time
 from cv_engine import process_video_with_mediapipe
 from download_utils import ensure_model_exists
+from llm_service import generate_technique_feedback
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -60,20 +61,11 @@ def process_video_task(payload: VideoProcessPayload):
                 file_options={"cache-control": "3600", "upsert": "true"}
             )
         
-        # 4. Geração de Feedback (Mock LLM baseado em métricas)
-        resume = f"Análise concluída para {payload.exercise_name}. "
-        if metrics['min_hip_angle'] < 90:
-            resume += "Excelente profundidade atingida abaixo da paralela. "
-        else:
-            resume += "A profundidade pode ser melhorada para atingir a paralela. "
-        
-        if metrics['max_trunk_lean'] > 40:
-            resume += "Notamos uma inclinação excessiva do tronco à frente, cuidado com o core."
-        
-        improve_exercises = [
-            {"name": "Goblet Squats", "reason": "Melhora a postura vertical do tronco."},
-            {"name": "Box Squats", "reason": "Ajuda no controle da profundidade e estabilidade."}
-        ]
+        # 4. Geração de Feedback (Usando LLM via Gemini)
+        print("Requesting AI Coach feedback (Gemini)...")
+        feedback_dict = generate_technique_feedback(payload.exercise_name, metrics)
+        resume = feedback_dict.get("resume_text", "Análise de movimento concluída.")
+        improve_exercises = feedback_dict.get("improve_exercises", [])
 
         # 5. Update Final no Banco de Dados
         print("Updating database record...")
