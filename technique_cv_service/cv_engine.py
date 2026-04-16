@@ -6,7 +6,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 # Modelo baixado anteriormente
-MODEL_PATH = "pose_landmarker_heavy.task"
+MODEL_PATH = "pose_landmarker_lite.task"
 
 def calculate_angle(a, b, c):
     """
@@ -128,7 +128,8 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
     out.release()
     
     # Conversão rigorosa para H.264 para ser compatível com App Flutter (Mobile/Windows)
-    subprocess.run(["ffmpeg", "-y", "-i", temp_output, "-vcodec", "libx264", "-pix_fmt", "yuv420p", output_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # [MEMORIA] Restrições de ram usando preset e threads=1
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", temp_output, "-vcodec", "libx264", "-preset", "ultrafast", "-threads", "1", "-pix_fmt", "yuv420p", output_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if os.path.exists(temp_output):
         os.remove(temp_output)
     
