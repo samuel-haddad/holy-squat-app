@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libgles2 \
     libegl1 \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Definir o diretório de trabalho na nuvem
