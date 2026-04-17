@@ -745,9 +745,11 @@ class SupabaseService {
       final ext = fileName.split('.').last.toLowerCase();
       final contentType = (ext == 'mov') ? 'video/quicktime' : 'video/mp4';
 
-      await client.storage.from('technique_videos').upload(
+      // Bypass iOS Sandbox Restrictions using in-memory bytes
+      final bytes = await file.readAsBytes();
+      await client.storage.from('technique_videos').uploadBinary(
             path,
-            file,
+            bytes,
             fileOptions: FileOptions(cacheControl: '3600', upsert: true, contentType: contentType),
           );
 

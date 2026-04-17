@@ -55,6 +55,9 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
         "min_knee_angle": 180.0,
         "max_trunk_lean": 0.0,
     }
+    
+    # Rastreio do Bar Path (Zero Model)
+    bar_path_pts = []
 
     with vision.PoseLandmarker.create_from_options(options) as landmarker:
         while cap.isOpened():
@@ -104,6 +107,18 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
                     if trunk_lean > metrics["max_trunk_lean"]:
                         metrics["max_trunk_lean"] = trunk_lean
 
+                    # ZERO MODEL - Cálculo C_barra
+                    left_wrist = landmarks[15]
+                    right_wrist = landmarks[16]
+                    
+                    # Ponto médio em x e y
+                    bar_cx = (left_wrist.x + right_wrist.x) / 2.0
+                    bar_cy = (left_wrist.y + right_wrist.y) / 2.0
+                    
+                    # Guardar coordenada convertendo para pixels da tela original
+                    bar_pt = (int(bar_cx * width), int(bar_cy * height))
+                    bar_path_pts.append(bar_pt)
+                    
                     # Desenho manual simples (Legacy draw_landmarks é instável com novos objetos)
                     # Desenhamos conexões básicas do Squat
                     def draw_line(p1, p2, color=(0, 255, 0)):
@@ -118,6 +133,13 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
                     # Desenhar nós
                     for pt in [shoulder, hip, knee, ankle]:
                         cv2.circle(annotated_image, (int(pt.x * width), int(pt.y * height)), 6, (0, 0, 255), -1)
+                        
+                    # Printar Centro da Barra
+                    cv2.circle(annotated_image, bar_pt, 8, (255, 255, 0), -1)
+                    
+                    # Desenhar Bar Path acumulado
+                    for i in range(1, len(bar_path_pts)):
+                        cv2.line(annotated_image, bar_path_pts[i - 1], bar_path_pts[i], (255, 255, 0), 2)
                 
                 except IndexError:
                     pass
