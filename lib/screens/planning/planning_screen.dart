@@ -554,7 +554,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Equilíbrio de Capacidades', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+        const Text('Aderência por tipo de exercício', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
         const SizedBox(height: 16),
         SizedBox(
           height: 200,
@@ -593,32 +593,91 @@ class _PlanningScreenState extends State<PlanningScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Constância (Últimos 6 meses)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-        const SizedBox(height: 12),
-        AspectRatio(
-          aspectRatio: 3,
-          child: LayoutBuilder(builder: (context, constraints) {
-             return GridView.builder(
-               scrollDirection: Axis.horizontal,
-               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                 crossAxisCount: 7,
-                 mainAxisSpacing: 2,
-                 crossAxisSpacing: 2,
-               ),
-               itemCount: heatmapData.length,
-               itemBuilder: (context, index) {
-                 final item = heatmapData[index];
-                 final intensity = (item['intensity'] as num?)?.toDouble() ?? 0.0;
-                 return Container(
-                   decoration: BoxDecoration(
-                     color: intensity == 0 
-                        ? Colors.white.withOpacity(0.05) 
-                        : AppTheme.primaryTeal.withOpacity(0.2 + (intensity / 10).clamp(0.0, 0.8)),
-                     borderRadius: BorderRadius.circular(1),
-                   ),
-                 );
-               },
-             );
-          }),
+        const SizedBox(height: 16),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Eixo Vertical
+            RotatedBox(
+              quarterTurns: 3,
+              child: Container(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Dias da semana',
+                  style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 10, letterSpacing: 0.5),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 3,
+                    child: LayoutBuilder(builder: (context, constraints) {
+                       return GridView.builder(
+                         scrollDirection: Axis.horizontal,
+                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                           crossAxisCount: 7,
+                           mainAxisSpacing: 2,
+                           crossAxisSpacing: 2,
+                         ),
+                         itemCount: heatmapData.length,
+                         itemBuilder: (context, index) {
+                           final item = heatmapData[index];
+                           final intensity = (item['intensity'] as num?)?.toDouble() ?? 0.0;
+                           return Container(
+                             decoration: BoxDecoration(
+                               color: intensity == 0 
+                                  ? Colors.white.withOpacity(0.05) 
+                                  : AppTheme.primaryTeal.withOpacity(0.2 + (intensity / 10).clamp(0.0, 0.8)),
+                               borderRadius: BorderRadius.circular(1),
+                             ),
+                           );
+                         },
+                       );
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  // Eixo Horizontal
+                  Text(
+                    'Semanas',
+                    style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 10, letterSpacing: 0.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        // Legenda de Intensidade
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              'Intensidade (PSE): ',
+              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 9, fontWeight: FontWeight.w300),
+            ),
+            const SizedBox(width: 8),
+            Text('0', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 9)),
+            const SizedBox(width: 6),
+            ...List.generate(6, (index) {
+              final double intensity = index * 2.0; // Amostragem da escala de 0 a 10
+              return Container(
+                width: 10,
+                height: 10,
+                margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                decoration: BoxDecoration(
+                  color: intensity == 0 
+                    ? Colors.white.withOpacity(0.05) 
+                    : AppTheme.primaryTeal.withOpacity(0.2 + (intensity / 10).clamp(0.0, 0.8)),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              );
+            }),
+            const SizedBox(width: 6),
+            Text('10', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 9)),
+          ],
         ),
       ],
     );
