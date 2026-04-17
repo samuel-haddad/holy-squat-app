@@ -26,10 +26,16 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
     setState(() { isUploading = true; });
 
     try {
+      if (!file.existsSync()) throw Exception("File does not exist: ${file.path}");
+      
       final String extension = file.path.split('.').last.toLowerCase();
       final String fileName = '${DateTime.now().millisecondsSinceEpoch}_technique.$extension';
       
+      final int size = file.lengthSync();
+      if (size == 0) throw Exception("File is empty (0 bytes)");
+
       // 1. Upload para o bucket 'technique_videos/raw'
+      debugPrint("Starting exact upload process for $size bytes...");
       final String? rawPath = await SupabaseService.uploadTechniqueVideo(file, fileName);
       
       if (rawPath != null) {
@@ -48,12 +54,18 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
           );
         }
       } else {
-        throw Exception("Upload failed");
+        throw Exception("rawPath was null. SupabaseService.uploadTechniqueVideo returned silently. (User may be null)");
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        // Mostra o erro em formato AlertDialog para o usuário não perder a mensagem grande
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Exact Upload Error'),
+            content: SingleChildScrollView(child: Text(e.toString())),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+          )
         );
       }
     } finally {
