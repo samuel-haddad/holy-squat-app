@@ -17,8 +17,13 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
   bool isUploading = false;
   final ImagePicker _picker = ImagePicker();
   
-  // Lista Mock de exercícios (em prod, virá do bank/library)
-  final List<String> exercises = ['Back Squat', 'Front Squat', 'Clean', 'Snatch', 'Deadlift'];
+  final List<String> exercises = [
+    'Snatch', 'Power Snatch', 'Muscle Snatch', 
+    'Squat Clean', 'Clean & Jerk', 'Power Clean', 'Muscle Clean', 
+    'Back Squat', 'Front Squat', 'Overhead Squat', 
+    'Deadlift', 'Sumo Deadlift', 'Clean Pull', 
+    'Thruster', 'Push Press'
+  ];
 
   Future<void> _processFile(XFile file) async {
     if (selectedExercise == null) return;

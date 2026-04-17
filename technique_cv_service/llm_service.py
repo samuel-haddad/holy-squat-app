@@ -43,6 +43,13 @@ Retorne SEMPRE em formato JSON com esta estrutura estrita:
 }
 """
 
+def _clean_json_response(text: str) -> str:
+    """Remove blocos de código markdown do JSON retornado pela IA."""
+    if text.startswith('`' * 3):
+        text = re.sub(r'^`{3}(?:json)?\s*', '', text)
+        text = re.sub(r'\s*`{3}$', '', text)
+    return text.strip()
+
 def generate_technique_feedback(supabase_client, exercise_name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
     """
     Recebe os dados biomecânicos dinâmicos e pede avaliação ao LLM.
@@ -57,34 +64,28 @@ def generate_technique_feedback(supabase_client, exercise_name: str, metrics: Di
             llm_model = res.data[0]["llm_model"]
             print(f"Coach detectado no Supabase para provedor '{ACTIVE_PROVIDER}': Model={llm_model}")
     except Exception as e:
-        print(f"Erro ao buscar coach na tabela ai_coach, usando padrao: {e}")
+        print(f"Erro ao buscar coach na tabela ai_coach, usando padrão: {e}")
 
     prompt = f"O atleta executou: {exercise_name}.\nMétricas calculadas: {json.dumps(metrics, indent=2)}\nAnalise o rastro da barra, simetria e o timing de extensão. Gere o JSON técnico."
 
     # 2. Executa a geração de IA
-    if ACTIVE_PROVIDER == "google":
-        if not GEMINI_API_KEY:
-            print("Warning: GEMINI_API_KEY not provided. Fallback acionado.")
-            return _generate_fallback_mock(exercise_name, metrics)
+    try:
+        if ACTIVE_PROVIDER == "google":
+            if not GEMINI_API_KEY:
+                raise ValueError("GEMINI_API_KEY missing")
             
-        try:
             model = genai.GenerativeModel(
                 model_name=llm_model, 
                 system_instruction=SYSTEM_PROMPT,
                 generation_config={"response_mime_type": "application/json"}
             )
             response = model.generate_content(prompt)
-            return json.loads(response.text)
-        except Exception as e:
-            print(f"Erro crítico no Gemini: {e}. Fallback acionado.")
-            return _generate_fallback_mock(exercise_name, metrics)
+            return json.loads(_clean_json_response(response.text))
 
-    elif ACTIVE_PROVIDER == "anthropic":
-        if not ANTHROPIC_API_KEY:
-            print("Warning: ANTHROPIC_API_KEY not provided. Fallback acionado.")
-            return _generate_fallback_mock(exercise_name, metrics)
-            
-        try:
+        elif ACTIVE_PROVIDER == "anthropic":
+            if not ANTHROPIC_API_KEY:
+                raise ValueError("ANTHROPIC_API_KEY missing")
+                
             headers = {
                 "x-api-key": ANTHROPIC_API_KEY,
                 "anthropic-version": "2023-06-01",
@@ -99,17 +100,11 @@ def generate_technique_feedback(supabase_client, exercise_name: str, metrics: Di
             resp = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=body)
             resp.raise_for_status()
             data = resp.json()
-            raw_text = data['content'][0]['text']
-            
-            # Limpeza segura do markdown de bloco de código (evita bugs no parser)
-            if raw_text.startswith('`' * 3):
-                raw_text = re.sub(r'^`{3}(?:json)?\s*', '', raw_text)
-                raw_text = re.sub(r'\s*`{3}$', '', raw_text)
-                
-            return json.loads(raw_text)
-        except Exception as e:
-            print(f"Erro crítico no Claude: {e}. Fallback acionado.")
-            return _generate_fallback_mock(exercise_name, metrics)
+            return json.loads(_clean_json_response(data['content'][0]['text']))
+
+    except Exception as e:
+        print(f"Erro crítico no provedor '{ACTIVE_PROVIDER}': {e}. Acionando Fallback Heurístico.")
+        return _generate_fallback_mock(exercise_name, metrics)
 
     return _generate_fallback_mock(exercise_name, metrics)
 

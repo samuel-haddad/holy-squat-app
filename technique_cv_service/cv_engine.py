@@ -62,12 +62,26 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
         running_mode=vision.RunningMode.VIDEO
     )
 
-    # Warehouse de Métricas (Séries Temporais)
-    history = {
-        "ts": [], "l_knee": [], "r_knee": [], "l_hip": [], "r_hip": [],
-        "l_elbow": [], "r_elbow": [], "bar_x": [], "bar_y": [], "sh_y": []
-    }
-    bar_path_pts = []
+    # [BIO] Função de Suavização (Média Móvel) para evitar tremida no gráfico/ossos
+    def smooth_array(arr, window=5):
+        if len(arr) < window: return arr
+        return np.convolve(arr, np.ones(window)/window, mode='same').tolist()
+
+    # [VIS] Helper para desenhar o esqueleto técnico
+    def draw_skeleton(image, lms, w, h, color_primary=(0, 255, 0), color_secondary=(0, 0, 255)):
+        connections = [
+            (11, 12), (11, 23), (12, 24), (23, 24), # Tronco (Caixa)
+            (11, 13), (13, 15), (12, 14), (14, 16), # Braços
+            (23, 25), (25, 27), (24, 26), (26, 28)  # Pernas
+        ]
+        for start_idx, end_idx in connections:
+            p1, p2 = lms[start_idx], lms[end_idx]
+            cv2.line(image, (int(p1.x * w), int(p1.y * h)), (int(p2.x * w), int(p2.y * h)), color_primary, 2)
+        
+        # Desenha os nós (Articulações)
+        for idx in [11,12,13,14,15,16,23,24,25,26,27,28]:
+            p = lms[idx]
+            cv2.circle(image, (int(p.x * w), int(p.y * h)), 5, color_secondary, -1)
 
     with vision.PoseLandmarker.create_from_options(options) as landmarker:
         while cap.isOpened():
@@ -87,20 +101,16 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
                 
                 try:
                     # Mapeamento Bilateral
-                    ls, rs = landmarks[11], landmarks[12] # Ombros
-                    le, re = landmarks[13], landmarks[14] # Cotovelos
                     lw, rw = landmarks[15], landmarks[16] # Pulsos
                     lh, rh = landmarks[23], landmarks[24] # Quadril
                     lk, rk = landmarks[25], landmarks[26] # Joelhos
-                    la, ra = landmarks[27], landmarks[28] # Tornozelos
+                    ls, rs = landmarks[11], landmarks[12] # Ombros
 
-                    # Cálculos de Ângulos Bilaterais
-                    lk_ang = calculate_angle(lh, lk, la)
-                    rk_ang = calculate_angle(rh, rk, ra)
+                    # Cálculos de Ângulos (Lado Esquerdo como referência padrão)
+                    lk_ang = calculate_angle(lh, lk, landmarks[27])
+                    rk_ang = calculate_angle(rh, rk, landmarks[28])
                     lh_ang = calculate_angle(ls, lh, lk)
-                    rh_ang = calculate_angle(rs, rh, rk)
-                    le_ang = calculate_angle(ls, le, lw)
-                    re_ang = calculate_angle(rs, re, rw)
+                    le_ang = calculate_angle(ls, landmarks[13], lw)
 
                     # ZERO MODEL - Posição da Barra
                     bar_cx = (lw.x + rw.x) / 2.0
@@ -108,41 +118,24 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
                     bar_pt = (int(bar_cx * width), int(bar_cy * height))
                     bar_path_pts.append(bar_pt)
                     
-                    # Salvando no histórico do frame
+                    # Store Metrics for history
                     history["ts"].append(frame_timestamp_ms)
                     history["l_knee"].append(lk_ang)
                     history["r_knee"].append(rk_ang)
                     history["l_hip"].append(lh_ang)
-                    history["r_hip"].append(rh_ang)
                     history["l_elbow"].append(le_ang)
-                    history["r_elbow"].append(re_ang)
                     history["bar_x"].append(bar_cx)
                     history["bar_y"].append(bar_cy)
-                    history["sh_y"].append((ls.y + rs.y) / 2.0)
                     
-                    # Desenho Técnico sobre o vídeo
-                    def draw_line(p1, p2, color=(0, 255, 0)):
-                        cv2.line(annotated_image, 
-                                (int(p1.x * width), int(p1.y * height)), 
-                                (int(p2.x * width), int(p2.y * height)), 
-                                color, 3)
-
-                    # Desenha esqueleto esquerdo como base
-                    draw_line(ls, lh)
-                    draw_line(lh, lk)
-                    draw_line(lk, la)
-                    draw_line(ls, le)
-                    draw_line(le, lw)
-
-                    for pt in [ls, lh, lk, la, le, lw]:
-                        cv2.circle(annotated_image, (int(pt.x * width), int(pt.y * height)), 6, (0, 0, 255), -1)
-                        
-                    # Printar Centro da Barra e Path
+                    # Desenho Técnico Avançado
+                    draw_skeleton(annotated_image, landmarks, width, height)
+                    
+                    # Printar Centro da Barra e Path (Em Cyan)
                     cv2.circle(annotated_image, bar_pt, 8, (255, 255, 0), -1)
                     for i in range(1, len(bar_path_pts)):
                         cv2.line(annotated_image, bar_path_pts[i - 1], bar_path_pts[i], (255, 255, 0), 2)
                 
-                except IndexError:
+                except (IndexError, AttributeError):
                     pass
 
             out.write(annotated_image)
@@ -150,7 +143,7 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
     cap.release()
     out.release()
     
-    # --- ANÁLISE BIOMECÂNICA PÓS-VÍDEO ---
+    # --- ANÁLISE BIOMECÂNICA PÓS-VÍDEO (COM SUAVIZAÇÃO) ---
     metrics = {
         "max_bar_x_delta": 0.0, 
         "early_arm_bend": False, 
@@ -159,24 +152,30 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
         "min_knee_angle": 180.0
     }
     
-    if history["ts"]:
-        # 1. Deslocamento Horizontal da Barra (Eficiência - Loop da barra)
+    if len(history["ts"]) > 10:
+        # Suavização das curvas para análise de tendência
+        smooth_knee = smooth_array(history["l_knee"])
+        smooth_hip = smooth_array(history["l_hip"])
+        smooth_elbow = smooth_array(history["l_elbow"])
+        
+        # 1. Deslocamento Horizontal da Barra
         metrics["max_bar_x_delta"] = round((max(history["bar_x"]) - min(history["bar_x"])) * 100, 2)
         
-        # 2. Early Arm Bend (Puxada antecipada)
-        max_hip_idx = np.argmax(history["l_hip"])
-        pre_extension_elbow = history["l_elbow"][max(0, max_hip_idx - 10)]
-        if pre_extension_elbow < 160: 
+        # 2. Early Arm Bend (Window analysis)
+        max_hip_idx = np.argmax(smooth_hip)
+        # Olhamos uma janela de 5 frames antes da extensão máxima do quadril
+        window_elbow = smooth_elbow[max(0, max_hip_idx-5):max_hip_idx]
+        if window_elbow and min(window_elbow) < 160: 
             metrics["early_arm_bend"] = True
             
-        # 3. Triple Extension (Verifica se houve abertura considerável do quadril)
-        if history["l_hip"][max_hip_idx] > 165.0:
+        # 3. Triple Extension
+        if smooth_hip[max_hip_idx] > 168.0:
             metrics["triple_extension"] = True
         
-        # 4. Profundidade e Assimetria na Recepção
-        min_knee_idx = np.argmin(history["l_knee"])
+        # 4. Profundidade e Assimetria
+        min_knee_idx = np.argmin(smooth_knee)
         metrics["catch_asymmetry"] = round(abs(history["l_knee"][min_knee_idx] - history["r_knee"][min_knee_idx]), 2)
-        metrics["min_knee_angle"] = round(history["l_knee"][min_knee_idx], 2)
+        metrics["min_knee_angle"] = round(smooth_knee[min_knee_idx], 2)
 
     # --- PROTEÇÃO E COMPRESSÃO (FFMPEG FINAL) ---
     # Conversão rigorosa para H.264 para ser compatível com App Flutter (Mobile/Windows)
