@@ -27,15 +27,28 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
         from download_utils import ensure_model_exists
         ensure_model_exists()
 
-    cap = cv2.VideoCapture(input_path)
+    import subprocess
+    
+    # [NOVO] Estabilização e Otimização: Forçar autorotação e redimensionar para 720p (Max)
+    # Isso resolve o "vídeo deitado" do iPhone e economiza MUITA RAM no Render.
+    standardized_path = input_path + "_std.mp4"
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error", "-i", input_path,
+        "-vf", "scale='if(gt(a,1),-1,720)':'if(gt(a,1),720,-1)',format=yuv420p",
+        "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1",
+        standardized_path
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # Se o FFmpeg falhou (vídeo corrompido), tentamos usar o original como fallback
+    working_path = standardized_path if os.path.exists(standardized_path) else input_path
+
+    cap = cv2.VideoCapture(working_path)
     if not cap.isOpened():
-        raise Exception(f"Failed to open video file: {input_path}")
+        raise Exception(f"Failed to open video file: {working_path}")
         
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
-
-    import subprocess
 
     # VideoWriter setup - Inicializamos num wrapper mp4 basico primeiro
     temp_output = output_path + "_raw.mp4"
@@ -154,6 +167,8 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", temp_output, "-vcodec", "libx264", "-preset", "ultrafast", "-threads", "1", "-pix_fmt", "yuv420p", output_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if os.path.exists(temp_output):
         os.remove(temp_output)
+    if os.path.exists(standardized_path):
+        os.remove(standardized_path)
     
     # Arredondar métricas para o LLM
     return {k: round(v, 2) for k, v in metrics.items()}

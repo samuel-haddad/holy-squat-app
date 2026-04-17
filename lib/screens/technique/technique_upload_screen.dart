@@ -120,7 +120,29 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
                 setState(() { selectedExercise = val; });
               },
             ),
-            const SizedBox(height: 48),
+            const SizedBox(height: 24),
+            // TIP CARD
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryTeal.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.primaryTeal.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lightbulb_outline, color: AppTheme.primaryTeal),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Tip: Record vertically (portrait) for more accurate joint tracking.',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
             if (isUploading)
               const Column(
                 children: [
