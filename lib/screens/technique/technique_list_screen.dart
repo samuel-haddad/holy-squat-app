@@ -99,18 +99,27 @@ class _TechniqueListScreenState extends State<TechniqueListScreen> {
                     );
                   },
                 ),
-      floatingActionButton: _recentFeedbacks.isNotEmpty && !isLoadingFeedbacks
-          ? FloatingActionButton.extended(
-              backgroundColor: AppTheme.primaryTeal,
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const TechniqueUploadScreen()),
-                );
-                _loadFeedbacks();
-              },
-              icon: const Icon(Icons.add, color: Colors.black),
-              label: const Text('New Analysis', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+      bottomNavigationBar: _recentFeedbacks.isNotEmpty && !isLoadingFeedbacks
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TechniqueUploadScreen()),
+                    );
+                    _loadFeedbacks();
+                  },
+                  icon: const Icon(Icons.add, color: Colors.black),
+                  label: const Text('New Analysis', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryTeal,
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ),
             )
           : null,
     );
