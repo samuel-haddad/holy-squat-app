@@ -20,18 +20,16 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
   // Lista Mock de exercícios (em prod, virá do bank/library)
   final List<String> exercises = ['Back Squat', 'Front Squat', 'Clean', 'Snatch', 'Deadlift'];
 
-  Future<void> _processFile(File file) async {
+  Future<void> _processFile(XFile file) async {
     if (selectedExercise == null) return;
 
     setState(() { isUploading = true; });
 
     try {
-      if (!file.existsSync()) throw Exception("File does not exist: ${file.path}");
-      
-      final String extension = file.path.split('.').last.toLowerCase();
+      final String extension = file.name.split('.').last.toLowerCase();
       final String fileName = '${DateTime.now().millisecondsSinceEpoch}_technique.$extension';
       
-      final int size = file.lengthSync();
+      final int size = await file.length();
       if (size == 0) throw Exception("File is empty (0 bytes)");
 
       // 1. Upload para o bucket 'technique_videos/raw'
@@ -76,14 +74,14 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
   Future<void> _recordVideo() async {
     final XFile? video = await _picker.pickVideo(source: ImageSource.camera);
     if (video != null) {
-      await _processFile(File(video.path));
+      await _processFile(video);
     }
   }
 
   Future<void> _pickVideo() async {
     final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
     if (video != null) {
-      await _processFile(File(video.path));
+      await _processFile(video);
     }
   }
 

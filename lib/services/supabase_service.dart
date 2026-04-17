@@ -1,7 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:holy_squat_app/core/user_state.dart';
 import 'package:holy_squat_app/models/training_session.dart';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io' show File;
@@ -734,7 +736,7 @@ class SupabaseService {
   // --- TECHNIQUE ANALYSIS METHODS ---
 
   /// Uploads a raw video to the technique_videos bucket.
-  static Future<String?> uploadTechniqueVideo(File file, String fileName) async {
+  static Future<String?> uploadTechniqueVideo(XFile file, String fileName) async {
     final user = client.auth.currentUser;
     if (user == null) return null;
 
