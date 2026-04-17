@@ -140,7 +140,7 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
-                      'Tip: Record vertically (portrait) for more accurate joint tracking.',
+                      'Dica: Para uma análise perfeita, posicione a câmera na diagonal (45 graus) pegando todo o corpo.',
                       style: TextStyle(color: Colors.white70, fontSize: 13),
                     ),
                   ),
