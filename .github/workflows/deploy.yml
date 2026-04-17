@@ -13,9 +13,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout repository
@@ -27,16 +24,11 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Create .env file
-        run: |
-          echo "SUPABASE_URL=https://placeholder.supabase.co" > .env
-          echo "SUPABASE_ANON_KEY=placeholder" >> .env
-
       - name: Install dependencies
         run: flutter pub get
 
       - name: Build Flutter Web
-        run: flutter build web --release --base-href /holy-squat-app/
+        run: flutter build web --release --base-href /holy-squat-app/ --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Upload artifact to GitHub Pages
         uses: actions/upload-pages-artifact@v3

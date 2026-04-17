@@ -16,11 +16,28 @@ Future<void> main() async {
 
   await initializeDateFormatting('pt_BR', null);
 
-  await dotenv.load(fileName: ".env");
+  // Carregamento opcional do .env para desenvolvimento local
+  // No Web prod, o arquivo não existirá e usará String.fromEnvironment
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    debugPrint("Note: .env file not found, using environment variables.");
+  }
+
+  // Lógica Híbrida: Prioriza --dart-define (Prod) -> Fallback DotEnv (Local)
+  const String envUrl = String.fromEnvironment('SUPABASE_URL');
+  const String envKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
+  final String supabaseUrl = envUrl.isNotEmpty ? envUrl : (dotenv.env['SUPABASE_URL'] ?? '');
+  final String supabaseAnonKey = envKey.isNotEmpty ? envKey : (dotenv.env['SUPABASE_ANON_KEY'] ?? '');
+
+  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+    debugPrint("WARNING: Supabase credentials are missing!");
+  }
 
   await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
   );
 
   // Detect Strava OAuth connection callback on web (?code=...&scope=...activity...)
