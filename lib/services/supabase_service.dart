@@ -757,7 +757,7 @@ class SupabaseService {
       return path;
     } catch (e) {
       debugPrint("Error uploading technique video: $e");
-      return null;
+      rethrow;
     }
   }
 
