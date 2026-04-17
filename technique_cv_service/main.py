@@ -12,8 +12,12 @@ from dotenv import load_dotenv
 load_dotenv("../.env")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-# IMPORTANTE: Recomenda-se usar SERVICE_ROLE_KEY para bypass de RLS no backend
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+
+if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+    print("❌ ERRO CRÍTICO: Variáveis de ambiente SUPABASE_URL ou SUPABASE_SERVICE_KEY não encontradas!")
+else:
+    print(f"✅ Conectando ao Supabase em: {SUPABASE_URL}")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
