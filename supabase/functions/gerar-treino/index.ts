@@ -23,6 +23,24 @@ Reintrodução-FBB, Skill, Skill-Metcon`;
 
 const COACH_PERSONA = `Você é o AI Coach do Holy Squat App. Seu perfil: Coach Level de Crossfit, com grande conhecimento sobre reabilitação de lesões, em especial de ombro e joelho, especializado na integração do treinamento de força tradicional, com ênfase em isolamento, bodybuilding funcional e protocolos de Prehab para CrossFit. Seu foco são protocolos de Concurrent Training que buscam mitigar o "efeito de interferência" entre eles.`;
 
+const METRICS_DEFINITIONS = `
+[DICIONÁRIO E INTERPRETAÇÃO DE MÉTRICAS (KPIs)]
+1. Adherence (Taxa de Adesão): % de exercícios planejados concluídos nos últimos 30 dias. 
+   - Interpretação: > 90% (Alta disciplina); < 70% (Necessário reduzir volume ou ajustar rotina).
+2. Power Index (Índice de Força Bruta): Soma dos PRs em Back Squat, Deadlift e Press.
+   - Interpretação: Indica a base de força máxima para movimentos complexos e WODs pesados.
+3. Avg_PSE (Média de Esforço Percebido): Média da escala 1-10 nos últimos 90 dias.
+   - Interpretação: 8-9 (Limite/Risco de burnout); 5-6 (Manutenção/Base aeróbica).
+4. Current_Workload (IEA): Volume total * Intensidade nos últimos 30 dias.
+   - Interpretação: "Carga Aguda". Use para evitar aumentos bruscos que causem lesões.
+5. Best_Evolution: Comparação % entre Workload atual e baseline de 6 meses.
+   - Interpretação: Positivo (Overload progressivo); Negativo (Deload ou perda de consistência).
+6. Weekly_Freq: Média de dias únicos treinados por semana nos últimos 30 dias.
+   - Interpretação: Mede o ritmo biológico e a capacidade de recuperação (recovery).
+7. Streak: Semanas consecutivas com pelo menos 3 treinos realizados.
+   - Interpretação: Mede resiliência e formação de hábito. Mais valioso que o streak diário.
+`;
+
 const DATA_CONTRACT = `
 [RESTRIÇÃO DE NOMENCLATURA]
 - session_type: Escolha obrigatoriamente um valor desta lista: [${allowedSessionTypes}]. Proibido inventar termos.
@@ -243,6 +261,9 @@ serve(async (req) => {
         [CONTEXTO CIENTÍFICO (RAG)]
         ${knowledgeContext}
 
+        [DICIONÁRIO DE MÉTRICAS]
+        ${METRICS_DEFINITIONS}
+
         [KPIs DETERMINÍSTICOS DO ATLETA]
         - Aderência Global: ${athleteStats.adherence}%
         - PSE Médio (10 sessões): ${athleteStats.avg_pse}
@@ -408,6 +429,9 @@ serve(async (req) => {
 
         [ATLETA]
         - Nome: ${profile.name}
+
+        [DICIONÁRIO DE MÉTRICAS]
+        ${METRICS_DEFINITIONS}
 
         [KPIs DO CICLO ANTERIOR]
         ${JSON.stringify(perfStats)}
