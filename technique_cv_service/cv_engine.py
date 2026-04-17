@@ -83,6 +83,13 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
             p = lms[idx]
             cv2.circle(image, (int(p.x * w), int(p.y * h)), 5, color_secondary, -1)
 
+    # [DATA] Inicialização dos buffers de métricas (Séres Temporais)
+    history = {
+        "ts": [], "l_knee": [], "r_knee": [], "l_hip": [], "l_elbow": [],
+        "bar_x": [], "bar_y": []
+    }
+    bar_path_pts = []
+
     with vision.PoseLandmarker.create_from_options(options) as landmarker:
         while cap.isOpened():
             ret, frame = cap.read()
