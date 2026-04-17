@@ -1,10 +1,11 @@
 import os
 import json
+import re
 import requests
 import google.generativeai as genai
 from typing import List, Dict, Any
 
-# CHAVE PRINCIPAL DE CONTROLE EXCECUTIVO
+# CHAVE PRINCIPAL DE CONTROLE EXECUTIVO
 ACTIVE_PROVIDER = "google" # Altere para "anthropic" quando quiser usar o Claude
 
 # Inicializa as variaveis do ambiente
@@ -13,30 +14,39 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-# Configuração do System Prompt de Educação Física
+# Configuração do System Prompt de Alta Performance (CF-L4)
 SYSTEM_PROMPT = """
-Atue como um Head Coach, CF-L4, certificado pela CrossFit. 
-Vou lhe passar métricas de graus extraídas de um atleta realizando um levantamento de peso (LPO) ou Powerlifting. 
-Aja de forma técnica, sendo encorajador, porém estrito.
+Atue como um Head Coach CrossFit Nível 4 (CF-L4) especializado em Biomecânica de LPO e Ginásticos.
+Sua análise deve ser cirúrgica, focada em EFICIÊNCIA técnica e SEGURANÇA sob carga.
 
-Crie um resumo curto e objetivo (no máximo 3 a 4 frases) diagnosticando o movimento baseado nas métricas computacionais, apontando se o atleta manteve estabilidade ou se há algum aspecto incorreto (valgo, pouca profundidade, inclinação de tronco excessiva, etc.).
+Você receberá métricas dinâmicas extraídas de Visão Computacional:
+- early_arm_bend (Booleano): Se True, o atleta flexionou os braços antes de completar a extensão do quadril (roubou força).
+- max_bar_x_delta (Float): Desvio horizontal da barra em percentual da tela. Ideal é o mais vertical possível (Bar Path).
+- catch_asymmetry (Float): Diferença de graus entre o joelho direito e esquerdo na recepção (agachamento).
+- triple_extension (Booleano): Se True, atingiu boa extensão de quadril na finalização da puxada.
+- min_knee_angle (Float): Profundidade máxima atingida. Abaixo de 90 indica quebra da paralela.
 
-E liste exatamente 3 exercícios acessórios/corretivos ou treinos educativos (drills) baseados no erro (ou para melhorar a força do movimento se o movimento foi bom).
+DIRETRIZES:
+1. Faça um diagnóstico baseado *exclusivamente* nessas métricas. Mencione as fases (saída, puxada, recepção).
+2. Seja encorajador, porém estrito. Se early_arm_bend for True, corrija imediatamente a puxada.
+3. Se houver assimetria > 10°, alerte sobre o risco de lesões e instabilidade.
+4. Liste exatamente 3 exercícios educativos (drills) ou acessórios baseados nos defeitos (ou focados em força base, caso a técnica esteja perfeita).
+
 Retorne SEMPRE em formato JSON com esta estrutura estrita:
 {
-  "resume_text": "Análise técnica em texto corrido",
+  "resume_text": "Análise técnica em texto corrido (máximo 4 frases)",
   "improve_exercises": [
-     {"name": "Nome do exercício de melhoria 1", "reason": "Motivo da escolha 1"},
-     {"name": "Nome do exercício de melhoria 2", "reason": "Motivo da escolha 2"},
-     {"name": "Nome do exercício de melhoria 3", "reason": "Motivo da escolha 3"}
+     {"name": "Nome do exercício 1", "reason": "Motivo direto 1"},
+     {"name": "Nome do exercício 2", "reason": "Motivo direto 2"},
+     {"name": "Nome do exercício 3", "reason": "Motivo direto 3"}
   ]
 }
 """
 
 def generate_technique_feedback(supabase_client, exercise_name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Recebe os dados brutos e pede uma avaliação biomecânica para a LLM configurada no banco (ai_coach).
-    Retorna o dicionário parseado ou um dicionário de fallback.
+    Recebe os dados biomecânicos dinâmicos e pede avaliação ao LLM.
+    Caso a API da IA falhe, aciona um Fallback Inteligente baseado em heurística.
     """
     
     # 1. Busca o llm_model dinâmico na tabela ai_coach
@@ -49,12 +59,12 @@ def generate_technique_feedback(supabase_client, exercise_name: str, metrics: Di
     except Exception as e:
         print(f"Erro ao buscar coach na tabela ai_coach, usando padrao: {e}")
 
-    prompt = f"O atleta executou: {exercise_name}.\nMétricas calculadas pela Visão Computacional: {json.dumps(metrics, indent=2)}\nAnalise e gere o JSON técnico de acordo com as diretrizes."
+    prompt = f"O atleta executou: {exercise_name}.\nMétricas calculadas: {json.dumps(metrics, indent=2)}\nAnalise o rastro da barra, simetria e o timing de extensão. Gere o JSON técnico."
 
-    # 2. Executa a geração usando a nuvem apropriada
+    # 2. Executa a geração de IA
     if ACTIVE_PROVIDER == "google":
         if not GEMINI_API_KEY:
-            print("Warning: GEMINI_API_KEY not provided.")
+            print("Warning: GEMINI_API_KEY not provided. Fallback acionado.")
             return _generate_fallback_mock(exercise_name, metrics)
             
         try:
@@ -66,12 +76,12 @@ def generate_technique_feedback(supabase_client, exercise_name: str, metrics: Di
             response = model.generate_content(prompt)
             return json.loads(response.text)
         except Exception as e:
-            print(f"Error calling Gemini: {e}")
+            print(f"Erro crítico no Gemini: {e}. Fallback acionado.")
             return _generate_fallback_mock(exercise_name, metrics)
 
     elif ACTIVE_PROVIDER == "anthropic":
         if not ANTHROPIC_API_KEY:
-            print("Warning: ANTHROPIC_API_KEY not provided.")
+            print("Warning: ANTHROPIC_API_KEY not provided. Fallback acionado.")
             return _generate_fallback_mock(exercise_name, metrics)
             
         try:
@@ -91,30 +101,54 @@ def generate_technique_feedback(supabase_client, exercise_name: str, metrics: Di
             data = resp.json()
             raw_text = data['content'][0]['text']
             
-            import re
-            if raw_text.startswith('```'):
-                raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
-                raw_text = re.sub(r'\s*```$', '', raw_text)
+            # Limpeza segura do markdown de bloco de código (evita bugs no parser)
+            if raw_text.startswith('`' * 3):
+                raw_text = re.sub(r'^`{3}(?:json)?\s*', '', raw_text)
+                raw_text = re.sub(r'\s*`{3}$', '', raw_text)
                 
             return json.loads(raw_text)
         except Exception as e:
-            print(f"Error calling Claude: {e}")
+            print(f"Erro crítico no Claude: {e}. Fallback acionado.")
             return _generate_fallback_mock(exercise_name, metrics)
 
     return _generate_fallback_mock(exercise_name, metrics)
 
 def _generate_fallback_mock(exercise_name: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
-    # Mock hardcoded backup (Caso a API Key nao funcione ou de erro)
-    resume = f"Feedback gerado offline para {exercise_name}. "
-    if metrics.get('min_hip_angle', 100) < 90:
-        resume += "Excelente profundidade atingida abaixo da paralela, padrão ouro."
+    """
+    Motor Heurístico Offline (Fallback):
+    Garante que o app nunca falhe, gerando um feedback determinístico baseado nas métricas extraídas 
+    pelo cv_engine caso os provedores de IA estejam fora do ar.
+    """
+    resume = f"Feedback gerado offline pelo motor biomecânico para o seu {exercise_name}. "
+    exercises = []
+    
+    # Análise de Early Arm Bend
+    if metrics.get('early_arm_bend', False):
+        resume += "Foi detectada uma puxada antecipada (braços flexionando antes da extensão total de quadril), o que reduz a potência do movimento. "
+        exercises.append({"name": "Puxada Alta (High Pull)", "reason": "Ensina a paciência na segunda puxada, mantendo os braços esticados até o contato."})
     else:
-        resume += "A profundidade pode ser melhorada para atingir a quebra da paralela do joelho com quadril."
+        resume += "Ótima paciência na puxada, mantendo os braços conectados. "
         
+    # Análise de Assimetria
+    if metrics.get('catch_asymmetry', 0.0) > 10.0:
+        resume += "Atenção: Houve um desequilíbrio na recepção (assimetria nos joelhos), cuidado com a estabilidade para evitar lesões. "
+        exercises.append({"name": "Pistol Squats / Split Squats", "reason": "Corrige assimetrias de força e mobilidade entre as pernas."})
+        
+    # Análise de Profundidade
+    if metrics.get('min_knee_angle', 100) < 90:
+        resume += "Você atingiu excelente profundidade na quebra da paralela. "
+    else:
+        resume += "Faltou quebrar a paralela na recepção para maior segurança sob cargas altas. "
+        exercises.append({"name": "Tempo Front Squats", "reason": "Ajuda a ganhar conforto e força no ponto mais baixo do agachamento."})
+
+    # Preenche com exercícios padrões de base se o atleta foi perfeito e não ativou as correções acima
+    if len(exercises) < 3:
+        exercises.append({"name": "Snatch/Clean Balance", "reason": "Melhora a velocidade e confiança na entrada rápida sob a barra."})
+    if len(exercises) < 3:
+        exercises.append({"name": "Muscle Snatch / Clean", "reason": "Reforça a trajetória vertical (Bar Path) e o giro de cotovelos."})
+        
+    # Garante que sempre envie exatamente 3 exercicios formatados
     return {
-        "resume_text": resume,
-        "improve_exercises": [
-            {"name": "Back Squat", "reason": "Fundamental para força bruta na cadeia posterior."},
-            {"name": "Goblet Squat", "reason": "Mantém o peito erguido com maior facilidade."}
-        ]
+        "resume_text": resume.strip(),
+        "improve_exercises": exercises[:3]
     }
