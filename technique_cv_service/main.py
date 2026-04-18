@@ -47,8 +47,10 @@ def process_video_task(payload: VideoProcessPayload):
     """
     feedback_id = payload.feedback_id
     raw_path = payload.raw_video_path
-    local_raw = f"temp_raw_{feedback_id}.mp4"
-    local_processed = f"temp_processed_{feedback_id}.mp4"
+    import uuid
+    job_run_id = str(uuid.uuid4())[:8]
+    local_raw = f"temp_raw_{feedback_id}_{job_run_id}.mp4"
+    local_processed = f"temp_processed_{feedback_id}_{job_run_id}.mp4"
     processed_storage_path = f"processed/{payload.user_id}/{feedback_id}.mp4"
 
     try:
