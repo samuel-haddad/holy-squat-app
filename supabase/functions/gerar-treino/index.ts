@@ -245,6 +245,21 @@ serve(async (req) => {
         .order('session_number', { ascending: true });
       const trainingSessions = sessionsData || [];
 
+      let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
+      if (profile?.id) {
+        const { data: tfData } = await supabaseClient
+          .from('technique_feedbacks')
+          .select('exercise_name, resume_text, improve_exercises')
+          .eq('user_id', profile.id)
+          .order('created_at', { ascending: false })
+          .limit(15);
+        if (tfData && tfData.length > 0) {
+          techniqueFeedbacksStr = tfData.map((tf: any) => 
+            `- Exercício: ${tf.exercise_name}\n  Análise: ${tf.resume_text}\n  Recomendação (Correção): ${JSON.stringify(tf.improve_exercises)}`
+          ).join('\n');
+        }
+      }
+
       // RAG: query knowledge base based on athlete's context
       const ragQuery = `${profile.about_me || ''} ${profile.skills_training || ''} ${profile.lesoes || ''}`;
       const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, supabaseClient);
@@ -277,6 +292,11 @@ serve(async (req) => {
         - About: ${profile.about_me || 'Não informado'}
         - Skills: ${profile.skills_training || 'Não informado'}
         - Lesões: ${profile.lesoes || 'Nenhuma registrada'}
+
+        [AVALIAÇÃO BIOMECÂNICA E TÉCNICA (TECHNIQUE FEEDBACK)]
+        O atleta realizou testes de biomecânica usando IA. Aqui estão os feedbacks mais recentes:
+        ${techniqueFeedbacksStr}
+        *DIRETRIZ: Mencione essas deficiências na sua análise e recomende a correção rigorosa nas etapas de Skill e Prehab.*
 
         [SESSÕES DE TREINO DISPONÍVEIS]
         ${formatTrainingSessions(trainingSessions)}
@@ -404,6 +424,21 @@ serve(async (req) => {
       const sessions = training_sessions || [];
       const macroCtx = contexto_macrociclo || {};
 
+      let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
+      if (profile?.id) {
+        const { data: tfData } = await supabaseClient
+          .from('technique_feedbacks')
+          .select('exercise_name, resume_text, improve_exercises')
+          .eq('user_id', profile.id)
+          .order('created_at', { ascending: false })
+          .limit(15);
+        if (tfData && tfData.length > 0) {
+          techniqueFeedbacksStr = tfData.map((tf: any) => 
+            `- Exercício: ${tf.exercise_name}\n  Análise: ${tf.resume_text}\n  Recomendação (Correção): ${JSON.stringify(tf.improve_exercises)}`
+          ).join('\n');
+        }
+      }
+
       const prompt = `
         ${COACH_PERSONA}
         [DATA DE HOJE: ${today}]
@@ -429,6 +464,10 @@ serve(async (req) => {
 
         [ATLETA]
         - Nome: ${profile.name}
+
+        [AVALIAÇÃO BIOMECÂNICA E TÉCNICA (TECHNIQUE FEEDBACK)]
+        ${techniqueFeedbacksStr}
+        *IMPORTANTE: Adapte o planejamento para focar na correção dessas deficiências técnicas.*
 
         [DICIONÁRIO DE MÉTRICAS]
         ${METRICS_DEFINITIONS}
@@ -481,11 +520,31 @@ serve(async (req) => {
     // =========================================================
     else if (acao === 'gerar_detalhamento') {
       const {
+        email_utilizador,
         visao_semanal,
         meso_context,
       } = payload;
 
       const ctx = meso_context || {};
+      
+      let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
+      if (email_utilizador) {
+        const { data: profileDb } = await supabaseClient.from('profiles').select('id').eq('email', email_utilizador).single();
+        if (profileDb?.id) {
+          const { data: tfData } = await supabaseClient
+            .from('technique_feedbacks')
+            .select('exercise_name, resume_text, improve_exercises')
+            .eq('user_id', profileDb.id)
+            .order('created_at', { ascending: false })
+            .limit(15);
+          if (tfData && tfData.length > 0) {
+            techniqueFeedbacksStr = tfData.map((tf: any) => 
+              `- Exercício Original: ${tf.exercise_name}\n  Problema/Resumo: ${tf.resume_text}\n  Exercícios Corretivos Recomendados: ${JSON.stringify(tf.improve_exercises)}`
+            ).join('\n');
+          }
+        }
+      }
+
       const diasArr = visao_semanal || [];
       const diasStr = diasArr
         .map((d: any) => `  - ${d.date} (${d.day}) | session ${d.session || 1} | ${d.session_type} | ${d.focoPrincipal} | semana ${d.week}`)
@@ -509,6 +568,10 @@ serve(async (req) => {
         - Objetivo: ${ctx.objetivo}
         - Mesociclo: ${ctx.nome} | Semana ${ctx.semanaNum}/${ctx.totalSemanas}
         - Foco: ${ctx.focoSemana || 'Conforme planejamento'}
+
+        [AVALIAÇÃO BIOMECÂNICA E TÉCNICA (TECHNIQUE FEEDBACK)]
+        ${techniqueFeedbacksStr}
+        *CRÍTICO: Durante as etapas de 'warmup' e 'skill', ou em sessões de mobilidade/prehab, INSCREVA OBRIGATORIAMENTE os "Exercícios Corretivos Recomendados" acima para corrigir os movimentos falhos.*
 
         [SESSÕES DE TREINO DISPONÍVEIS]
         ${formatTrainingSessions(ctx.trainingSessions || [])}
