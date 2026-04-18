@@ -5,6 +5,8 @@ import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/widgets/app_drawer.dart';
 import 'package:holy_squat_app/widgets/theme_toggle_button.dart';
 import 'package:intl/intl.dart';
+import 'package:holy_squat_app/repositories/workout_repository.dart';
+import 'package:holy_squat_app/core/user_state.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -22,6 +24,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _streakWeeks = 0;
   List<int> _weeklyCounts = List.filled(12, 0);
   List<int> _monthlyCounts = List.filled(12, 0);
+  Map<String, dynamic>? _athleteStats;
 
   @override
   void initState() {
@@ -31,7 +34,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _fetchAnalytics() async {
     try {
-      final datesStr = await SupabaseService.getActiveWorkoutDates();
+      final repo = WorkoutRepository();
+      final String userEmail = SupabaseService.client.auth.currentUser?.email ?? UserState.email.value;
+
+      // Fetch dynamic stats in parallel
+      final statsFuture = repo.fetchAthletePlanningStats(userEmail);
+      final activeDatesFuture = SupabaseService.getActiveWorkoutDates();
+
+      final results = await Future.wait([statsFuture, activeDatesFuture]);
+      
+      _athleteStats = results[0] as Map<String, dynamic>?;
+      final datesStr = results[1] as List<dynamic>;
+
       final List<DateTime> dates = [];
       for (var d in datesStr) {
         try {
@@ -60,7 +74,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _activeDates = dates;
       _calculateMetrics();
     } catch (e) {
-      // Handle error gracefully silently for dashboard
+      debugPrint('Error fetching dashboard analytics: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -134,6 +148,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildBigNumbersGrid(_athleteStats?['kpis']),
+                  const SizedBox(height: 32),
+                  _buildCapabilitiesRadar(_athleteStats?['radar']),
+                  const SizedBox(height: 32),
+                  _buildActivityHeatmap(_athleteStats?['heatmap']),
+                  const SizedBox(height: 32),
+                  const Divider(color: Colors.white10),
+                  const SizedBox(height: 32),
                   _buildBigNumbers(),
                   const SizedBox(height: 32),
                   _buildWeeklyLineChart(),
@@ -206,6 +228,189 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBigNumbersGrid(Map<String, dynamic>? kpis) {
+    if (kpis == null) return const SizedBox.shrink();
+    
+    final items = [
+      {'label': 'Aderência', 'value': '${kpis['adherence']}%', 'icon': Icons.bolt},
+      {'label': 'PSE Médio', 'value': '${kpis['avg_pse']}', 'icon': Icons.speed},
+      {'label': 'Power Index', 'value': '${kpis['power_index']}', 'icon': Icons.fitness_center},
+      {'label': 'Evolução', 'value': '+${kpis['best_evolution']?['percent']}%', 'icon': Icons.trending_up, 'sub': kpis['best_evolution']?['exercise']},
+      {'label': 'Streak', 'value': '${kpis['streak']} d', 'icon': Icons.fireplace},
+      {'label': 'Freq. Sem.', 'value': '${kpis['weekly_freq']}/w', 'icon': Icons.calendar_view_week},
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1.1,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.05)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(item['icon'] as IconData, size: 16, color: AppTheme.primaryTeal),
+              const SizedBox(height: 4),
+              Text(item['value'] as String, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+              const SizedBox(height: 2),
+              Text(item['label'] as String, style: const TextStyle(color: Colors.grey, fontSize: 9), textAlign: TextAlign.center),
+              if (item['sub'] != null)
+                Text(item['sub'] as String, style: const TextStyle(color: AppTheme.primaryTeal, fontSize: 7), overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCapabilitiesRadar(List<dynamic>? radarData) {
+    if (radarData == null || radarData.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Aderência por tipo de exercício', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 200,
+          child: (radarData.length < 3)
+            ? const Center(child: Text('Necessário ao menos 3 categorias para o radar', style: TextStyle(color: Colors.grey, fontSize: 10)))
+            : RadarChart(
+                RadarChartData(
+                  radarShape: RadarShape.polygon,
+                  dataSets: [
+                    RadarDataSet(
+                      fillColor: AppTheme.primaryTeal.withOpacity(0.3),
+                      borderColor: AppTheme.primaryTeal,
+                      entryRadius: 3,
+                      dataEntries: radarData.map((e) => RadarEntry(value: (e['count'] as num? ?? 0).toDouble())).toList(),
+                    ),
+                  ],
+                  getTitle: (index, angle) {
+                    if (index < radarData.length) {
+                      return RadarChartTitle(text: radarData[index]['category']?.toString() ?? '', angle: angle);
+                    }
+                    return const RadarChartTitle(text: '');
+                  },
+                  radarBackgroundColor: Colors.transparent,
+                  borderData: FlBorderData(show: false),
+                ),
+              ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivityHeatmap(List<dynamic>? heatmapData) {
+    if (heatmapData == null || heatmapData.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Constância (Últimos 6 meses)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+        const SizedBox(height: 16),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Eixo Vertical
+            RotatedBox(
+              quarterTurns: 3,
+              child: Container(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Dias da semana',
+                  style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 10, letterSpacing: 0.5),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 3,
+                    child: LayoutBuilder(builder: (context, constraints) {
+                       return GridView.builder(
+                         scrollDirection: Axis.horizontal,
+                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                           crossAxisCount: 7,
+                           mainAxisSpacing: 2,
+                           crossAxisSpacing: 2,
+                         ),
+                         itemCount: heatmapData.length,
+                         itemBuilder: (context, index) {
+                           final item = heatmapData[index];
+                           final intensity = (item['intensity'] as num?)?.toDouble() ?? 0.0;
+                           return Container(
+                             decoration: BoxDecoration(
+                               color: intensity == 0 
+                                  ? Colors.white.withOpacity(0.05) 
+                                  : AppTheme.primaryTeal.withOpacity(0.2 + (intensity / 10).clamp(0.0, 0.8)),
+                               borderRadius: BorderRadius.circular(1),
+                             ),
+                           );
+                         },
+                       );
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  // Eixo Horizontal
+                  Text(
+                    'Semanas',
+                    style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 10, letterSpacing: 0.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        // Legenda de Intensidade
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              'Intensidade (PSE): ',
+              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 9, fontWeight: FontWeight.w300),
+            ),
+            const SizedBox(width: 8),
+            Text('0', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 9)),
+            const SizedBox(width: 6),
+            ...List.generate(6, (index) {
+              final double intensity = index * 2.0; // Amostragem da escala de 0 a 10
+              return Container(
+                width: 10,
+                height: 10,
+                margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                decoration: BoxDecoration(
+                  color: intensity == 0 
+                    ? Colors.white.withOpacity(0.05) 
+                    : AppTheme.primaryTeal.withOpacity(0.2 + (intensity / 10).clamp(0.0, 0.8)),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              );
+            }),
+            const SizedBox(width: 6),
+            Text('10', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 9)),
+          ],
+        ),
+      ],
     );
   }
 

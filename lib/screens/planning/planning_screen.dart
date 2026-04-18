@@ -27,7 +27,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
   Map<String, Map<String, dynamic>?> _coachPlans = {};
   bool _isLoading = true;
   List<Map<String, dynamic>> _aiCoaches = [];
-  Map<String, dynamic>? _athleteStats;
+  // Snapshot stats are now retrieved from each individual plan record
 
   @override
   void initState() {
@@ -53,11 +53,8 @@ class _PlanningScreenState extends State<PlanningScreen> {
         plans[name] = plan;
       }
 
-      // 3. Fetch athlete statistics dynamically
-      _athleteStats = await repo.fetchAthletePlanningStats(userEmail);
+      // 3. (Legacy) _athleteStats is now static per plan. No need for global dynamic fetch.
       
-      debugPrint('Dashboard Stats: ${jsonEncode(_athleteStats)}');
-
       if (mounted) {
         setState(() {
           _coachPlans = plans;
@@ -142,6 +139,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
                 plan['actual_plan_summary'],
                 plan['workouts_plan_text'],
                 plan,
+                plan['snapshot_stats'],
               ),
               const SizedBox(height: 16),
               ..._buildWorkoutsPlanSections(plan['workouts_plan_table']),
@@ -206,7 +204,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
     );
   }
 
-  Widget _buildActualPlanSection(String? actualPlanSummary, String? workoutsPlanText, Map<String, dynamic> plan) {
+  Widget _buildActualPlanSection(String? actualPlanSummary, String? workoutsPlanText, Map<String, dynamic> plan, dynamic snapshotStats) {
     if ((actualPlanSummary == null || actualPlanSummary.isEmpty) && (workoutsPlanText == null || workoutsPlanText.isEmpty)) {
       return _buildContainer(
         title: 'Actual Planning',
@@ -225,6 +223,16 @@ class _PlanningScreenState extends State<PlanningScreen> {
       if (actualPlanSummary != null) summaryJson = jsonDecode(actualPlanSummary);
     } catch (_) {}
 
+    // Parse snapshotStats if it's a string (though Supabase usually returns Map)
+    Map<String, dynamic>? stats;
+    if (snapshotStats is Map<String, dynamic>) {
+      stats = snapshotStats;
+    } else if (snapshotStats is String) {
+      try {
+        stats = jsonDecode(snapshotStats);
+      } catch (_) {}
+    }
+
     return Column(
       children: [
         _buildContainer(
@@ -237,11 +245,24 @@ class _PlanningScreenState extends State<PlanningScreen> {
           title: 'Visão Geral',
           shareText: _formatActualPlanForShare(summaryJson ?? {}, ""),
           children: [
-            _buildBigNumbersGrid(_athleteStats?['kpis']),
-            const SizedBox(height: 24),
-            _buildCapabilitiesRadar(_athleteStats?['radar']),
-            const SizedBox(height: 24),
-            _buildActivityHeatmap(_athleteStats?['heatmap']),
+            if (stats == null)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    'Estatísticas estáticas do plano indisponíveis.\n(Recurso disponível para novos planos/ciclos)',
+                    style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 10),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else ...[
+              _buildBigNumbersGrid(stats['kpis']),
+              const SizedBox(height: 24),
+              _buildCapabilitiesRadar(stats['radar']),
+              const SizedBox(height: 24),
+              _buildActivityHeatmap(stats['heatmap']),
+            ],
             const SizedBox(height: 24),
             _buildVisaoGeralContent(summaryJson),
           ],
@@ -277,6 +298,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
 
     final kpis = data['kpis'] as Map<String, dynamic>?;
     final charts = data['charts'] as Map<String, dynamic>?;
+    final cycleSnapshot = data['cycle_snapshot'] as Map<String, dynamic>?;
     final hasData = kpis != null && (kpis['completion_rate'] as num? ?? 0) > 0;
 
     return _buildContainer(
@@ -288,6 +310,19 @@ class _PlanningScreenState extends State<PlanningScreen> {
         
         const SizedBox(height: 24),
         
+        if (cycleSnapshot != null) ...[
+          const Text('Estado do Atleta ao Iniciar Ciclo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 12),
+          _buildBigNumbersGrid(cycleSnapshot['kpis']),
+          const SizedBox(height: 16),
+          _buildCapabilitiesRadar(cycleSnapshot['radar']),
+          const SizedBox(height: 16),
+          _buildActivityHeatmap(cycleSnapshot['heatmap']),
+          const SizedBox(height: 24),
+          const Divider(color: Colors.white10),
+          const SizedBox(height: 24),
+        ],
+
         if (!hasData)
           const Center(
             child: Padding(

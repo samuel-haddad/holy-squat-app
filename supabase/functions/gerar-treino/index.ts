@@ -323,7 +323,13 @@ serve(async (req) => {
 
       console.log(`gerar_analise_historica | coach: ${ai_coach_name ?? 'default'}`);
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_analise_historica', 8000);
-      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
+      
+      const responseBody = {
+        ...result,
+        athlete_stats_snapshot: athleteStatsRes?.data || {}
+      };
+
+      return new Response(JSON.stringify(responseBody), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
     // =========================================================

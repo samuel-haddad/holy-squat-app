@@ -173,14 +173,31 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     const mesosJaGerados: string[] = p.mesos_ja_gerados || [];
     const proximoMeso = blocos.find((b: any) => !mesosJaGerados.includes(b.mesociclo)) || {};
 
-    // Fetch performance stats
+    // Fetch performance stats (Last Meso Interval)
     let performanceStats = null;
+    let cycleSnapshot = null;
     const ultimoMeso = mesosJaGerados.length > 0 ? mesosJaGerados[mesosJaGerados.length - 1] : null;
-    if (ultimoMeso && p.plano_id) {
-      const { data } = await admin.rpc('get_mesocycle_performance_stats', {
-        p_plan_id: p.plano_id, p_mesocycle_name: ultimoMeso,
+    
+    // Determine start date of the mesocycle that just finished
+    const mesoStartDate = p.current_workouts_table?.[0]?.date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
+
+    if (p.plano_id) {
+      // 1. Fetch detailed performance stats for LLM analysis
+      if (ultimoMeso) {
+        const { data } = await admin.rpc('get_mesocycle_performance_stats', {
+          p_plan_id: p.plano_id, p_mesocycle_name: ultimoMeso,
+        });
+        performanceStats = data;
+      }
+
+      // 2. Fetch general KPIs snapshot for the specific meso interval
+      const { data: statsRange } = await admin.rpc('get_athlete_stats_by_range', {
+        p_email: p.email_utilizador,
+        p_start_date: mesoStartDate,
+        p_end_date: today
       });
-      performanceStats = data;
+      cycleSnapshot = statsRange;
     }
 
     const result = await callGerarTreino({
@@ -195,7 +212,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     });
 
     await admin.from('ai_generation_jobs').update({
-      step_1_result: { ...result, _blocoAtual: proximoMeso },
+      step_1_result: { ...result, _blocoAtual: proximoMeso, _cycleSnapshot: cycleSnapshot },
       current_step: 2, updated_at: new Date().toISOString(),
     }).eq('id', job.id);
 
@@ -280,6 +297,7 @@ async function persistCreatePlan(job: any, planResult: any, admin: any): Promise
     actual_plan_summary: JSON.stringify(planResult?.visaoGeralPlano || {}),
     workouts_plan_text: JSON.stringify(job.step_1_result?.analiseMacro || {}),
     workouts_plan_table: [],
+    snapshot_stats: job.step_1_result?.athlete_stats_snapshot || null,
     ai_coach_name: p.ai_coach_name || 'Human Coach',
   }).select('id').single();
 
@@ -297,11 +315,15 @@ async function persistGenerateCycle(job: any, exercicios: any[], admin: any) {
   let planSummary: any = {};
   try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) {}
 
-  // Update training plan with cycle data
+  // Update training plan with cycle data and cycle-specific snapshot in progress_analysis
+  // Also REPLACEworkouts_plan_table as requested by user ("substitua a sessão do ciclo atual")
   await admin.from('training_plans').update({
-    progress_analysis: JSON.stringify(cicloResult.analiseCicloAnterior || {}),
+    progress_analysis: JSON.stringify({
+      ...(cicloResult.analiseCicloAnterior || {}),
+      cycle_snapshot: cicloResult._cycleSnapshot || null,
+    }),
     workouts_plan_table: [
-      ...(p.current_workouts_table || []),
+      // We no longer append old weeks: ...(p.current_workouts_table || []),
       ...(cicloResult.visaoSemanal || []),
     ],
   }).eq('id', p.plano_id);
