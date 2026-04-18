@@ -48,7 +48,7 @@ class _TechniqueAnalysisScreenState extends State<TechniqueAnalysisScreen> {
   }
 
   Future<void> _initializeVideo(String path) async {
-    final url = SupabaseService.client.storage.from('technique_videos').getPublicUrl(path);
+    final url = '${SupabaseService.client.storage.from('technique_videos').getPublicUrl(path)}?t=${DateTime.now().millisecondsSinceEpoch}';
     _controller = VideoPlayerController.networkUrl(Uri.parse(url))
       ..initialize().then((_) {
         setState(() {});

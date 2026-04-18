@@ -62,7 +62,7 @@ def process_video_task(payload: VideoProcessPayload):
             supabase.storage.from_('technique_videos').upload(
                 path=processed_storage_path,
                 file=f,
-                file_options={"cache-control": "3600", "upsert": "true"}
+                file_options={"cache-control": "no-cache", "upsert": "true"}
             )
         
         # 4. Geração de Feedback (Usando LLM via Gemini)
@@ -79,6 +79,13 @@ def process_video_task(payload: VideoProcessPayload):
             "improve_exercises": improve_exercises,
             "status": "completed"
         }).eq("id", feedback_id).execute()
+
+        # 6. Limpeza do Vídeo Original no Storage (Point 1 fix)
+        print(f"Cleaning up raw video: {raw_path}")
+        try:
+            supabase.storage.from_('technique_videos').remove([raw_path])
+        except Exception as e:
+            print(f"Warning: Failed to remove raw video {raw_path}: {e}")
 
         print(f"Success! Job {feedback_id} complete.")
 

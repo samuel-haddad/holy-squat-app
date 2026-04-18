@@ -752,7 +752,7 @@ class SupabaseService {
       await client.storage.from('technique_videos').uploadBinary(
             path,
             bytes,
-            fileOptions: FileOptions(cacheControl: '3600', upsert: true, contentType: contentType),
+            fileOptions: FileOptions(cacheControl: 'no-cache', upsert: true, contentType: contentType),
           );
 
       // Return the relative path used by the database
@@ -815,7 +815,6 @@ class SupabaseService {
           .from('technique_feedbacks')
           .select()
           .eq('user_id', user.id)
-          .eq('status', 'completed')
           .order('created_at', ascending: false);
 
       return List<Map<String, dynamic>>.from(response);
