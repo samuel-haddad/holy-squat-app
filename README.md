@@ -171,4 +171,8 @@ flutter run
 
 ## 🔒 Segurança
 
-Toda a lógica sensível (integração com LLM e processamento de vídeos) é executada em ambiente seguro de **Edge Functions** ou containers isolados, garantindo que chaves de API nunca fiquem expostas no código do cliente.
+Revisamos continuamente as boas práticas de segurança:
+- **Chaves de API e Tokens:** Todas as chaves e segredos ativos (Supabase Keys e integrações com Strava) são isolados e referenciados exclusivamente via ambiente local (`.env`), sem exposição em controladores de versão graças ao `.gitignore`.
+- **Backend Isolado:** Qualquer manipulação de segredos pesados (como integrações de LLM para o AI Coach e a API do Strava) agora reside totalmente em **Edge Functions** seguras dentro do Supabase, mantendo as chaves de terceiros completamente afastadas da lógica da aplicação frontend.
+
+> **Importante:** Arquivos locais legados e infraestrutura migrada (ex: Vercel) foram depreciados com sucesso deste repositório sem deixar rastros sensíveis de ambiente.
