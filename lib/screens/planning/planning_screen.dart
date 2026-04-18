@@ -39,9 +39,6 @@ class _PlanningScreenState extends State<PlanningScreen> {
     setState(() => _isLoading = true);
     try {
       final repo = WorkoutRepository();
-      // Get dynamic email
-      final String userEmail = SupabaseService.client.auth.currentUser?.email ?? UserState.email.value;
-
       // 1. Load Coaches
       _aiCoaches = await repo.fetchAiCoaches();
 
@@ -52,8 +49,6 @@ class _PlanningScreenState extends State<PlanningScreen> {
         final plan = await SupabaseService.fetchLatestTrainingPlan(aiCoachName: name);
         plans[name] = plan;
       }
-
-      // 3. (Legacy) _athleteStats is now static per plan. No need for global dynamic fetch.
       
       if (mounted) {
         setState(() {
