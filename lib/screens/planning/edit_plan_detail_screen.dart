@@ -78,6 +78,7 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
     setState(() => _isSaving = true);
     try {
       if (widget.mode == 'Sessions') {
+        final updates = {
           'session_type': _fields['session_type'],
           'session': int.tryParse(_sessionController.text) ?? _fields['session'],
           'duration': int.tryParse(_durationController.text) ?? _fields['duration'],

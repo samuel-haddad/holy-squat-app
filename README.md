@@ -4,148 +4,171 @@
   <br>
 </h1>
 
-<h4 align="center">Your Smart Training Platform featuring Multiple AI Coaches, Mesocycle Periodization, and Strava Integration. Designed to transform your CrossFit performance.</h4>
+<h4 align="center">Plataforma Inteligente de Treinamento com Múltiplos Coaches de IA, Periodização de Mesociclos e Análise Biomecânica.</h4>
 
 <p align="center">
-  <a href="#about-the-app">About</a> •
-  <a href="#key-features">Features</a> •
-  <a href="#technologies">Technologies</a> •
-  <a href="#how-to-run">How To Run</a> •
-  <a href="#security-and-data">Security</a>
+  <a href="#about-the-app">Sobre</a> •
+  <a href="#key-features">Funcionalidades</a> •
+  <a href="#system-architecture">Arquitetura</a> •
+  <a href="#ai-orchestration">Orquestração</a> •
+  <a href="#technologies">Tecnologias</a> •
+  <a href="#how-to-run">Como Executar</a>
 </p>
 
-<!-- 
-    > [Note for Samuel: You can add a "cover" image and app screenshots here. I used a placeholder below, just replace the link later!]
--->
-![Holy Squat Banner](https://via.placeholder.com/1200x400/1E1E1E/FFFFFF?text=Holy+Squat+-+The+Future+of+CrossFit+Training)
+![Holy Squat Banner](assets/holy_squat_banner.png)
 
 ---
 
-## 🚀 About the App
+## 🚀 Sobre o App
 
-**Holy Squat** is not just another workout app; it is an advanced periodization planner specifically designed for CrossFit and Functional Fitness athletes. Leveraging Artificial Intelligence to generate continuous and scalable plans (mesocycles), the app offers users the experience of training with their preferred "Virtual Coaches," adapting volume, intensity, and skills to individual goals.
+**Holy Squat** é um ecossistema avançado de treinamento projetado para atletas de CrossFit e Cross Training. Diferente de apps genéricos, ele utiliza **IA Orquestrada** para gerar periodizações contínuas (mesociclos), adaptando volume, intensidade e técnica de acordo com a evolução real do atleta.
 
-With a fully serverless ecosystem powered by **Supabase**, Holy Squat delivers a premium experience focused on constant evolution, stability, and in-depth analysis.
+Com uma arquitetura _serverless_ robusta baseada em **Supabase**, o app integra análise biomecânica via visão computacional para garantir que cada repetição seja executada com segurança e eficiência.
 
-## ✨ Key Features
+## ✨ Funcionalidades Principais
 
-- **🤖 Multi-Coach AI Planning:** Different AI trainers focused on your biggest needs (e.g., Weightlifting, Gymnastics, Endurance). Workouts are calculated to perfectly fit your available time and desired intensity.
-- **📅 Advanced Periodization (Mesocycles):** Smart and organized generation in adaptive weekly training blocks.
-- **🔥 Complete WOD Structure:** Automated and flawless breakdown into _Warmup_, _Skill_, _Strength_, _Workout_ (WOD), and _Cooldown_.
-- **📊 Native Integration:** OAuth connection and direct webhook with **Strava** for importing activity logs and health biometrics (in development).
-- **📈 Analytics and PR Tracking:** Immersive charts for load progression (Personal Records), Benchmarks for famous "Girls/Heroes", and detailed visual tracking of cardio and strength progress.
-- **🎨 Premium UI & Aesthetics:** Clean and modern Flutter design with robust support for _Dark Mode_ and _Light Mode_.
-- **📥 Rich Database:** Comprehensive library of cataloged exercises with metadata integrated over time.
-
-## 🛠 Technologies
-
-A modern, highly responsive, and fully scalable stack:
-
-- **Frontend / Mobile / Web:** [Flutter](https://flutter.dev/) (Dart) 
-  - Strong state management, reactive navigation, and smart form handling.
-  - Core Libraries: `fl_chart`, `table_calendar`, `youtube_player_iframe`, `share_plus`.
-- **Backend & Authentication:** [Supabase](https://supabase.com/) 
-  - **Database:** PostgreSQL handling large volumes of _logs_ and relational tables.
-  - **Auth:** Secure session management, user profiles, and JWT.
-  - **Storage:** Optimized hosting for avatars, background files, and PDFs.
-  - **Edge Functions:** Heavy serverless logic using TypeScript (Deno) for interfacing with LLM APIs (AI generation) and Authentication (OAuth).
-- **Data & Ingestion (ETL):** Isolated Python scripts for cleaning and standardizing massive legacy workout datasets via CSV/PDF for direct database ingestion.
+- **🤖 Planejamento Multi-Coach (AI Orchestrated):** Diferentes treinadores de IA focados em Weightlifting, Gymnastics ou Endurance. A geração é dividida em estágios de Planejamento Macro e Detalhamento Micro.
+- **🧬 Análise Biomecânica (Technique Feedback):** Motor de visão computacional que analisa vídeos de exercícios para identificar falhas técnicas e injetar correções diretamente no próximo ciclo de treino.
+- **📅 Periodização Inteligente:** Geração automática de blocos de 4 a 8 semanas com progressão de carga e semanas de _deload_.
+- **📊 Métricas Avançadas & Snapshots:** Acompanhamento via Radar Charts (Aderência por tipo), Índice de Potência, PSE Médio e snapshots históricos de performance para comparação entre ciclos.
+- **⚡ Orquestração Assíncrona:** Sistema de Jobs que processa gerações complexas em background, garantindo uma interface fluida.
+- **🎨 UI Premium:** Design moderno em Flutter com suporte a Dark/Light mode e visualização intuitiva de sessões.
 
 ---
 
-## 🏗 System Architecture
+## 🏗 Arquitetura do Sistema
 
-Below is the macro diagram representing the elegant separation between the Frontend, Supabase serverless ecosystem, and critical external integrations.
+O Holy Squat utiliza uma abordagem de microserviços e funções isoladas para garantir escalabilidade e performance.
 
 ```mermaid
 graph TD
     classDef client fill:#032b43,stroke:#032b43,stroke-width:2px,color:#fff;
     classDef supabase fill:#3ecf8e,stroke:#24b47e,stroke-width:2px,color:#1e1e1e;
     classDef external fill:#FF4E00,stroke:#CC3E00,stroke-width:2px,color:#fff;
+    classDef service fill:#6e58ff,stroke:#5541d8,stroke-width:2px,color:#fff;
 
-    Client["📱 Flutter App<br>(iOS / Android / Web)"]:::client
+    Client["📱 Flutter App<br>(Mobile & Web)"]:::client
     
-    subgraph Supabase [Supabase Backend]
-        Auth["🔑 AuthService<br>(JWT, Sessions)"]:::supabase
-        DB[("🗄️ PostgreSQL<br>(Profiles, Workouts, PRs, Exercises)")]:::supabase
-        Storage["📂 Storage<br>(Avatars, Backgrounds)"]:::supabase
-        Functions["⚡ Edge Functions<br>(Deno / TypeScript)"]:::supabase
+    subgraph Supabase [Backend Supabase]
+        Auth["🔑 AuthService"]:::supabase
+        DB[("🗄️ PostgreSQL<br>(Workouts, Feedback, Stats)")]:::supabase
+        Orchestrator["⚡ orchestrate-treino<br>(Jobs Manager)"]:::supabase
+        Worker["⚡ gerar-treino<br>(LLM Interface)"]:::supabase
     end
     
-    ExternalLLM["🤖 LLM API<br>(AI Workout Generation)"]:::external
-    ExternalStrava["🏃 Strava API<br>(OAuth Integration)"]:::external
+    subgraph Analysis [Advanced Services]
+        CV_Service["🐍 Technique CV Service<br>(Python / Mediapipe)"]:::service
+    end
     
-    Client <-->|"Authentication"| Auth
-    Client <-->|"REST / Realtime"| DB
-    Client <-->|"Media Uploads"| Storage
-    Client -->|"API Calls"| Functions
+    ExternalLLM["🤖 LLM API<br>(GPT-4o / Analysis)"]:::external
     
-    Functions <-->|"Structured Prompt"| ExternalLLM
-    Functions <-->|"Tokens / Activities"| ExternalStrava
-```
-
-## 🔄 Workout Generation Flow (AI)
-
-The diagram below illustrates step-by-step how the application choreographs data between the client app and the Edge Functions to result in the perfect long-term athlete periodization.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant User as 🏋️ User
-    participant App as 📱 Flutter App
-    participant Func as ⚡ Edge Function (gerar-treino)
-    participant LLM as 🤖 LLM API
-    participant DB as 🗄️ PostgreSQL
-
-    User->>App: Requests new workout (Selects AI Coach)
-    App->>Func: Sends profile, goals, time limits, and days
-    Func->>DB: Fetches user history (limitations/level)
-    DB-->>Func: Returns training history
-    Func->>LLM: Injects data into Template and builds Context (Prompt)
-    LLM-->>Func: Returns JSON (Structured Mesocycle)
-    Func->>DB: Parses JSON (Inserts days, sessions, WODs)
-    DB-->>Func: Transaction Confirmation (Commit)
-    Func-->>App: Returns Success (Plan ID)
-    App-->>User: Displays Updated Calendar (Rendered Sessions)
+    Client -->|"1. Upload Video"| CV_Service
+    CV_Service -->|"2. Results"| DB
+    Client -->|"3. Trigger Job"| Orchestrator
+    Orchestrator -->|"4. Execute Stage"| Worker
+    Worker -->|"5. Context"| DB
+    Worker -->|"6. Prompt"| ExternalLLM
+    Worker -->|"7. Persist"| DB
+    DB -->|"8. Realtime UI"| Client
 ```
 
 ---
 
-## ⚙️ How To Run Locally
+## 🔄 Fluxo de Orquestração de IA
 
-### Prerequisites
+A geração de treinos não é linear. Ela segue um ciclo de vida orquestrado que garante coerência a longo prazo.
+
+### 1. Estágio de Planejamento (GO!)
+Nesta fase, o sistema cria o "esqueleto" do mesociclo baseado no histórico total do atleta.
+
+```mermaid
+sequenceDiagram
+    participant App as 📱 App
+    participant Orch as ⚡ Orchestrator
+    participant Worker as ⚡ Worker (gerar-treino)
+    participant DB as 🗄️ DB
+    
+    App->>Orch: Inicia Job 'create_plan'
+    Orch->>Worker: Ação 1: Analisar Histórico Biomecânico
+    Worker->>DB: Busca Technique Feedbacks
+    Worker-->>Orch: Resultados da Análise
+    Orch->>Worker: Ação 2: Criar Plano Macro
+    Worker-->>Orch: Blocos de Treino (JSON)
+    Orch->>DB: Persiste Plano e Snapshots
+    Orch-->>App: Notifica Conclusão
+```
+
+### 2. Estágio de Ciclo (Next Cycle)
+Geração detalhada das sessões diárias, executando o detalhamento das semanas em paralelo para máxima velocidade.
+
+```mermaid
+sequenceDiagram
+    participant Orch as ⚡ Orchestrator
+    participant Worker as ⚡ Worker
+    participant LLM as 🤖 LLM
+    
+    Orch->>Worker: Ação 3: Definir Visão do Ciclo
+    Worker->>LLM: Gera Estrutura Semanal
+    Note over Orch, Worker: Processamento Paralelo por Semanas
+    par Semana 1
+        Orch->>Worker: Ação 4: Detalhar Sessões S1
+    and Semana 2
+        Orch->>Worker: Ação 4: Detalhar Sessões S2
+    end
+    Worker-->>Orch: Treinos Detalhados
+    Orch->>DB: Upsert de Sessões e Workouts
+```
+
+---
+
+## 📈 Métricas e Snapshots de Performance
+
+O app agora captura o estado do atleta em momentos específicos do ciclo, permitindo uma análise comparativa profunda:
+
+- **Adherence Radar:** Visualização clara de quais capacidades físicas (LPO, Ginástica, Cardio) estão sendo mais executadas.
+- **Power Index:** Cálculo dinâmico de performance baseado em carga relativa e RM.
+- **Cycle Snapshot:** No início de cada novo ciclo, o sistema congela os KPIs atuais (Peso, RMs, Volume total) para medir o impacto real da periodização ao final do período.
+
+---
+
+## 🛠 Tecnologias
+
+- **Frontend:** Flutter (Dart)
+- **Backend:** Supabase (PostgreSQL, Edge Functions, Storage)
+- **AI/LLM:** OpenAI GPT-4o / LangChain patterns
+- **Computer Vision:** Mediapipe, Python (Technique Analysis)
+- **Infrastructure:** Deno (Edge Functions), Docker (CV Service)
+
+---
+
+## ⚙️ Como Executar Localmente
+
+### Pré-requisitos
 - [Flutter SDK](https://docs.flutter.dev/get-started/install) (`>= 3.0.0`)
-- [Supabase CLI](https://supabase.com/docs/guides/cli) (for running local database or migrations)
-- Android/iOS Emulator configured or a compatible web browser.
+- [Supabase CLI](https://supabase.com/docs/guides/cli)
+- Docker (opcional, para rodar o serviço de análise de técnica localmente)
 
-### 1. Cloning and Installing Dependencies
+### 1. Instalação
 ```bash
 git clone https://github.com/your-username/holy_squat_app.git
 cd holy_squat_app
 flutter pub get
 ```
 
-### 2. Configuring Environment Variables
-Create a `.env` file in the project's root containing your database connection keys. *(Note: Supabase Cloud / Local configurations should be appended here; this file is ignored in Git for your safety).*
+### 2. Configuração das Edge Functions
+Certifique-se de configurar as chaves da OpenAI e Supabase no seu ambiente local (ou via Supabase Secrets).
 
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_anon_key
+```bash
+supabase functions serve --no-verify-jwt
 ```
 
-### 3. Running the Application
+### 3. Rodando o App
 ```bash
 flutter run
 ```
 
 ---
 
-## 🔒 Security and Data Handling
+## 🔒 Segurança
 
-We continuously review good security practices:
-- **API Keys and Tokens:** All active keys and secrets (Supabase Keys and Strava integrations) are isolated and uniquely referenced via local environment (`.env`), without any exposure in version controllers thanks to `.gitignore`.
-- **Isolated Backend:** Any manipulation of heavy secrets (such as LLM integrations for the AI Coach and the Strava API) now fully reside in secure **Edge Functions** within Supabase, keeping third-party keys completely away from the frontend application logic.
-
-> **Important:** Legacy local files and migrated infrastructure (e.g., Vercel) have been successfully deprecated from this repository without leaving sensitive environment traces.
-
----
+Toda a lógica sensível (integração com LLM e processamento de vídeos) é executada em ambiente seguro de **Edge Functions** ou containers isolados, garantindo que chaves de API nunca fiquem expostas no código do cliente.
