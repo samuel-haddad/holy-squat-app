@@ -28,6 +28,7 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
   // Training Sessions
   List<TrainingSession> _trainingSessions = [];
   bool _loadingSessions = true;
+  bool _isSavingSessions = false;
 
   // Coach selection
   List<Map<String, dynamic>> _coaches = [];
@@ -48,6 +49,32 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
         _trainingSessions = sessions;
         _loadingSessions = false;
       });
+    }
+  }
+
+  Future<void> _persistSessions() async {
+    setState(() => _isSavingSessions = true);
+    try {
+      await SupabaseService.upsertAllTrainingSessions(_trainingSessions);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configurações de treino salvas com sucesso!'),
+            backgroundColor: Colors.teal,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao salvar sessões: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingSessions = false);
     }
   }
 
@@ -173,6 +200,9 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
       );
       return;
     }
+
+    // Persistir sessões antes da geração para garantir que o backend as encontre no banco
+    await SupabaseService.upsertAllTrainingSessions(_trainingSessions);
 
     final controller = context.read<WorkoutController>();
 
@@ -309,9 +339,36 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
                         ],
                       ),
                     )
-                  : TrainingSessionsEditor(
-                      sessions: _trainingSessions,
-                      onChanged: (sessions) => _trainingSessions = sessions,
+                  : Column(
+                      children: [
+                        TrainingSessionsEditor(
+                          sessions: _trainingSessions,
+                          onChanged: (sessions) => _trainingSessions = sessions,
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton.icon(
+                            onPressed: _isSavingSessions ? null : _persistSessions,
+                            icon: _isSavingSessions
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryTeal),
+                                  )
+                                : const Icon(Icons.save, color: AppTheme.primaryTeal),
+                            label: Text(
+                              _isSavingSessions ? 'Salvando...' : 'Salvar Configurações de Treino',
+                              style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold),
+                            ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              backgroundColor: AppTheme.primaryTeal.withOpacity(0.1),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
               const SizedBox(height: 32),
 
