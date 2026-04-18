@@ -268,7 +268,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        _buildPDFExportButton(macroJson, summaryJson, plan['progress_analysis']),
+        _buildPDFExportButton(macroJson, summaryJson, plan['progress_analysis'], snapshotStats),
       ],
     );
   }
@@ -831,14 +831,14 @@ class _PlanningScreenState extends State<PlanningScreen> {
     );
   }
 
-  Widget _buildPDFExportButton(Map<String, dynamic>? macroJson, Map<String, dynamic>? summaryJson, String? progressJson) {
+  Widget _buildPDFExportButton(Map<String, dynamic>? macroJson, Map<String, dynamic>? summaryJson, String? progressJson, dynamic snapshotStats) {
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white.withOpacity(0.05),
         padding: const EdgeInsets.symmetric(vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.primaryTeal)),
       ),
-      onPressed: () => _generateAndSharePDF(macroJson, summaryJson, progressJson),
+      onPressed: () => _generateAndSharePDF(macroJson, summaryJson, progressJson, snapshotStats),
       icon: const Icon(Icons.picture_as_pdf, color: AppTheme.primaryTeal),
       label: const Text('Exportar Plano (PDF)', style: TextStyle(color: Colors.white)),
     );
@@ -867,7 +867,14 @@ class _PlanningScreenState extends State<PlanningScreen> {
         .replaceAll('”', '"');
   }
 
-  Future<void> _generateAndSharePDF(Map<String, dynamic>? macro, Map<String, dynamic>? summary, String? progressJson) async {
+  Future<void> _generateAndSharePDF(Map<String, dynamic>? macro, Map<String, dynamic>? summary, String? progressJson, dynamic snapshotStats) async {
+    Map<String, dynamic>? stats;
+    if (snapshotStats is Map<String, dynamic>) {
+      stats = snapshotStats;
+    } else if (snapshotStats is String) {
+      try { stats = jsonDecode(snapshotStats); } catch (_) {}
+    }
+
     final pdf = pw.Document();
     final font = await PdfGoogleFonts.robotoRegular();
     final fontBold = await PdfGoogleFonts.robotoBold();
@@ -886,7 +893,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
             
             pw.Text("1. Visao Geral do Atleta (KPIs)", style: pw.TextStyle(font: fontBold, fontSize: 14)),
             pw.SizedBox(height: 8),
-            _buildPdfBigNumbers(_athleteStats?['kpis'], font, fontBold),
+            _buildPdfBigNumbers(stats?['kpis'], font, fontBold),
             pw.SizedBox(height: 15),
 
             pw.Row(
@@ -899,7 +906,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
                     children: [
                       pw.Text("Equilibrio de Capacidades", style: pw.TextStyle(font: fontBold, fontSize: 10)),
                       pw.SizedBox(height: 5),
-                      _buildPdfRadarChart(_athleteStats?['radar'], 120, font),
+                      _buildPdfRadarChart(stats?['radar'], 120, font),
                     ],
                   ),
                 ),
@@ -911,7 +918,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
                     children: [
                       pw.Text("Heatmap de Constancia", style: pw.TextStyle(font: fontBold, fontSize: 10)),
                       pw.SizedBox(height: 5),
-                      _buildPdfHeatmap(_athleteStats?['heatmap']),
+                      _buildPdfHeatmap(stats?['heatmap']),
                     ],
                   ),
                 ),
