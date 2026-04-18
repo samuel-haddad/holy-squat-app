@@ -55,17 +55,24 @@ def process_video_task(payload: VideoProcessPayload):
 
     try:
         # 1. Download do Supabase Storage
-        print(f"Downloading raw video: {raw_path}")
-        with open(local_raw, 'wb+') as f:
-            res = supabase.storage.from_('technique_videos').download(raw_path)
-            f.write(res)
+        print(f"Downloading raw video: {raw_path} via stream...")
+        import requests
+        download_url = f"{SUPABASE_URL}/storage/v1/object/authenticated/technique_videos/{raw_path}"
+        headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+        
+        with requests.get(download_url, headers=headers, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            with open(local_raw, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
             
         file_size = os.path.getsize(local_raw)
         print(f"Downloaded video size: {file_size} bytes")
         if file_size < 1024:
-            print(f"⚠️ Warning: Downloaded file is extraordinarily small ({file_size} bytes). Raw content:")
-            print(res)
-            raise Exception(f"File downloaded is too small ({file_size} bytes). Possibly corrupted or permission denied. Content: {res}")
+            with open(local_raw, 'rb') as f:
+                content = f.read()
+            print(f"⚠️ Warning: Downloaded file is extraordinarily small ({file_size} bytes). Raw content: {content}")
+            raise Exception(f"File downloaded is too small ({file_size} bytes). Possibly corrupted or permission denied. Content: {content}")
 
         # 2. Processamento de Visão Computacional (MediaPipe Tasks)
         print("Processing video with CV Engine...")
