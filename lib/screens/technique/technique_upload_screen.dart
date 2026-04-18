@@ -59,14 +59,28 @@ class _TechniqueUploadScreenState extends State<TechniqueUploadScreen> {
       } else {
         throw Exception("rawPath was null. SupabaseService.uploadTechniqueVideo returned silently. (User may be null)");
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint("UPLOAD ERROR: $e");
+      debugPrint(stack.toString());
       if (mounted) {
-        // Mostra o erro em formato AlertDialog para o usuário não perder a mensagem grande
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('Exact Upload Error'),
-            content: SingleChildScrollView(child: Text(e.toString())),
+            title: const Text('Upload Error Details', style: TextStyle(color: Colors.red)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Ocorreu um erro no processo de envio:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(e.toString()),
+                  const SizedBox(height: 16),
+                  const Text('Dica: Verifique sua conexão e se o tamanho do vídeo não excede o limite (aprox. 50MB).', 
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ),
+            ),
             actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
           )
         );

@@ -8,14 +8,21 @@ from llm_service import generate_technique_feedback
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# Carregar variaveis de ambiente (.env no root ou local)
-load_dotenv("../.env")
+# Carregar variáveis de ambiente tentando vários locais comuns
+dotenv_paths = [".env", "../.env", "../../.env"]
+for path in dotenv_paths:
+    if os.path.exists(path):
+        load_dotenv(path)
+        print(f"✅ Loaded environment from {path}")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     print("❌ ERRO CRÍTICO: Variáveis de ambiente SUPABASE_URL ou SUPABASE_SERVICE_KEY não encontradas!")
+    # Opcional: print os envs carregados (sem as secrets completas) para debug
+    keys = list(os.environ.keys())
+    print(f"Available env keys: {[k for k in keys if 'SUPABASE' in k]}")
 else:
     print(f"✅ Conectando ao Supabase em: {SUPABASE_URL}")
 

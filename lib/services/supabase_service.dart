@@ -752,7 +752,7 @@ class SupabaseService {
       await client.storage.from('technique_videos').uploadBinary(
             path,
             bytes,
-            fileOptions: FileOptions(cacheControl: 'no-cache', upsert: true, contentType: contentType),
+            fileOptions: FileOptions(cacheControl: 'max-age=0', upsert: true, contentType: contentType),
           );
 
       // Return the relative path used by the database
@@ -783,6 +783,7 @@ class SupabaseService {
       }, onConflict: 'user_id,exercise_name');
     } catch (e) {
       debugPrint("Error requesting technique analysis: $e");
+      rethrow;
     }
   }
 
