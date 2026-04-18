@@ -32,19 +32,26 @@ def process_video_with_mediapipe(input_path: str, output_path: str):
     
     # 1. Estabilização e Otimização: Forçar autorotação e redimensionar para 720p (Max)
     standardized_path = input_path + "_std.mp4"
-    subprocess.run([
+    result = subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-i", input_path,
         "-vf", "scale='if(gt(a,1),-1,720)':'if(gt(a,1),720,-1)',format=yuv420p",
         "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1",
         standardized_path
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ], capture_output=True, text=True)
     
-    # Se o FFmpeg falhou (vídeo corrompido), tentamos usar o original como fallback
-    working_path = standardized_path if os.path.exists(standardized_path) else input_path
+    if result.returncode != 0:
+        print(f"⚠️ FFmpeg Error on stabilization:\n{result.stderr}")
+    
+    # Se o FFmpeg falhou (ou gerou arquivo vazio), tentamos usar o original como fallback
+    if os.path.exists(standardized_path) and os.path.getsize(standardized_path) > 0:
+        working_path = standardized_path
+    else:
+        print(f"⚠️ Fallback to original input: {input_path}")
+        working_path = input_path
 
     cap = cv2.VideoCapture(working_path)
     if not cap.isOpened():
-        raise Exception(f"Failed to open video file: {working_path}")
+        raise Exception(f"Failed to open video file: {working_path}. FFmpeg err: {result.stderr}")
         
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))

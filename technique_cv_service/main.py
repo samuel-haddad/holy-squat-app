@@ -57,6 +57,13 @@ def process_video_task(payload: VideoProcessPayload):
         with open(local_raw, 'wb+') as f:
             res = supabase.storage.from_('technique_videos').download(raw_path)
             f.write(res)
+            
+        file_size = os.path.getsize(local_raw)
+        print(f"Downloaded video size: {file_size} bytes")
+        if file_size < 1024:
+            print(f"⚠️ Warning: Downloaded file is extraordinarily small ({file_size} bytes). Raw content:")
+            print(res)
+            raise Exception(f"File downloaded is too small ({file_size} bytes). Possibly corrupted or permission denied. Content: {res}")
 
         # 2. Processamento de Visão Computacional (MediaPipe Tasks)
         print("Processing video with CV Engine...")
