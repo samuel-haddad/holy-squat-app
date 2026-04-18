@@ -251,7 +251,7 @@ class SupabaseService {
 
     final response = await client
         .from('workouts')
-        .select('*, workouts_logs(*)')
+        .select('*, workouts_logs(*), sessions(duration)')
         .eq('date_session_sessiontype_key', sessionKey)
         .order('workout_idx', ascending: true);
 
@@ -664,8 +664,8 @@ class SupabaseService {
     // Grouping fields for matching
     final List<String> groupFields = [
       'mesocycle', 'day', 'exercise', 'sets', 'details', 
-      'time_exercise', 'ex_unit', 'rest', 'rest_unit', 'rest_round', 
-      'rest_round_unit', 'total_time', 'location', 'stage'
+      'time_exercise', 'ex_unit', 'rest', 'rest_unit',
+      'total_time', 'location', 'stage'
     ];
 
     for (var field in groupFields) {

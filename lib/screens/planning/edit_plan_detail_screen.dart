@@ -29,11 +29,13 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
   bool _isSaving = false;
 
   final TextEditingController _sessionController = TextEditingController();
+  final TextEditingController _durationController = TextEditingController();
   final Map<String, TextEditingController> _wodControllers = {};
 
   @override
   void dispose() {
     _sessionController.dispose();
+    _durationController.dispose();
     for (var controller in _wodControllers.values) {
       controller.dispose();
     }
@@ -46,6 +48,7 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
     _fields = Map.from(widget.group);
     if (widget.mode == 'Sessions') {
       _sessionController.text = _fields['session']?.toString() ?? '1';
+      _durationController.text = _fields['duration']?.toString() ?? '60';
       _loadIcons();
     } else {
       _isLoadingIcons = false;
@@ -56,7 +59,7 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
   void _initWodControllers() {
     final textFields = [
       'exercise_title', 'sets', 'details', 'time_exercise', 
-      'rest', 'rest_round', 'total_time', 'location'
+      'rest', 'total_time', 'location'
     ];
     for (var field in textFields) {
       _wodControllers[field] = TextEditingController(text: _fields[field]?.toString() ?? '');
@@ -75,9 +78,9 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
     setState(() => _isSaving = true);
     try {
       if (widget.mode == 'Sessions') {
-        final updates = {
           'session_type': _fields['session_type'],
           'session': int.tryParse(_sessionController.text) ?? _fields['session'],
+          'duration': int.tryParse(_durationController.text) ?? _fields['duration'],
         };
         await SupabaseService.updateSessionsBatch(
           originalAttributes: widget.group['original_attributes'],
@@ -91,13 +94,11 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
           'day': _fields['day'],
           'ex_unit': _fields['ex_unit'],
           'rest_unit': _fields['rest_unit'],
-          'rest_round_unit': _fields['rest_round_unit'],
           'exercise_title': _wodControllers['exercise_title']!.text,
           'sets': int.tryParse(_wodControllers['sets']!.text) ?? 0,
           'details': _wodControllers['details']!.text,
           'time_exercise': double.tryParse(_wodControllers['time_exercise']!.text) ?? 0,
           'rest': double.tryParse(_wodControllers['rest']!.text) ?? 0,
-          'rest_round': double.tryParse(_wodControllers['rest_round']!.text) ?? 0,
           'total_time': double.tryParse(_wodControllers['total_time']!.text) ?? 0,
           'location': _wodControllers['location']!.text,
           'stage': _fields['stage'],
@@ -179,6 +180,18 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
         ),
       ),
+      const SizedBox(height: 16),
+      const Text('Duration (min)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _durationController,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: AppTheme.cardColor,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+        ),
+      ),
     ];
   }
 
@@ -243,15 +256,7 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
       _buildChoiceSection('Rest Unit (rest_unit)', 'rest_unit', ['sec', 'min']),
       const SizedBox(height: 16),
       
-      // 12. rest_round
-      _buildTextField('Rest Round', 'rest_round', isNumber: true),
-      const SizedBox(height: 16),
-      
-      // 13. rest_round_unit
-      _buildChoiceSection('Rest Round Unit (rest_round_unit)', 'rest_round_unit', ['sec', 'min']),
-      const SizedBox(height: 16),
-      
-      // 14. total_time
+      // 12. total_time
       _buildTextField('Total Time', 'total_time', isNumber: true),
     ];
   }

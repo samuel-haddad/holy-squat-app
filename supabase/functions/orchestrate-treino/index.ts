@@ -193,11 +193,22 @@ async function handleGenerateCycleStep(job: any, admin: any) {
 
       // 2. Fetch general KPIs snapshot for the specific meso interval
       const { data: statsRange } = await admin.rpc('get_athlete_stats_by_range', {
-        p_email: p.email_utilizador,
-        p_start_date: mesoStartDate,
-        p_end_date: today
+        p_email: p.email_utilizador, p_start_date: mesoStartDate, p_end_date: today
       });
       cycleSnapshot = statsRange;
+    }
+
+    // Fetch user profile and training sessions for context
+    const { data: profile } = await admin.from('profiles').select('id').eq('email', p.email_utilizador).single();
+    let trainingSessions = p.training_sessions || [];
+    
+    if (profile?.id && trainingSessions.length === 0) {
+      const { data: sessionsData } = await admin
+        .from('training_sessions')
+        .select('session_number, locations, duration_minutes, schedule, time_of_day, notes')
+        .eq('user_id', profile.id)
+        .order('session_number', { ascending: true });
+      if (sessionsData) trainingSessions = sessionsData;
     }
 
     const result = await callGerarTreino({
@@ -206,13 +217,13 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       bloco_atual: proximoMeso,
       performance_stats: performanceStats,
       contexto_macrociclo: contextoMacrociclo,
-      training_sessions: p.training_sessions || [],
+      training_sessions: trainingSessions,
       data_inicio_meso: p.data_inicio_meso,
       ai_coach_name: p.ai_coach_name,
     });
 
     await admin.from('ai_generation_jobs').update({
-      step_1_result: { ...result, _blocoAtual: proximoMeso, _cycleSnapshot: cycleSnapshot },
+      step_1_result: { ...result, _blocoAtual: proximoMeso, _cycleSnapshot: cycleSnapshot, _trainingSessions: trainingSessions },
       current_step: 2, updated_at: new Date().toISOString(),
     }).eq('id', job.id);
 
@@ -221,6 +232,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     const cicloResult = job.step_1_result || {};
     const visaoSemanal = cicloResult.visaoSemanal || [];
     const blocoAtual = cicloResult._blocoAtual || {};
+    const trainingSessions = cicloResult._trainingSessions || p.training_sessions || [];
 
     let planSummary: any = {};
     try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) {}
@@ -356,6 +368,7 @@ async function persistExercicios(
       uniqueSessions[sessionKey] = {
         date_session_sessiontype_key: sessionKey,
         date: ex.date, session: ex.session, session_type: st,
+        duration: ex.duration,
         user_email: email,
         ...(planId ? { plan_id: planId } : {}),
         ...(aiCoachName ? { ai_coach_name: aiCoachName } : {}),
@@ -364,13 +377,12 @@ async function persistExercicios(
 
     records.push({
       date: ex.date, week: ex.week, mesocycle: ex.mesocycle, day: ex.day,
-      session: ex.session, session_type: st, duration: ex.duration,
+      session: ex.session, session_type: st, 
       workout_idx: ex.workout_idx, exercise: ex.exercise,
       exercise_title: ex.exercise_title, exercise_group: ex.exercise_group,
       exercise_type: ex.exercise_type, sets: ex.sets, details: ex.details,
       time_exercise: ex.time_exercise, ex_unit: ex.ex_unit,
       rest: ex.rest, rest_unit: ex.rest_unit,
-      rest_round: ex.rest_round, rest_round_unit: ex.rest_round_unit,
       total_time: ex.total_time, location: ex.location, stage: ex.stage,
       workout_link: ex.workout_link || '', adaptacaoLesao: ex.adaptacaoLesao || '',
       user_email: email, date_session_sessiontype_key: sessionKey,
@@ -379,11 +391,20 @@ async function persistExercicios(
   }
 
   const sessions = Object.values(uniqueSessions);
+  const sessionKeys = sessions.map(s => s.date_session_sessiontype_key);
+
   if (sessions.length > 0) {
     const { error } = await admin.from('sessions').upsert(sessions, { onConflict: 'date_session_sessiontype_key' });
     if (error) console.error('[persist] sessions upsert error:', error);
   }
+
   if (records.length > 0) {
+    // CLEANUP: Remove old workouts for these specific sessions before inserting new ones
+    const { error: delError } = await admin.from('workouts')
+      .delete()
+      .in('date_session_sessiontype_key', sessionKeys);
+    if (delError) console.error('[persist] workouts cleanup error:', delError);
+
     const { error } = await admin.from('workouts').insert(records);
     if (error) console.error('[persist] workouts insert error:', error);
   }

@@ -1228,10 +1228,14 @@ class _PlanningScreenState extends State<PlanningScreen> {
     try {
       final controller = WorkoutController(WorkoutRepository());
       
+      // Fetch current training sessions to ensure cycle respects them
+      final sessions = await SupabaseService.fetchTrainingSessions();
+      
       await controller.gerarProximoCiclo(
         planoId: plan['id'],
         actualPlanSummaryJson: plan['actual_plan_summary'] ?? '{}',
         currentWorkoutsTable: (plan['workouts_plan_table'] is List) ? plan['workouts_plan_table'] : [],
+        trainingSessions: sessions,
         aiCoachName: coach['ai_coach_name'],
         emailUtilizador: SupabaseService.client.auth.currentUser?.email ?? UserState.email.value,
       );

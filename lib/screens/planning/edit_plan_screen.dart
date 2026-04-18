@@ -91,6 +91,7 @@ class _EditPlanScreenState extends State<EditPlanScreen> {
           'original_attributes': {
             'session_type': s['session_type'],
             'session': s['session'],
+            'duration': s['duration'],
           }
         };
       }
@@ -103,8 +104,8 @@ class _EditPlanScreenState extends State<EditPlanScreen> {
     final Map<String, Map<String, dynamic>> groups = {};
     final groupKeys = [
       'mesocycle', 'day', 'exercise', 'sets', 'details', 
-      'time_exercise', 'ex_unit', 'rest', 'rest_unit', 'rest_round', 
-      'rest_round_unit', 'total_time', 'location', 'stage'
+      'time_exercise', 'ex_unit', 'rest', 'rest_unit',
+      'total_time', 'location', 'stage'
     ];
     final allFields = [...groupKeys, 'exercise_title'];
 
@@ -363,7 +364,7 @@ class _EditPlanScreenState extends State<EditPlanScreen> {
         ),
       ),
       title: Text(type, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-      subtitle: Text('Session: $sessionNum (${group['count']} instances)', style: const TextStyle(color: AppTheme.secondaryTextColor, fontSize: 14)),
+      subtitle: Text('Session: $sessionNum - ${group['original_attributes']['duration'] ?? 60} min (${group['count']} instances)', style: const TextStyle(color: AppTheme.secondaryTextColor, fontSize: 14)),
       trailing: const Icon(Icons.chevron_right, color: AppTheme.secondaryTextColor),
       onTap: () => _goToDetail(group),
     );

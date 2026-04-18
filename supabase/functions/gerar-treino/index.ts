@@ -45,22 +45,31 @@ const DATA_CONTRACT = `
 [RESTRIÇÃO DE NOMENCLATURA]
 - session_type: Escolha obrigatoriamente um valor desta lista: [${allowedSessionTypes}]. Proibido inventar termos.
 
+[REGRAS DE OURO DO TEMPO (BUDGETING)]
+1. Respeite a Duração (du): Se a sessão tem 60min, a soma de todos os 'tt' deve totalizar ~54min (90% do tempo). 
+2. Margem de Erro: Os 10% restantes (6min para uma sessão de 60min) são reservados para transições entre blocos.
+3. Distribuição Sugerida: 
+   - Warmup: 10% | Skill/Strength: 40% | Workout: 40% | Cooldown: 10%.
 
-[CONTRATO DE CAMPOS - REGRAS DETERMINÍSTICAS]
+[CONTRATO DE CAMPOS - CÁLCULO DE TT]
 - ts (Sets): Número de séries/rounds. Nunca null.
-- re/ru (Rest/Unit): Descanso entre séries (ex: 60, "seg").
-- te/tu (Time Exercise/Unit): Duração da EXECUÇÃO de 1 série (ex: 45, "seg").
-- tt (Total Time): Deve ser calculado rigorosamente pela fórmula: tt = (time_exercise + rest + rest_round) * sets.
-- CONVERSÃO PARA MINUTOS: Todas as variáveis da fórmula acima DEVEM ser convertidas para minutos antes do cálculo. 
-  Exemplo: 30 segundos = 0.5 minutos. 
-  Exemplo Real: 4 sets de 45 seg (0.75 min) com 15 seg de descanso (0.25 min) = (0.75 + 0.25) * 4 = 4.0 minutos.
-- VALIDAÇÃO: A soma de todos os 'tt' de uma sessão não pode ser maior que a 'duration' (duração total) daquela sessão.
+- re/ru (Rest/Unit): Descanso entre séries (ex: 90, "seg").
+- te/tu (Time Exercise/Unit): Tempo de execução de 1 série. Dê preferência a "seg" para séries de força (ex: 45) e "min" para cardios longos.
+- tt (Total Time): Cálculo rigoroso em minutos:
+  Fórmula: tt = ((time_exercise + rest) * sets) / 60.
+  *Se o exercício for por tempo fixo (ex: Corrida 10min), tt = 10.*
+
+[HEURÍSTICA DE EXECUÇÃO (Para estimar 'te')]
+- Força (LPO): 5 seg por repetição. (Ex: 10 reps = 50 seg).
+- Ginástica/Acessórios/Agachamentos: 3 seg por repetição. (Ex: 10 reps = 30 seg).
+- Explosivos/Burpees: 2 seg por repetição.
+- SEMPRE preencha 'te' e 're'. Nunca retorne 0 se houver trabalho sendo feito.
 `;
 
 const FEW_SHOT_EXAMPLES = `
-[EXEMPLOS DE ALTA QUALIDADE]
-{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Mobilidade-Cardio","du":45,"idx":1,"ex":"Alongamento total","et":"Warmup","eg":"Full body","ey":"Mobilidade","ts":1,"de":"Foco em quadril e ombros","te":5,"eu":"min","re":0,"ru":"min","rr":0,"rru":"min","tt":5,"lo":"Casa","sg":"warmup","al":""}
-{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":2,"ex":"Back Squat","et":"Força de Pernas","eg":"Lower Body","ey":"Força","ts":4,"de":"4x6 @75% 1RM","te":2,"eu":"min","re":90,"ru":"seg","rr":0,"rru":"min","tt":12,"lo":"Box","sg":"strength","al":""}
+[EXEMPLO DE ALTA PRECISÃO - SESSÃO 60MIN]
+{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":1,"ex":"Back Squat","et":"Força de Pernas","eg":"Lower Body","ey":"Força","ts":4,"de":"4x8 @70% 1RM (Estimativa: 40s on / 90s off)","te":40,"eu":"seg","re":90,"ru":"seg","tt":9,"lo":"Box","sg":"strength","al":""}
+{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":2,"ex":"Burpee Over Bar","et":"Metcon","eg":"Full Body","ey":"Condicionamento","ts":1,"de":"AMRAP 12min","te":12,"eu":"min","re":0,"ru":"seg","tt":12,"lo":"Box","sg":"workout","al":""}
 `;
 
 // =========================================================
@@ -458,9 +467,16 @@ serve(async (req) => {
         - Análise Histórica do Atleta: ${JSON.stringify(macroCtx.analise_historica || 'Não fornecida')}
         - Visão Geral do Plano: ${JSON.stringify(macroCtx.visao_geral_plano || 'Não fornecida')}
 
-        [ESTRUTURA DE SESSÕES DIÁRIAS]
+        [SESSÕES CONFIGURADAS - REGRAS MANDATÓRIAS]
         ${formatTrainingSessions(sessions)}
-        *NOTA: Nunca prescreva treinos em DUPLA ou PARTNER WODs. O treino é individual.*
+        
+        REGRAS DE OURO PARA O CALENDÁRIO:
+        1. Respeite os dias da semana (schedule) de cada sessão cadastrada.
+        2. Use EXATAMENTE a 'Duração' configurada para cada sessão como o campo 'du'.
+        3. Use os 'Locais' permitidos de cada sessão como o campo 'lo'.
+        4. Se houver mais de uma sessão no mesmo dia (ex: Manhã e Tarde), gere objetos diferentes no JSON para cada sessão, identificando-as pelo 'se' (session_number).
+        5. Se um dia não houver nenhuma sessão configurada, retorne 'st': 'Descanso' para esse dia.
+        6. *NOTA: Nunca prescreva treinos em DUPLA ou PARTNER WODs. O treino é individual.*
 
         [BLOCO ATUAL DO MESOCICLO]
         - Nome: ${bloco.mesociclo}
@@ -592,7 +608,7 @@ ${diasStr}
               "dt": "YYYY-MM-DD", "dy": "Dia", "se": 1, "st": "tipo", "du": 60,
               "idx": 1, "ex": "nome", "et": "titulo", "eg": "grupo", "ey": "tipo_ex",
               "ts": 3, "de": "detalhes", "te": 0, "eu": "min", "re": 60, "ru": "seg",
-              "rr": 0, "rru": "min", "tt": 0, "lo": "box", "sg": "workout", "al": ""
+              "tt": 0, "lo": "box", "sg": "workout", "al": ""
             }
           ]
         }
@@ -624,6 +640,22 @@ ${diasStr}
           search_name: short.et || short.ex 
         });
 
+        const ts = Number(short.ts) || 1;
+        const te = Number(short.te) || 0;
+        const re = Number(short.re) || 0;
+        const ai_tt = Number(short.tt) || 0;
+
+        // Forced validation: always calculate the expected TT based on deterministic components
+        const teMin = (short.eu === "seg") ? te / 60 : te;
+        const reMin = (short.ru === "seg") ? re / 60 : re;
+        const calc_tt = (teMin * ts) + (reMin * Math.max(0, ts - 1));
+
+        // Decisive logic: if AI provided 0 or if there's a significant deviation (>0.1 min), 
+        // we use the calculated value to ensure database integrity for KPIs.
+        const tt_final = (ai_tt === 0 || Math.abs(ai_tt - calc_tt) > 0.1) 
+                         ? Number(calc_tt.toFixed(1)) 
+                         : ai_tt;
+
         return {
           date: short.dt || today, 
           week: Number(ctx.semanaNum) || 1,
@@ -637,15 +669,13 @@ ${diasStr}
           exercise_title: short.et || short.ex || "",
           exercise_group: short.eg || "Geral",
           exercise_type: short.ey || "Acessório",
-          sets: Number(short.ts) || 1,
+          sets: ts,
           details: short.de || "",
-          time_exercise: Number(short.te) || 0,
+          time_exercise: te,
           ex_unit: short.eu || "min",
-          rest: Number(short.re) || 0,
+          rest: re,
           rest_unit: short.ru || "seg",
-          rest_round: Number(short.rr) || 0,
-          rest_round_unit: short.rru || "min",
-          total_time: Number(short.tt) || 0,
+          total_time: tt_final,
           location: short.lo || "Box",
           stage: short.sg || "workout",
           workout_link: link || "",

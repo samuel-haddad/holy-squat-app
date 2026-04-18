@@ -5,7 +5,6 @@ class ExercicioDetalhado {
   final String day;
   final int session;
   final String sessionType;
-  final num duration;
   final int workoutIdx;
   final String exercise;
   final String exerciseTitle;
@@ -17,8 +16,6 @@ class ExercicioDetalhado {
   final String exUnit;
   final num rest;
   final String restUnit;
-  final num restRound;
-  final String restRoundUnit;
   final num totalTime;
   final String location;
   final String stage;
@@ -31,7 +28,6 @@ class ExercicioDetalhado {
     required this.day,
     required this.session,
     required this.sessionType,
-    required this.duration,
     required this.workoutIdx,
     required this.exercise,
     required this.exerciseTitle,
@@ -43,8 +39,6 @@ class ExercicioDetalhado {
     required this.exUnit,
     required this.rest,
     required this.restUnit,
-    required this.restRound,
-    required this.restRoundUnit,
     required this.totalTime,
     required this.location,
     required this.stage,
@@ -59,7 +53,6 @@ class ExercicioDetalhado {
       day: json['day'] ?? '',
       session: json['session'] ?? 1,
       sessionType: json['session_type'] ?? '',
-      duration: json['duration'] ?? 0,
       workoutIdx: json['workout_idx'] ?? 1,
       exercise: json['exercise'] ?? '',
       exerciseTitle: json['exercise_title'] ?? '',
@@ -71,8 +64,6 @@ class ExercicioDetalhado {
       exUnit: json['ex_unit'] ?? 'min',
       rest: json['rest'] ?? 0,
       restUnit: json['rest_unit'] ?? 'seg',
-      restRound: json['rest_round'] ?? 0,
-      restRoundUnit: json['rest_round_unit'] ?? 'min',
       totalTime: json['total_time'] ?? 0,
       location: json['location'] ?? 'Academia',
       stage: json['stage'] ?? 'workout',
@@ -90,7 +81,6 @@ class ExercicioDetalhado {
       'day': day,
       'session': session,
       'session_type': sessionType,
-      'duration': duration,
       'workout_idx': workoutIdx,
       'exercise': exercise,
       'exercise_title': exerciseTitle,
@@ -102,8 +92,6 @@ class ExercicioDetalhado {
       'ex_unit': exUnit,
       'rest': rest,
       'rest_unit': restUnit,
-      'rest_round': restRound,
-      'rest_round_unit': restRoundUnit,
       'total_time': totalTime,
       'location': location,
       'stage': stage,

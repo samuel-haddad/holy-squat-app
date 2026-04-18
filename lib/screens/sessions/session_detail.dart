@@ -277,8 +277,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       // Detailed views
                       ...stages.entries.expand((entry) {
                         return entry.value.map((w) {
-                          final dur = w['time_exercise'] != null
-                              ? '${w['time_exercise']} min'
+                          final sessionData = w['sessions'] as Map<String, dynamic>?;
+                          final dur = sessionData?['duration'] != null
+                              ? '${sessionData!['duration']} min'
                               : '-';
                           final link = w['workout_link'];
 
@@ -299,7 +300,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
                           final timeEx = w['time_exercise']?.toString() ?? '-';
                           final rest = w['rest']?.toString() ?? '-';
-                          final restRound = w['rest_round']?.toString() ?? '-';
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 16.0),
@@ -317,7 +317,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                               w['adaptacaoLesao'],
                               timeEx: timeEx,
                               rest: rest,
-                              restRound: restRound,
                             ),
                           );
                         });
@@ -371,7 +370,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     String? adaptacaoLesao, {
     String timeEx = '-',
     String rest = '-',
-    String restRound = '-',
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -422,10 +420,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
           Text(
             'Rest: $rest',
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-          ),
-          Text(
-            'Round rest: $restRound',
             style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
           Text(

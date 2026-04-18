@@ -122,6 +122,7 @@ class WorkoutController extends ChangeNotifier {
     required String planoId,
     required String actualPlanSummaryJson,
     required List currentWorkoutsTable,
+    List<TrainingSession>? trainingSessions,
     String? aiCoachName,
   }) async {
     _state = WorkoutState.loading;
@@ -146,6 +147,7 @@ class WorkoutController extends ChangeNotifier {
           'actual_plan_summary_json': actualPlanSummaryJson,
           'mesos_ja_gerados': mesosJaGerados,
           'current_workouts_table': currentWorkoutsTable,
+          'training_sessions': (trainingSessions ?? []).map((s) => s.toJson()).toList(),
         },
       );
 
