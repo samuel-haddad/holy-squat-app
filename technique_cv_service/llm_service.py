@@ -104,7 +104,9 @@ def generate_technique_feedback(supabase_client, exercise_name: str, metrics: Di
 
     except Exception as e:
         print(f"Erro crítico no provedor '{ACTIVE_PROVIDER}': {e}. Acionando Fallback Heurístico.")
-        return _generate_fallback_mock(exercise_name, metrics)
+        fallback = _generate_fallback_mock(exercise_name, metrics)
+        fallback["resume_text"] = f"[ERRO IA: {e}] " + fallback["resume_text"]
+        return fallback
 
     return _generate_fallback_mock(exercise_name, metrics)
 
