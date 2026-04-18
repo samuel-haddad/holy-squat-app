@@ -81,7 +81,7 @@ def process_video_task(payload: VideoProcessPayload):
             supabase.storage.from_('technique_videos').upload(
                 path=processed_storage_path,
                 file=f,
-                file_options={"cache-control": "no-cache", "upsert": "true"}
+                file_options={"cache-control": "max-age=0", "upsert": "true"}
             )
         
         # 4. Geração de Feedback (Usando LLM via Gemini)
