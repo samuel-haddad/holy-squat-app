@@ -5,7 +5,7 @@ import time
 from cv_engine import process_video_with_mediapipe
 from download_utils import ensure_model_exists
 from llm_service import generate_technique_feedback
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 from dotenv import load_dotenv
 
 # Carregar variáveis de ambiente tentando vários locais comuns
@@ -26,7 +26,9 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
 else:
     print(f"✅ Conectando ao Supabase em: {SUPABASE_URL}")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+# Configuramos o timeout ampliado direto na biblioteca oficial
+custom_options = ClientOptions(postgrest_client_timeout=120, storage_client_timeout=120)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY, options=custom_options)
 
 app = FastAPI(title="Technique CV Service")
 
@@ -55,16 +57,10 @@ def process_video_task(payload: VideoProcessPayload):
 
     try:
         # 1. Download do Supabase Storage
-        print(f"Downloading raw video: {raw_path} via stream...")
-        import requests
-        download_url = f"{SUPABASE_URL}/storage/v1/object/authenticated/technique_videos/{raw_path}"
-        headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
-        
-        with requests.get(download_url, headers=headers, stream=True, timeout=120) as r:
-            r.raise_for_status()
-            with open(local_raw, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
+        print(f"Downloading raw video: {raw_path}")
+        with open(local_raw, 'wb+') as f:
+            res = supabase.storage.from_('technique_videos').download(raw_path)
+            f.write(res)
             
         file_size = os.path.getsize(local_raw)
         print(f"Downloaded video size: {file_size} bytes")
@@ -103,12 +99,12 @@ def process_video_task(payload: VideoProcessPayload):
             "status": "completed"
         }).eq("id", feedback_id).execute()
 
-        # 6. Limpeza do Vídeo Original no Storage (Point 1 fix)
-        print(f"Cleaning up raw video: {raw_path}")
-        try:
-            supabase.storage.from_('technique_videos').remove([raw_path])
-        except Exception as e:
-            print(f"Warning: Failed to remove raw video {raw_path}: {e}")
+        # 6. Limpeza do Vídeo Original no Storage foi suspensa por causar race-conditions em retries
+        # print(f"Cleaning up raw video: {raw_path}")
+        # try:
+        #     supabase.storage.from_('technique_videos').remove([raw_path])
+        # except Exception as e:
+        #     print(f"Warning: Failed to remove raw video {raw_path}: {e}")
 
         print(f"Success! Job {feedback_id} complete.")
 
