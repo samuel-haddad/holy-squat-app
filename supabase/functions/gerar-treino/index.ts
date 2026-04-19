@@ -326,16 +326,17 @@ serve(async (req) => {
 
       const [profileRes, prRes, benchRes, athleteStatsRes] = await Promise.all([
         profileQuery,
-        supabaseClient.from('pr_log')
-          .select('exercise, value, unit, date')
+        // Correct columns: 'pr' and 'pr_unit' (NOT 'value'/'unit' which don't exist)
+        adminClient.from('pr_log')
+          .select('exercise, pr, pr_unit, date')
           .eq('user_email', email_utilizador)
           .order('date', { ascending: false })
-          .limit(20),
-        supabaseClient.from('benchmarks_logs')
-          .select('benchmark_name, result, result_unit, logged_at')
-          .eq('user_email', email_utilizador)
-          .order('logged_at', { ascending: false })
-          .limit(20),
+          .limit(100),  // fetch all to compute max per exercise below
+        // Correct columns: 'bench_exercise', 'result', 'date' (NOT 'benchmark_name'/'result_unit'/'logged_at')
+        adminClient.from('benchmarks_logs')
+          .select('bench_exercise, result, date')
+          .order('date', { ascending: false })
+          .limit(50),
         // Use adminClient here: when called from orchestrate-treino, the Authorization header
         // carries the service role key (not a user JWT), so the anon client would fail RLS.
         adminClient.rpc('get_athlete_planning_stats', { p_email: email_utilizador })
@@ -350,10 +351,30 @@ serve(async (req) => {
       const profile = profileRes.data || {};
       const athleteStats = payload.athlete_stats_summary || (athleteStatsRes?.data?.kpis) || {};
 
+      // Aggregate PRs: keep only the MAX value per exercise (as the athlete's all-time best)
+      const prByExercise: Record<string, any> = {};
+      for (const row of (prRes.data || [])) {
+        const ex = row.exercise;
+        const val = Number(row.pr) || 0;
+        if (!prByExercise[ex] || val > Number(prByExercise[ex].pr)) {
+          prByExercise[ex] = row;
+        }
+      }
+      const prMaxPerExercise = Object.values(prByExercise)
+        .sort((a: any, b: any) => a.exercise.localeCompare(b.exercise));
+      console.log(`[prs] ${prMaxPerExercise.length} unique exercises with PRs`);
+
+      // Benchmarks: one row per exercise (already unique by bench_exercise in the table)
+      const benchData = benchRes.data || [];
+      console.log(`[benchmarks] ${benchData.length} benchmark records`);
+
       // ── Structured history summary (replaces 150-record raw dump) ──
-      const { data: historySummaryRaw, error: histErr } = await supabaseClient
+      // CRITICAL: use adminClient — supabaseClient fails RLS when called from orchestrator
+      // (the Authorization header carries service role key, not a user JWT)
+      const { data: historySummaryRaw, error: histErr } = await adminClient
         .rpc('get_athlete_history_summary', { p_email: email_utilizador });
       if (histErr) console.warn('[RPC] get_athlete_history_summary error:', histErr);
+      else console.log('[RPC] get_athlete_history_summary OK. monthly_profile rows:', historySummaryRaw?.monthly_profile?.length ?? 0);
       const historySummaryText = formatHistorySummary(historySummaryRaw);
 
       // ── Training sessions: prefer payload (forwarded by orchestrator), DB as fallback ──
@@ -431,11 +452,17 @@ serve(async (req) => {
         [SESSÕES DE TREINO DISPONÍVEIS]
         ${formatTrainingSessions(trainingSessions)}
 
-        [PRs RECENTES (últimos 20)]
-        ${JSON.stringify(prRes.data || [])}
+        [PRs DE FORÇA — MELHOR MARCA POR EXERCÍCIO]
+        *OBRIGATÓRIO: Cite estes números na análise. O Power Index é a soma dos PRs de força bruta.*
+        ${prMaxPerExercise.length > 0
+          ? prMaxPerExercise.map((r: any) => `- ${r.exercise}: ${r.pr} ${r.pr_unit || 'kg'} (${r.date})`).join('\n        ')
+          : 'Nenhum PR registrado.'}
 
-        [BENCHMARKS RECENTES (últimos 20)]
-        ${JSON.stringify(benchRes.data || [])}
+        [BENCHMARKS FUNCIONAIS — RESULTADOS MAIS RECENTES]
+        *OBRIGATÓRIO: Cite estes valores como referência de condicionamento e capacidade funcional.*
+        ${benchData.length > 0
+          ? benchData.map((b: any) => `- ${b.bench_exercise}: ${b.result} (${b.date || 'data não registrada'})`).join('\n        ')
+          : 'Nenhum benchmark registrado.'}
 
         [HISTÓRICO AGREGADO — 12 MESES]
         (Dados sumarizados por mês, exercício e tipo. Cargas são aproximadas — join a nível de data.)
