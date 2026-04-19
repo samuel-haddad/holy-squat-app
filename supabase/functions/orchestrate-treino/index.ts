@@ -158,13 +158,17 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     let contextoMacrociclo: any = {};
     if (p.plano_id) {
       const { data: plan } = await admin
-        .from('training_plans').select('workouts_plan_text, actual_plan_summary').eq('id', p.plano_id).single();
+        .from('training_plans').select('workouts_plan_text, actual_plan_summary, competitions').eq('id', p.plano_id).single();
       if (plan) {
         let analise = {};
         let visao = {};
         try { analise = JSON.parse(plan.workouts_plan_text || '{}'); } catch (_) {}
         try { visao = JSON.parse(plan.actual_plan_summary || '{}'); } catch (_) {}
-        contextoMacrociclo = { analise_historica: analise, visao_geral_plano: visao };
+        contextoMacrociclo = { 
+          analise_historica: analise, 
+          visao_geral_plano: visao, 
+          competicoes: plan.competitions || [] 
+        };
       }
     }
 
@@ -308,7 +312,11 @@ async function persistCreatePlan(job: any, planResult: any, admin: any): Promise
     start_date: p.diretrizes_plano?.data_inicio,
     end_date: p.diretrizes_plano?.data_fim || null,
     notes: p.diretrizes_plano?.notas || null,
-    competitions: (p.diretrizes_plano?.competicoes || []).map((c: string) => ({ name: c, date: null })),
+    competitions: (p.diretrizes_plano?.competicoes || []).map((c: any) => ({ 
+      name: c.name, 
+      start_date: c.start_date, 
+      end_date: c.end_date 
+    })),
     actual_plan_summary: JSON.stringify(planResult?.visaoGeralPlano || {}),
     workouts_plan_text: JSON.stringify(job.step_1_result?.analiseMacro || {}),
     workouts_plan_table: [],

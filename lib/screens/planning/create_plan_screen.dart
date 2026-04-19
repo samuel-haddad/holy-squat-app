@@ -129,7 +129,8 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
     setState(() {
       _competitions.add({
         'nameController': TextEditingController(),
-        'date': null,
+        'startDate': null,
+        'endDate': null,
       });
     });
   }
@@ -165,7 +166,7 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
     }
   }
 
-  Future<void> _selectCompetitionDate(int index) async {
+  Future<void> _selectCompetitionDate(int index, bool isStart) async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
@@ -187,7 +188,11 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
     );
     if (picked != null) {
       setState(() {
-        _competitions[index]['date'] = picked;
+        if (isStart) {
+          _competitions[index]['startDate'] = picked;
+        } else {
+          _competitions[index]['endDate'] = picked;
+        }
       });
     }
   }
@@ -217,9 +222,17 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
 
     final controller = context.read<WorkoutController>();
 
-    final List<String> competicoesFormatadas = _competitions
-        .map((comp) => comp['nameController'].text as String)
-        .where((name) => name.isNotEmpty)
+    final List<Map<String, dynamic>> competicoesFormatadas = _competitions
+        .where((comp) => comp['nameController'].text.isNotEmpty)
+        .map((comp) => {
+              'name': comp['nameController'].text,
+              'start_date': comp['startDate'] != null
+                  ? DateFormat('yyyy-MM-dd').format(comp['startDate'])
+                  : null,
+              'end_date': comp['endDate'] != null
+                  ? DateFormat('yyyy-MM-dd').format(comp['endDate'])
+                  : null,
+            })
         .toList();
 
     final startDateFormatted = DateFormat('yyyy-MM-dd').format(_startDate!);
@@ -636,23 +649,74 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
             ],
           ),
           const Divider(color: Colors.white10),
-          InkWell(
-            onTap: () => _selectCompetitionDate(index),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _competitions[index]['date'] == null
-                      ? 'Select Competition Date'
-                      : DateFormat('dd/MM/yyyy').format(_competitions[index]['date']),
-                  style: TextStyle(
-                    color: _competitions[index]['date'] == null ? Colors.white.withOpacity(0.3) : Colors.white,
-                    fontSize: 14,
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => _selectCompetitionDate(index, true),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Start Date',
+                          style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _competitions[index]['startDate'] == null
+                                ? 'Select'
+                                : DateFormat('dd/MM/yyyy')
+                                    .format(_competitions[index]['startDate']),
+                            style: TextStyle(
+                              color: _competitions[index]['startDate'] == null
+                                  ? Colors.white.withOpacity(0.3)
+                                  : Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const Icon(Icons.event,
+                              color: AppTheme.primaryTeal, size: 16),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const Icon(Icons.event, color: AppTheme.primaryTeal, size: 18),
-              ],
-            ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: InkWell(
+                  onTap: () => _selectCompetitionDate(index, false),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('End Date',
+                          style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _competitions[index]['endDate'] == null
+                                ? 'Select'
+                                : DateFormat('dd/MM/yyyy')
+                                    .format(_competitions[index]['endDate']),
+                            style: TextStyle(
+                              color: _competitions[index]['endDate'] == null
+                                  ? Colors.white.withOpacity(0.3)
+                                  : Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const Icon(Icons.event,
+                              color: AppTheme.primaryTeal, size: 16),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

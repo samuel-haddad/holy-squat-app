@@ -474,7 +474,8 @@ serve(async (req) => {
 
         [HIERARQUIA DE PRIORIDADE - LEI ZERO]
         1. SEGURANÇA E LESÕES: O usuário tem histórico em ${profile.lesoes}. Foco em Prehab e proteção tendínea.
-        2. NOMENCLATURA: Use apenas os session_type da lista oficial: [${allowedSessionTypes}]
+        2. COMPETIÇÕES: Respeite rigorosamente as datas de início e fim das competições. O treinamento deve convergir para o pico de performance nessas datas e incluir Tapering adequado nas semanas que as antecedem.
+        3. NOMENCLATURA: Use apenas os session_type da lista oficial: [${allowedSessionTypes}]
 
         [ANÁLISE DO HISTÓRICO (resultado da etapa anterior)]
         ${JSON.stringify(analise)}
@@ -567,6 +568,7 @@ serve(async (req) => {
         Use as informações abaixo para manter coerência com o planejamento original:
         - Análise Histórica do Atleta: ${JSON.stringify(macroCtx.analise_historica || 'Não fornecida')}
         - Visão Geral do Plano: ${JSON.stringify(macroCtx.visao_geral_plano || 'Não fornecida')}
+        - COMPETIÇÕES: ${JSON.stringify(macroCtx.competicoes || [])} (Respeite rigorosamente estas datas para pico de performance e tapering).
 
         [SESSÕES CONFIGURADAS - REGRAS MANDATÓRIAS]
         ${formatTrainingSessions(sessions)}

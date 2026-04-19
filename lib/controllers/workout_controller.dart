@@ -61,7 +61,7 @@ class WorkoutController extends ChangeNotifier {
     required String objetivoGeral,
     required String dataInicio,
     required String dataFim,
-    required List<String> competicoes,
+    required List<Map<String, dynamic>> competicoes,
     String? notasAdicionais,
     int? aiCoachId,
     String? aiCoachName,
