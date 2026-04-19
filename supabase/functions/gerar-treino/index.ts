@@ -85,6 +85,86 @@ function formatTrainingSessions(sessions: any[]): string {
 }
 
 // =========================================================
+// Helper: format the structured history summary for the LLM
+// Transforms the RPC JSON output into readable text (~5k tokens
+// instead of 150 raw workout records)
+// =========================================================
+function formatHistorySummary(summary: any): string {
+  if (!summary) return "Sem histórico disponível.";
+  const lines: string[] = [];
+
+  // ── Módulo 1: Perfil mensal ──
+  if (summary.monthly_profile?.length) {
+    lines.push('[HISTÓRICO MENSAL — 12 MESES]');
+    for (const m of summary.monthly_profile) {
+      const groups = Object.entries(m.group_pct || {})
+        .sort(([, a]: any, [, b]: any) => b - a)
+        .slice(0, 4)
+        .map(([k, v]) => `${k}: ${v}%`)
+        .join(' | ');
+      lines.push(`${m.month}: ${m.train_days} dias treino | ${m.sessions} sessões | ${groups || 'sem dados de grupo'}`);
+    }
+    lines.push('');
+  }
+
+  // ── Módulo 2: Exercícios de Força ──
+  if (summary.strength_describe?.length) {
+    lines.push('[EXERCÍCIOS DE FORÇA — DESCRIBE (carga aproximada, join por data)]');
+    for (const ex of (summary.strength_describe as any[]).slice(0, 15)) {
+      const arrow = ex.trend === 'crescente' ? '↑' : ex.trend === 'regressiva' ? '↓' : '→';
+      lines.push(
+        `${ex.exercise} (${ex.group}): ${ex.freq}x | ` +
+        `min ${ex.load_min ?? '?'}kg / avg ${ex.load_avg ?? '?'}kg / max ${ex.load_max ?? '?'}kg | ` +
+        `${arrow} ${ex.trend} | Último: ${ex.last}`
+      );
+    }
+    lines.push('');
+  }
+
+  // ── Módulo 3: WODs / Metcons ──
+  if (summary.metcon_describe?.length) {
+    lines.push('[WODs / METCONS]');
+    for (const ex of (summary.metcon_describe as any[]).slice(0, 15)) {
+      if (ex.has_weight && ex.load_max > 0) {
+        lines.push(
+          `${ex.exercise} (${ex.group}): ${ex.freq}x | ` +
+          `Carga: ${ex.load_min ?? '?'}–${ex.load_avg ?? '?'}–${ex.load_max ?? '?'}kg [WOD com carga]`
+        );
+      } else if (ex.avg_cardio > 0) {
+        lines.push(
+          `${ex.exercise} (${ex.group}): ${ex.freq}x | ` +
+          `Resultado médio: ${ex.avg_cardio} ${ex.cardio_unit || ''} [Cardio/Endurance]`
+        );
+      } else {
+        const reps = ex.avg_reps > 0 ? ` | Média reps: ${ex.avg_reps}` : '';
+        lines.push(`${ex.exercise} (${ex.group}): ${ex.freq}x | Sem log de carga/cardio${reps}`);
+      }
+    }
+    lines.push('');
+  }
+
+  // ── Módulo 4: Top 15 por frequência ──
+  if (summary.top_exercises?.length) {
+    lines.push('[TOP 15 EXERCÍCIOS — FREQUÊNCIA (todos os estágios menos warm/cool)]');
+    for (const ex of summary.top_exercises) {
+      lines.push(`${ex.exercise} (${ex.group} | ${ex.type}): ${ex.freq}x | Último: ${ex.last}`);
+    }
+    lines.push('');
+  }
+
+  // ── Módulo 5: Progressão trimestral ──
+  if (summary.quarterly_progression?.length) {
+    lines.push('[PROGRESSÃO TRIMESTRAL — LEVANTAMENTOS-CHAVE]');
+    for (const ex of summary.quarterly_progression) {
+      const qStr = (ex.quarters || []).map((q: any) => `${q.q}: avg ${q.avg}kg / max ${q.max}kg`).join(' → ');
+      lines.push(`${ex.exercise}: ${qStr}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// =========================================================
 // Helper: generate content with the correct provider (Google or Anthropic)
 // =========================================================
 async function generateWithProvider(
@@ -224,29 +304,39 @@ serve(async (req) => {
 
     // =========================================================
     // ACTION 1: gerar_analise_historica
-    // Analyzes the athlete's sports history. Heavy DB queries live here.
+    // Analyzes the athlete's sports history.
+    // OPTIMIZATION: raw workout/log dumps replaced by structured
+    // RPC aggregation (~5k tokens vs ~50k previously).
     // =========================================================
     if (acao === 'gerar_analise_historica') {
       const { email_utilizador } = payload;
 
-      const twelveMonthsAgo = new Date();
-      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-      const dateStr = twelveMonthsAgo.toISOString().split('T')[0];
-
-      const [profileRes, prRes, benchRes, benchDefRes, workoutsRes, logsRes, athleteStatsRes] = await Promise.all([
+      // Parallel DB fetches — lean column selection, capped limits
+      const [profileRes, prRes, benchRes, athleteStatsRes] = await Promise.all([
         supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single(),
-        supabaseClient.from('pr_log').select('*').eq('user_email', email_utilizador),
-        supabaseClient.from('benchmarks_logs').select('*').eq('user_email', email_utilizador),
-        supabaseClient.from('benchmarks').select('*'),
-        supabaseClient.from('workouts').select('date, exercise, exercise_title, sets, details').eq('user_email', email_utilizador).gte('date', dateStr).order('date', { ascending: false }).limit(150),
-        supabaseClient.from('workouts_logs').select('workout_date, weight, reps_done, cardio_result, cardio_unit').eq('user_email', email_utilizador).gte('workout_date', dateStr).order('workout_date', { ascending: false }).limit(150),
+        supabaseClient.from('pr_log')
+          .select('exercise, value, unit, date')
+          .eq('user_email', email_utilizador)
+          .order('date', { ascending: false })
+          .limit(20),
+        supabaseClient.from('benchmarks_logs')
+          .select('benchmark_name, result, result_unit, logged_at')
+          .eq('user_email', email_utilizador)
+          .order('logged_at', { ascending: false })
+          .limit(20),
         supabaseClient.rpc('get_athlete_planning_stats', { p_email: email_utilizador })
       ]);
 
       const profile = profileRes.data || {};
       const athleteStats = payload.athlete_stats_summary || (athleteStatsRes?.data?.kpis) || {};
 
-      // Fetch structured training sessions
+      // ── Structured history summary (replaces 150-record raw dump) ──
+      const { data: historySummaryRaw, error: histErr } = await supabaseClient
+        .rpc('get_athlete_history_summary', { p_email: email_utilizador });
+      if (histErr) console.warn('[RPC] get_athlete_history_summary error:', histErr);
+      const historySummaryText = formatHistorySummary(historySummaryRaw);
+
+      // ── Training sessions ──
       const { data: sessionsData } = await supabaseClient
         .from('training_sessions')
         .select('session_number, locations, duration_minutes, schedule, time_of_day, notes')
@@ -254,6 +344,7 @@ serve(async (req) => {
         .order('session_number', { ascending: true });
       const trainingSessions = sessionsData || [];
 
+      // ── Technique feedbacks ──
       let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
       if (profile?.id) {
         const { data: tfData } = await supabaseClient
@@ -263,13 +354,13 @@ serve(async (req) => {
           .order('created_at', { ascending: false })
           .limit(15);
         if (tfData && tfData.length > 0) {
-          techniqueFeedbacksStr = tfData.map((tf: any) => 
+          techniqueFeedbacksStr = tfData.map((tf: any) =>
             `- Exercício: ${tf.exercise_name}\n  Análise: ${tf.resume_text}\n  Recomendação (Correção): ${JSON.stringify(tf.improve_exercises)}`
           ).join('\n');
         }
       }
 
-      // RAG: query knowledge base based on athlete's context
+      // ── RAG: knowledge base ──
       const ragQuery = `${profile.about_me || ''} ${profile.skills_training || ''} ${profile.lesoes || ''}`;
       const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, supabaseClient);
 
@@ -310,11 +401,15 @@ serve(async (req) => {
         [SESSÕES DE TREINO DISPONÍVEIS]
         ${formatTrainingSessions(trainingSessions)}
 
-        - PRs: ${JSON.stringify(prRes.data || [])}
-        - Benchmarks: ${JSON.stringify(benchRes.data || [])}
-        - Definições de Benchmarks: ${JSON.stringify(benchDefRes.data || [])}
-        - Histórico 12 meses: ${JSON.stringify(workoutsRes.data || [])}
-        - Logs performance: ${JSON.stringify(logsRes.data || [])}
+        [PRs RECENTES (últimos 20)]
+        ${JSON.stringify(prRes.data || [])}
+
+        [BENCHMARKS RECENTES (últimos 20)]
+        ${JSON.stringify(benchRes.data || [])}
+
+        [HISTÓRICO AGREGADO — 12 MESES]
+        (Dados sumarizados por mês, exercício e tipo. Cargas são aproximadas — join a nível de data.)
+        ${historySummaryText}
 
         [FORMATO — JSON PURO SEM MARKDOWN]
         {
@@ -332,7 +427,7 @@ serve(async (req) => {
 
       console.log(`gerar_analise_historica | coach: ${ai_coach_name ?? 'default'}`);
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_analise_historica', 8000);
-      
+
       const responseBody = {
         ...result,
         athlete_stats_snapshot: athleteStatsRes?.data || {}

@@ -179,6 +179,7 @@ class WorkoutController extends ChangeNotifier {
   Future<void> _subscribeAndWait(String jobId, Map<int, String> stepMessages) async {
     _jobCompleter = Completer<void>();
     final supabase = Supabase.instance.client;
+    Timer? pollTimer;
 
     _jobChannel = supabase
         .channel('job:$jobId')
@@ -212,10 +213,41 @@ class WorkoutController extends ChangeNotifier {
         )
         .subscribe();
 
-    await _jobCompleter!.future.timeout(
-      const Duration(minutes: 10),
-      onTimeout: () => throw Exception('Timeout: geração excedeu 10 minutos.'),
-    );
+    // Polling fallback: consulta o job a cada 30s caso o Realtime
+    // WebSocket falhe ou o orquestrador seja encerrado silenciosamente.
+    pollTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (_jobCompleter == null || _jobCompleter!.isCompleted) return;
+      try {
+        final job = await _repository.fetchJobResult(jobId);
+        if (job == null) return;
+        final status = job['status'] as String? ?? 'processing';
+        final step   = job['current_step'] as int? ?? 1;
+
+        if (stepMessages.containsKey(step)) {
+          _loadingMessage = stepMessages[step]!;
+          notifyListeners();
+        }
+
+        if (status == 'completed') {
+          _loadingMessage = '💾 Dados salvos. Finalizando (polling)...';
+          notifyListeners();
+          if (!_jobCompleter!.isCompleted) _jobCompleter!.complete();
+        } else if (status == 'error') {
+          if (!_jobCompleter!.isCompleted) _jobCompleter!.complete();
+        }
+      } catch (_) {
+        // ignora erros de rede no polling
+      }
+    });
+
+    try {
+      await _jobCompleter!.future.timeout(
+        const Duration(minutes: 15),
+        onTimeout: () => throw Exception('Timeout: geração excedeu 15 minutos.'),
+      );
+    } finally {
+      pollTimer.cancel();
+    }
   }
 
   void _cleanupJobChannel() {
