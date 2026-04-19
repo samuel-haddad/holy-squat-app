@@ -43,12 +43,23 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
   }
 
   Future<void> _loadSessions() async {
-    final sessions = await SupabaseService.fetchTrainingSessions();
-    if (mounted) {
-      setState(() {
-        _trainingSessions = sessions;
-        _loadingSessions = false;
-      });
+    try {
+      // Adicionamos um timeout de segurança de 10 segundos para evitar o loop infinito no loading
+      final sessions = await SupabaseService.fetchTrainingSessions()
+          .timeout(const Duration(seconds: 10));
+      if (mounted) {
+        setState(() {
+          _trainingSessions = sessions;
+          _loadingSessions = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Sessions] Erro ao carregar: $e');
+      if (mounted) {
+        setState(() {
+          _loadingSessions = false; // Forçamos o fim do loading para mostrar o editor vazio
+        });
+      }
     }
   }
 

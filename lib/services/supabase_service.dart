@@ -715,22 +715,34 @@ class SupabaseService {
   /// Batch upsert: deletes all existing sessions for the user and inserts the new list.
   static Future<void> upsertAllTrainingSessions(List<TrainingSession> sessions) async {
     final user = client.auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      debugPrint("Sessions: Auth error - No user logged in");
+      return;
+    }
 
-    // Delete existing sessions for this user
-    await client.from('training_sessions').delete().eq('user_id', user.id);
+    try {
+      debugPrint("Sessions: Upserting ${sessions.length} sessions for user ${user.id}");
+      
+      // Delete existing sessions for this user
+      await client.from('training_sessions').delete().eq('user_id', user.id);
 
-    if (sessions.isEmpty) return;
+      if (sessions.isEmpty) return;
 
-    // Insert all new sessions
-    final rows = sessions.map((s) {
-      final data = s.toJson();
-      data['user_id'] = user.id;
-      data.remove('id'); // Let DB generate new IDs
-      return data;
-    }).toList();
+      // Insert all new sessions
+      final rows = sessions.map((s) {
+        final data = s.toJson();
+        data['user_id'] = user.id; // Explicitly set user_id from current auth state
+        data.remove('id'); // Let DB generate new UUIDs
+        return data;
+      }).toList();
 
-    await client.from('training_sessions').insert(rows);
+      debugPrint("Sessions: Inserting rows: ${jsonEncode(rows)}");
+      await client.from('training_sessions').insert(rows);
+      debugPrint("Sessions: Upsert complete");
+    } catch (e) {
+      debugPrint("Sessions: Error in upsertAllTrainingSessions: $e");
+      rethrow;
+    }
   }
 
   // --- TECHNIQUE ANALYSIS METHODS ---
