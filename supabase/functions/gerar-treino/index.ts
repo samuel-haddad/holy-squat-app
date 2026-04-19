@@ -368,14 +368,125 @@ serve(async (req) => {
       const benchData = benchRes.data || [];
       console.log(`[benchmarks] ${benchData.length} benchmark records`);
 
-      // ── Structured history summary (replaces 150-record raw dump) ──
+      // ── Structured history summary (prefer RPC, direct-query fallback if empty) ──
       // CRITICAL: use adminClient — supabaseClient fails RLS when called from orchestrator
-      // (the Authorization header carries service role key, not a user JWT)
+      //           (the Authorization header carries service role key, not a user JWT)
       const { data: historySummaryRaw, error: histErr } = await adminClient
         .rpc('get_athlete_history_summary', { p_email: email_utilizador });
-      if (histErr) console.warn('[RPC] get_athlete_history_summary error:', histErr);
-      else console.log('[RPC] get_athlete_history_summary OK. monthly_profile rows:', historySummaryRaw?.monthly_profile?.length ?? 0);
-      const historySummaryText = formatHistorySummary(historySummaryRaw);
+
+      if (histErr) {
+        console.error('[RPC] get_athlete_history_summary FAILED:', JSON.stringify(histErr));
+      } else {
+        // Defensive check: RPC may return an array instead of an object on some Supabase versions
+        const rpcData = Array.isArray(historySummaryRaw) ? historySummaryRaw[0] : historySummaryRaw;
+        console.log(
+          '[RPC] get_athlete_history_summary result check:',
+          'monthly_profile:', rpcData?.monthly_profile?.length ?? 'missing',
+          'top_exercises:', rpcData?.top_exercises?.length ?? 'missing',
+          'strength_describe:', rpcData?.strength_describe?.length ?? 'missing'
+        );
+      }
+
+      const rpcPayload = Array.isArray(historySummaryRaw) ? historySummaryRaw[0] : historySummaryRaw;
+      let historySummaryText = formatHistorySummary(rpcPayload);
+      const rpcProducedContent = historySummaryText.length > 60; // true if RPC gave real data
+
+      // ── Direct-query fallback when RPC returns empty/null ──
+      // Queries workouts_logs + workouts directly, no RPC dependency.
+      if (!rpcProducedContent) {
+        console.warn('[fallback-history] RPC returned empty. Building history from direct queries...');
+        const sixMonthsAgo = new Date(Date.now() - 183 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        const [logsRes, workoutsRes] = await Promise.all([
+          adminClient
+            .from('workouts_logs')
+            .select('workout_date, pse, weight, weight_unit, wod_exercise_id')
+            .eq('user_email', email_utilizador)
+            .eq('done', 1)
+            .gte('workout_date', sixMonthsAgo)
+            .not('workout_date', 'is', null)
+            .order('workout_date', { ascending: false })
+            .limit(800),
+          adminClient
+            .from('workouts')
+            .select('wod_exercise_id, exercise, exercise_group, exercise_type, stage')
+            .eq('user_email', email_utilizador)
+            .gte('date', sixMonthsAgo)
+            .limit(800),
+        ]);
+
+        const rawLogs = logsRes.data || [];
+        const rawWorkouts = workoutsRes.data || [];
+        console.log(`[fallback-history] logs: ${rawLogs.length}, workouts: ${rawWorkouts.length}`);
+
+        // Build wod_exercise_id → exercise info map
+        const wodMap: Record<string, any> = {};
+        for (const w of rawWorkouts) wodMap[w.wod_exercise_id] = w;
+
+        // Monthly activity stats
+        const byMonth: Record<string, { sessions: Set<string>; pseSums: number[]; exercises: Map<string, number> }> = {};
+        for (const log of rawLogs) {
+          const month = String(log.workout_date).substring(0, 7);
+          if (!byMonth[month]) byMonth[month] = { sessions: new Set(), pseSums: [], exercises: new Map() };
+          byMonth[month].sessions.add(String(log.workout_date));
+          const pse = parseFloat(log.pse);
+          if (!isNaN(pse) && pse > 0) byMonth[month].pseSums.push(pse);
+          const wod = wodMap[log.wod_exercise_id];
+          if (wod?.exercise && wod.stage !== 'warmup' && wod.stage !== 'cooldown') {
+            const cnt = byMonth[month].exercises.get(wod.exercise) || 0;
+            byMonth[month].exercises.set(wod.exercise, cnt + 1);
+          }
+        }
+
+        const monthLines: string[] = ['[HISTÓRICO DE ATIVIDADE — Últimos 6 meses (query direta)]'];
+        for (const [month, stats] of Object.entries(byMonth).sort(([a], [b]) => b.localeCompare(a))) {
+          const days = stats.sessions.size;
+          const avgPse = stats.pseSums.length > 0
+            ? (stats.pseSums.reduce((a, b) => a + b, 0) / stats.pseSums.length).toFixed(1)
+            : 'N/A';
+          const topEx = [...stats.exercises.entries()]
+            .sort((a, b) => b[1] - a[1]).slice(0, 5)
+            .map(([ex, cnt]) => `${ex}(${cnt}x)`).join(', ');
+          monthLines.push(`${month}: ${days} dias treino | PSE médio: ${avgPse} | Exercícios freq.: ${topEx || 'n/a'}`);
+        }
+
+        // Exercise frequency table
+        const exFreq: Map<string, { group: string; type: string; count: number; lastDate: string }> = new Map();
+        for (const log of rawLogs) {
+          const wod = wodMap[log.wod_exercise_id];
+          if (wod?.exercise && wod.stage !== 'warmup' && wod.stage !== 'cooldown') {
+            const key = wod.exercise;
+            const cur = exFreq.get(key) || { group: wod.exercise_group || '', type: wod.exercise_type || '', count: 0, lastDate: '' };
+            cur.count++;
+            if (!cur.lastDate || String(log.workout_date) > cur.lastDate) cur.lastDate = String(log.workout_date);
+            exFreq.set(key, cur);
+          }
+        }
+        const topExercicios = [...exFreq.entries()]
+          .sort((a, b) => b[1].count - a[1].count).slice(0, 15);
+        if (topExercicios.length > 0) {
+          monthLines.push('');
+          monthLines.push('[TOP EXERCÍCIOS — FREQUÊNCIA (Últimos 6 meses)]');
+          for (const [ex, info] of topExercicios) {
+            monthLines.push(`${ex} (${info.group} | ${info.type}): ${info.count}x | Último: ${info.lastDate}`);
+          }
+        }
+
+        historySummaryText = monthLines.join('\n');
+        console.log(`[fallback-history] Built. Months: ${Object.keys(byMonth).length}, exercises: ${topExercicios.length}`);
+      }
+
+      // ── Power Index: compute from PR data (fallback for DB fn which has type-mismatch on numeric col) ──
+      // The SQL casts NULLIF(pr,'') which fails when pr is NUMERIC. We sum max PRs of key exercises.
+      const POWER_EXERCISE_KEYWORDS = ['squat', 'deadlift', 'dead lift', 'levant', 'agachament',
+        'shoulder press', 'strict press', 'overhead press', 'desenvolv', 'development'];
+      const powerIndexFromPRs = prMaxPerExercise
+        .filter((r: any) => POWER_EXERCISE_KEYWORDS.some(k => r.exercise?.toLowerCase().includes(k)))
+        .reduce((sum: number, r: any) => sum + (Number(r.pr) || 0), 0);
+      const effectivePowerIndex = (athleteStats.power_index && athleteStats.power_index > 0)
+        ? athleteStats.power_index
+        : Math.round(powerIndexFromPRs);
+      console.log(`[power-index] DB: ${athleteStats.power_index}, computed: ${powerIndexFromPRs}, using: ${effectivePowerIndex}`);
 
       // ── Training sessions: prefer payload (forwarded by orchestrator), DB as fallback ──
       let trainingSessions: any[] = [];
@@ -432,10 +543,10 @@ serve(async (req) => {
 
         [KPIs DETERMINÍSTICOS DO ATLETA]
         - Aderência Global: ${athleteStats.adherence}%
-        - PSE Médio (10 sessões): ${athleteStats.avg_pse}
-        - Power Index: ${athleteStats.power_index}
-        - Melhor Evolução: ${athleteStats.best_evolution?.exercise} (+${athleteStats.best_evolution?.percent}%)
-        - Streak Atual: ${athleteStats.streak} dias
+        - PSE Médio (90 dias): ${athleteStats.avg_pse}
+        - Power Index (soma PRs força): ${effectivePowerIndex}${effectivePowerIndex !== athleteStats.power_index ? ' (calculado dos PRs registrados)' : ''}
+        - Evolução de Esforço: ${athleteStats.best_evolution?.percent}% vs baseline 6 meses
+        - Streak Atual: ${athleteStats.streak} semanas
         - Frequência Semanal: ${athleteStats.weekly_freq} treinos/semana
 
         [PERFIL DO ATLETA]
@@ -465,8 +576,8 @@ serve(async (req) => {
           : 'Nenhum benchmark registrado.'}
 
         [HISTÓRICO AGREGADO — 12 MESES]
-        (Dados sumarizados por mês, exercício e tipo. Cargas são aproximadas — join a nível de data.)
-        ${historySummaryText}
+        (Dados por mês, exercício e tipo. Fonte: ${rpcProducedContent ? 'RPC get_athlete_history_summary' : 'query direta workouts_logs + workouts'})
+        ${historySummaryText || 'Nenhum dado de treino encontrado nos últimos 6 meses.'}
 
         [FORMATO — JSON PURO SEM MARKDOWN]
         {
