@@ -114,6 +114,7 @@ async function handleCreatePlanStep(job: any, admin: any) {
       user_id: job.user_id,
       email_utilizador: p.email_utilizador,
       ai_coach_name: p.ai_coach_name,
+      training_sessions: p.training_sessions || [],
     });
     await admin.from('ai_generation_jobs').update({
       step_1_result: result, current_step: 2, updated_at: new Date().toISOString(),

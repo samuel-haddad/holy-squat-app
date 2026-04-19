@@ -340,13 +340,23 @@ serve(async (req) => {
       if (histErr) console.warn('[RPC] get_athlete_history_summary error:', histErr);
       const historySummaryText = formatHistorySummary(historySummaryRaw);
 
-      // ── Training sessions ──
-      const { data: sessionsData } = await supabaseClient
-        .from('training_sessions')
-        .select('session_number, locations, duration_minutes, schedule, time_of_day, notes')
-        .eq('user_id', profile.id)
-        .order('session_number', { ascending: true });
-      const trainingSessions = sessionsData || [];
+      // ── Training sessions: prefer payload (forwarded by orchestrator), DB as fallback ──
+      let trainingSessions: any[] = [];
+      if (payload.training_sessions && payload.training_sessions.length > 0) {
+        trainingSessions = payload.training_sessions;
+        console.log(`[sessions] Using ${trainingSessions.length} sessions from payload`);
+      } else {
+        const sessionFilter = user_id ? { user_id } : (profile.id ? { user_id: profile.id } : null);
+        if (sessionFilter) {
+          const { data: sessionsData } = await supabaseClient
+            .from('training_sessions')
+            .select('session_number, locations, duration_minutes, schedule, time_of_day, notes')
+            .eq('user_id', sessionFilter.user_id)
+            .order('session_number', { ascending: true });
+          trainingSessions = sessionsData || [];
+          console.log(`[sessions] DB fallback returned ${trainingSessions.length} sessions for user_id=${sessionFilter.user_id}`);
+        }
+      }
 
       // ── Technique feedbacks ──
       let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
