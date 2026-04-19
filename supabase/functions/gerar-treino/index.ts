@@ -309,11 +309,15 @@ serve(async (req) => {
     // RPC aggregation (~5k tokens vs ~50k previously).
     // =========================================================
     if (acao === 'gerar_analise_historica') {
-      const { email_utilizador } = payload;
+      const { email_utilizador, user_id } = payload;
 
       // Parallel DB fetches — lean column selection, capped limits
+      const profileQuery = user_id 
+        ? supabaseClient.from('profiles').select('*').eq('id', user_id).single()
+        : supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single();
+
       const [profileRes, prRes, benchRes, athleteStatsRes] = await Promise.all([
-        supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single(),
+        profileQuery,
         supabaseClient.from('pr_log')
           .select('exercise, value, unit, date')
           .eq('user_email', email_utilizador)
@@ -443,17 +447,18 @@ serve(async (req) => {
     else if (acao === 'criar_plano') {
       const {
         email_utilizador,
+        user_id,
         analise_historica,
         diretrizes_plano,
         training_sessions,
       } = payload;
 
       // Self-fetch profile from DB for safety/completeness
-      const { data: profileDb } = await supabaseClient
-        .from('profiles')
-        .select('*')
-        .eq('email', email_utilizador)
-        .single();
+      const profileQuery = user_id 
+        ? supabaseClient.from('profiles').select('*').eq('id', user_id).single()
+        : supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single();
+
+      const { data: profileDb } = await profileQuery;
 
       const profile = profileDb || {};
       const analise = analise_historica || {};
@@ -514,6 +519,7 @@ serve(async (req) => {
     else if (acao === 'gerar_proximo_ciclo') {
       const {
         email_utilizador,
+        user_id,
         bloco_atual,
         performance_stats,
         training_sessions,
@@ -522,11 +528,11 @@ serve(async (req) => {
       } = payload;
 
       // Fetch profile from DB for session structure
-      const { data: profileDb } = await supabaseClient
-        .from('profiles')
-        .select('*')
-        .eq('email', email_utilizador)
-        .single();
+      const profileQuery = user_id 
+        ? supabaseClient.from('profiles').select('*').eq('id', user_id).single()
+        : supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single();
+
+      const { data: profileDb } = await profileQuery;
 
       const profile = profileDb || {};
       const bloco = bloco_atual || {};
@@ -638,6 +644,7 @@ serve(async (req) => {
     else if (acao === 'gerar_detalhamento') {
       const {
         email_utilizador,
+        user_id,
         visao_semanal,
         meso_context,
       } = payload;
@@ -645,8 +652,12 @@ serve(async (req) => {
       const ctx = meso_context || {};
       
       let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
-      if (email_utilizador) {
-        const { data: profileDb } = await supabaseClient.from('profiles').select('id').eq('email', email_utilizador).single();
+      if (user_id || email_utilizador) {
+        const profileQuery = user_id 
+          ? supabaseClient.from('profiles').select('id').eq('id', user_id).single()
+          : supabaseClient.from('profiles').select('id').eq('email', email_utilizador).single();
+
+        const { data: profileDb } = await profileQuery;
         if (profileDb?.id) {
           const { data: tfData } = await supabaseClient
             .from('technique_feedbacks')

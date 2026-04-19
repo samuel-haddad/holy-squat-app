@@ -111,6 +111,7 @@ async function handleCreatePlanStep(job: any, admin: any) {
     console.log(`[orch] create_plan step 1: gerar_analise_historica`);
     const result = await callGerarTreino({
       acao: 'gerar_analise_historica',
+      user_id: job.user_id,
       email_utilizador: p.email_utilizador,
       ai_coach_name: p.ai_coach_name,
     });
@@ -122,6 +123,7 @@ async function handleCreatePlanStep(job: any, admin: any) {
     console.log(`[orch] create_plan step 2: criar_plano`);
     const result = await callGerarTreino({
       acao: 'criar_plano',
+      user_id: job.user_id,
       email_utilizador: p.email_utilizador,
       analise_historica: job.step_1_result,
       diretrizes_plano: p.diretrizes_plano,
@@ -213,6 +215,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
 
     const result = await callGerarTreino({
       acao: 'gerar_proximo_ciclo',
+      user_id: job.user_id,
       email_utilizador: p.email_utilizador,
       bloco_atual: proximoMeso,
       performance_stats: performanceStats,
@@ -252,6 +255,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     const results = await Promise.all(weeks.map(weekNum =>
       callGerarTreino({
         acao: 'gerar_detalhamento',
+        user_id: job.user_id,
         email_utilizador: p.email_utilizador,
         visao_semanal: weekGroups[weekNum],
         meso_context: {
@@ -286,10 +290,9 @@ async function handleGenerateCycleStep(job: any, admin: any) {
 // =========================================================
 async function persistCreatePlan(job: any, planResult: any, admin: any): Promise<string> {
   const p = job.input_params;
+  const userId = job.user_id;
 
-  const { data: profile } = await admin
-    .from('profiles').select('id').eq('email', p.email_utilizador).single();
-  if (!profile?.id) throw new Error(`User not found: ${p.email_utilizador}`);
+  if (!userId) throw new Error(`User ID missing in job ${job.id}`);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -301,7 +304,7 @@ async function persistCreatePlan(job: any, planResult: any, admin: any): Promise
     .gt('date', today);
 
   const { data: planRecord, error } = await admin.from('training_plans').insert({
-    user_id: profile.id,
+    user_id: userId,
     start_date: p.diretrizes_plano?.data_inicio,
     end_date: p.diretrizes_plano?.data_fim || null,
     notes: p.diretrizes_plano?.notas || null,
