@@ -224,6 +224,8 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       email_utilizador: p.email_utilizador,
       bloco_atual: proximoMeso,
       performance_stats: performanceStats,
+      // Also pass cycleSnapshot so the LLM can interpret athlete KPIs in context
+      cycle_snapshot: cycleSnapshot,
       contexto_macrociclo: contextoMacrociclo,
       training_sessions: trainingSessions,
       data_inicio_meso: p.data_inicio_meso,
@@ -231,7 +233,14 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     });
 
     await admin.from('ai_generation_jobs').update({
-      step_1_result: { ...result, _blocoAtual: proximoMeso, _cycleSnapshot: cycleSnapshot, _trainingSessions: trainingSessions },
+      step_1_result: {
+        ...result,
+        _blocoAtual: proximoMeso,
+        _cycleSnapshot: cycleSnapshot,
+        // Store performanceStats so persistGenerateCycle (step 2) can write kpis/charts to progress_analysis
+        _performanceStats: performanceStats,
+        _trainingSessions: trainingSessions,
+      },
       current_step: 2, updated_at: new Date().toISOString(),
     }).eq('id', job.id);
 
@@ -339,15 +348,27 @@ async function persistGenerateCycle(job: any, exercicios: any[], admin: any) {
   let planSummary: any = {};
   try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) {}
 
-  // Update training plan with cycle data and cycle-specific snapshot in progress_analysis
-  // Also REPLACEworkouts_plan_table as requested by user ("substitua a sessão do ciclo atual")
+  // Recover performanceStats that was stashed in step_1_result during step 1.
+  // Its kpis (completion_rate, weekly_freq, load_delta, pr_recovery, neglected_type)
+  // and charts (planned_vs_realized, load_vs_pse, volume_by_group) are needed by Flutter
+  // to render _buildProgressKpisGrid and the three progress charts.
+  const performanceStats = cicloResult._performanceStats || null;
+
+  // Validate cycleSnapshot has real data before saving (same guard as create_plan flow)
+  const rawSnapshot = cicloResult._cycleSnapshot;
+  const hasValidSnapshot = rawSnapshot && rawSnapshot.kpis && rawSnapshot.radar !== undefined;
+
   await admin.from('training_plans').update({
     progress_analysis: JSON.stringify({
+      // Narrative text fields from the LLM (texto, aderencia, evolucao)
       ...(cicloResult.analiseCicloAnterior || {}),
-      cycle_snapshot: cicloResult._cycleSnapshot || null,
+      // Structured KPIs from get_mesocycle_performance_stats → renders progress grid + charts
+      kpis: performanceStats?.kpis || null,
+      charts: performanceStats?.charts || null,
+      // Athlete snapshot from get_athlete_stats_by_range → renders cycle_snapshot section
+      cycle_snapshot: hasValidSnapshot ? rawSnapshot : null,
     }),
     workouts_plan_table: [
-      // We no longer append old weeks: ...(p.current_workouts_table || []),
       ...(cicloResult.visaoSemanal || []),
     ],
   }).eq('id', p.plano_id);

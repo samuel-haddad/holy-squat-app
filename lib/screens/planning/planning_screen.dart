@@ -233,32 +233,25 @@ class _PlanningScreenState extends State<PlanningScreen> {
         _buildContainer(
           title: 'Histórico',
           shareText: _formatHistoricoForShare(macroJson),
-          children: [_buildHistoricoContent(macroJson)],
+          children: [
+            if (stats != null) ...[
+              _buildBigNumbersGrid(stats['kpis']),
+              const SizedBox(height: 24),
+              _buildCapabilitiesRadar(stats['radar']),
+              const SizedBox(height: 24),
+              _buildActivityHeatmap(stats['heatmap']),
+              const SizedBox(height: 24),
+              const Divider(color: Colors.white10),
+              const SizedBox(height: 16),
+            ],
+            _buildHistoricoContent(macroJson),
+          ],
         ),
         const SizedBox(height: 16),
         _buildContainer(
           title: 'Visão Geral',
           shareText: _formatActualPlanForShare(summaryJson ?? {}, ""),
           children: [
-            if (stats == null)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Text(
-                    'Estatísticas estáticas do plano indisponíveis.\n(Recurso disponível para novos planos/ciclos)',
-                    style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 10),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              )
-            else ...[
-              _buildBigNumbersGrid(stats['kpis']),
-              const SizedBox(height: 24),
-              _buildCapabilitiesRadar(stats['radar']),
-              const SizedBox(height: 24),
-              _buildActivityHeatmap(stats['heatmap']),
-            ],
-            const SizedBox(height: 24),
             _buildVisaoGeralContent(summaryJson),
           ],
         ),

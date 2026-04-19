@@ -269,10 +269,18 @@ serve(async (req) => {
   }
 
   try {
+    // Anon client used for user-scoped queries (profiles, technique_feedbacks, etc.)
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    )
+
+    // Admin client used for RPCs that require service role (called internally by orchestrator
+    // which passes its service role key as Authorization, bypassing RLS correctly)
+    const adminClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
     const payload = await req.json()
@@ -328,8 +336,16 @@ serve(async (req) => {
           .eq('user_email', email_utilizador)
           .order('logged_at', { ascending: false })
           .limit(20),
-        supabaseClient.rpc('get_athlete_planning_stats', { p_email: email_utilizador })
+        // Use adminClient here: when called from orchestrate-treino, the Authorization header
+        // carries the service role key (not a user JWT), so the anon client would fail RLS.
+        adminClient.rpc('get_athlete_planning_stats', { p_email: email_utilizador })
       ]);
+
+      if (athleteStatsRes.error) {
+        console.warn('[RPC] get_athlete_planning_stats error:', athleteStatsRes.error);
+      } else {
+        console.log('[RPC] get_athlete_planning_stats OK. kpis keys:', Object.keys(athleteStatsRes.data?.kpis || {}));
+      }
 
       const profile = profileRes.data || {};
       const athleteStats = payload.athlete_stats_summary || (athleteStatsRes?.data?.kpis) || {};
@@ -442,9 +458,16 @@ serve(async (req) => {
       console.log(`gerar_analise_historica | coach: ${ai_coach_name ?? 'default'}`);
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_analise_historica', 8000);
 
+      // Only include athlete_stats_snapshot if the RPC returned real data.
+      // An empty object {} would make Flutter think stats are available but
+      // render nothing (kpis/radar/heatmap keys missing). Use null so Flutter
+      // shows the correct "não disponível" message instead.
+      const statsData = athleteStatsRes?.data;
+      const hasValidStats = statsData && statsData.kpis && statsData.radar !== undefined;
+
       const responseBody = {
         ...result,
-        athlete_stats_snapshot: athleteStatsRes?.data || {}
+        athlete_stats_snapshot: hasValidStats ? statsData : null
       };
 
       return new Response(JSON.stringify(responseBody), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
@@ -533,6 +556,7 @@ serve(async (req) => {
         user_id,
         bloco_atual,
         performance_stats,
+        cycle_snapshot,
         training_sessions,
         data_inicio_meso,
         contexto_macrociclo,
@@ -548,6 +572,7 @@ serve(async (req) => {
       const profile = profileDb || {};
       const bloco = bloco_atual || {};
       const perfStats = performance_stats || {};
+      const cycleSnap = cycle_snapshot || null;
       const sessions = training_sessions || [];
       const macroCtx = contexto_macrociclo || {};
 
@@ -607,10 +632,17 @@ serve(async (req) => {
         [DICIONÁRIO DE MÉTRICAS]
         ${METRICS_DEFINITIONS}
 
-        [KPIs DO CICLO ANTERIOR]
+        [KPIs TÉCNICOS DO CICLO ANTERIOR — get_mesocycle_performance_stats]
+        (Taxa de conclusão, delta de carga, tipos negligenciados, recuperação de PRs, gráficos semanais)
         ${JSON.stringify(perfStats)}
         (Se os dados acima estiverem vazios ou zerados, o atleta não treinou ou não registrou logs.
          Nesse caso, analiseCicloAnterior.texto deve dizer que não há dados de progresso para este ciclo.)
+
+        [KPIs GERAIS DO ATLETA — SNAPSHOT DO PERÍODO DO CICLO ENCERRADO]
+        (Use as definições do DICIONÁRIO acima para interpretar estes valores)
+        ${cycleSnap ? JSON.stringify(cycleSnap.kpis) : 'Sem dados disponíveis.'}
+        (Use estes KPIs para calibrar a intensidade e o volume do próximo ciclo.
+         Aderência < 70%: reduza volume. PSE Médio > 8: inclua semana de deload.)
 
         [REGRAS DE CALENDÁRIO]
         - week = intra-mesociclo (começa em 1).
