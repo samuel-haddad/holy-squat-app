@@ -1,6 +1,4 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/screens/main_screen.dart';
@@ -16,23 +14,12 @@ Future<void> main() async {
 
   await initializeDateFormatting('pt_BR', null);
 
-  // Carregamento opcional do .env para desenvolvimento local
-  // No Web prod, o arquivo não existirá e usará String.fromEnvironment
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    debugPrint("Note: .env file not found, using environment variables.");
-  }
-
-  // Lógica Híbrida: Prioriza --dart-define (Prod) -> Fallback DotEnv (Local)
-  const String envUrl = String.fromEnvironment('SUPABASE_URL');
-  const String envKey = String.fromEnvironment('SUPABASE_ANON_KEY');
-
-  final String supabaseUrl = envUrl.isNotEmpty ? envUrl : (dotenv.isInitialized ? (dotenv.env['SUPABASE_URL'] ?? '') : '');
-  final String supabaseAnonKey = envKey.isNotEmpty ? envKey : (dotenv.isInitialized ? (dotenv.env['SUPABASE_ANON_KEY'] ?? '') : '');
+  // Lógica Nativa: Usa String.fromEnvironment (preenchido via --dart-define no CI ou --dart-define-from-file local)
+  const String supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
   if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
-    debugPrint("WARNING: Supabase credentials are missing!");
+    debugPrint("WARNING: Supabase credentials are missing! Make sure to use --dart-define or --dart-define-from-file");
   }
 
   await Supabase.initialize(
