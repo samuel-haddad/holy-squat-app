@@ -6,6 +6,7 @@ import '../models/ai_workout_response.dart';
 import '../models/training_session.dart';
 import '../repositories/workout_repository.dart';
 import '../services/supabase_service.dart';
+import '../core/user_state.dart';
 
 enum WorkoutState { initial, loading, success, error }
 
@@ -44,9 +45,9 @@ class WorkoutController extends ChangeNotifier {
   // =========================================================
   // Stats
   // =========================================================
-  Future<void> fetchPlanningStats(String email) async {
+  Future<void> fetchPlanningStats(String email, double weight) async {
     try {
-      _athleteStats = await _repository.fetchAthletePlanningStats(email);
+      _athleteStats = await _repository.fetchAthletePlanningStats(email, weight);
       notifyListeners();
     } catch (e) {
       print('Error fetching athlete statistics: $e');
@@ -72,7 +73,8 @@ class WorkoutController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await fetchPlanningStats(emailUtilizador);
+      final double userWeight = double.tryParse(UserState.weight.value) ?? 0.0;
+      await fetchPlanningStats(emailUtilizador, userWeight);
 
       final jobId = await _repository.criarJobGeracao(
         jobType: 'create_plan',

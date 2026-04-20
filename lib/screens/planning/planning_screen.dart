@@ -529,7 +529,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
     final items = [
       {'label': 'Aderência', 'value': '${kpis['adherence']}%', 'icon': Icons.bolt},
       {'label': 'PSE Médio', 'value': '${kpis['avg_pse']}', 'icon': Icons.speed},
-      {'label': 'Power Index', 'value': '${kpis['power_index']}', 'icon': Icons.fitness_center},
+      {'label': 'IFR', 'value': '${kpis['ifr'] ?? kpis['power_index'] ?? 0}', 'icon': Icons.fitness_center},
       {'label': 'Evolução', 'value': '+${kpis['best_evolution']?['percent']}%', 'icon': Icons.trending_up, 'sub': kpis['best_evolution']?['exercise']},
       {'label': 'Streak', 'value': '${kpis['streak']} d', 'icon': Icons.fireplace},
       {'label': 'Freq. Sem.', 'value': '${kpis['weekly_freq']}/w', 'icon': Icons.calendar_view_week},

@@ -27,8 +27,8 @@ const METRICS_DEFINITIONS = `
 [DICIONÁRIO E INTERPRETAÇÃO DE MÉTRICAS (KPIs)]
 1. Adherence (Taxa de Adesão): % de exercícios planejados concluídos nos últimos 30 dias. 
    - Interpretação: > 90% (Alta disciplina); < 70% (Necessário reduzir volume ou ajustar rotina).
-2. Power Index (Índice de Força Bruta): Soma dos PRs em Back Squat, Deadlift e Press.
-   - Interpretação: Indica a base de força máxima para movimentos complexos e WODs pesados.
+2. IFR (Índice de Força Relativa): Soma dos melhores PRs em Back Squat, Deadlift e Press dividida pelo peso corporal.
+   - Interpretação: Exprime a força bruta em relação ao peso do atleta. > 5.0 (Excelente); 3.0-4.0 (Intermediário).
 3. Avg_PSE (Média de Esforço Percebido): Média da escala 1-10 nos últimos 90 dias.
    - Interpretação: 8-9 (Limite/Risco de burnout); 5-6 (Manutenção/Base aeróbica).
 4. Current_Workload (IEA): Volume total * Intensidade nos últimos 30 dias.
@@ -324,7 +324,7 @@ serve(async (req) => {
         ? supabaseClient.from('profiles').select('*').eq('id', user_id).single()
         : supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single();
 
-      const [profileRes, prRes, benchRes, athleteStatsRes] = await Promise.all([
+      const [profileRes, prRes, benchRes] = await Promise.all([
         profileQuery,
         // Correct columns: 'pr' and 'pr_unit' (NOT 'value'/'unit' which don't exist)
         adminClient.from('pr_log')
@@ -336,11 +336,17 @@ serve(async (req) => {
         adminClient.from('benchmarks_logs')
           .select('bench_exercise, result, date')
           .order('date', { ascending: false })
-          .limit(50),
-        // Use adminClient here: when called from orchestrate-treino, the Authorization header
-        // carries the service role key (not a user JWT), so the anon client would fail RLS.
-        adminClient.rpc('get_athlete_planning_stats', { p_email: email_utilizador })
+          .limit(50)
       ]);
+
+      const profile = profileRes.data || {};
+      const userWeight = Number(profile.weight) || 0;
+
+      // Now call RPC with weight after fetching profile
+      const athleteStatsRes = await adminClient.rpc('get_athlete_planning_stats', { 
+        p_email: email_utilizador,
+        p_user_weight: userWeight
+      });
 
       if (athleteStatsRes.error) {
         console.warn('[RPC] get_athlete_planning_stats error:', athleteStatsRes.error);
@@ -476,17 +482,23 @@ serve(async (req) => {
         console.log(`[fallback-history] Built. Months: ${Object.keys(byMonth).length}, exercises: ${topExercicios.length}`);
       }
 
-      // ── Power Index: compute from PR data (fallback for DB fn which has type-mismatch on numeric col) ──
+      // ── IFR: compute from PR data (fallback for DB fn which has type-mismatch on numeric col or returns 0) ──
       // The SQL casts NULLIF(pr,'') which fails when pr is NUMERIC. We sum max PRs of key exercises.
-      const POWER_EXERCISE_KEYWORDS = ['squat', 'deadlift', 'dead lift', 'levant', 'agachament',
-        'shoulder press', 'strict press', 'overhead press', 'desenvolv', 'development'];
-      const powerIndexFromPRs = prMaxPerExercise
-        .filter((r: any) => POWER_EXERCISE_KEYWORDS.some(k => r.exercise?.toLowerCase().includes(k)))
-        .reduce((sum: number, r: any) => sum + (Number(r.pr) || 0), 0);
-      const effectivePowerIndex = (athleteStats.power_index && athleteStats.power_index > 0)
-        ? athleteStats.power_index
-        : Math.round(powerIndexFromPRs);
-      console.log(`[power-index] DB: ${athleteStats.power_index}, computed: ${powerIndexFromPRs}, using: ${effectivePowerIndex}`);
+      const IFR_EXERCISE_KEYWORDS = ['back squat', 'deadlift', 'shoulder press', 'strict press', 'overhead press'];
+      const ifrSumFromPRs = prMaxPerExercise
+        .filter((r: any) => IFR_EXERCISE_KEYWORDS.some(k => r.exercise?.toLowerCase().includes(k)))
+        .reduce((sum: number, r: any) => {
+          let val = Number(r.pr) || 0;
+          if (['lb', 'lbs', 'libra', 'libras'].includes(String(r.pr_unit).toLowerCase().trim())) {
+            val = val * 0.453592;
+          }
+          return sum + val;
+        }, 0);
+      const computedIfr = userWeight > 0 ? Number((ifrSumFromPRs / userWeight).toFixed(2)) : 0;
+      const effectiveIfr = (athleteStats.ifr && athleteStats.ifr > 0)
+        ? athleteStats.ifr
+        : computedIfr;
+      console.log(`[ifr] DB: ${athleteStats.ifr}, computed: ${computedIfr}, using: ${effectiveIfr}`);
 
       // ── Training sessions: prefer payload (forwarded by orchestrator), DB as fallback ──
       let trainingSessions: any[] = [];
@@ -544,13 +556,14 @@ serve(async (req) => {
         [KPIs DETERMINÍSTICOS DO ATLETA]
         - Aderência Global: ${athleteStats.adherence}%
         - PSE Médio (90 dias): ${athleteStats.avg_pse}
-        - Power Index (soma PRs força): ${effectivePowerIndex}${effectivePowerIndex !== athleteStats.power_index ? ' (calculado dos PRs registrados)' : ''}
+        - IFR (Índice de Força Relativa): ${effectiveIfr}${effectiveIfr !== athleteStats.ifr ? ' (calculado dos PRs registrados)' : ''}
         - Evolução de Esforço: ${athleteStats.best_evolution?.percent}% vs baseline 6 meses
         - Streak Atual: ${athleteStats.streak} semanas
         - Frequência Semanal: ${athleteStats.weekly_freq} treinos/semana
 
         [PERFIL DO ATLETA]
         - Nome: ${profile.name}
+        - Peso Corporal: ${userWeight} kg
         - About: ${profile.about_me || 'Não informado'}
         - Skills: ${profile.skills_training || 'Não informado'}
         - Lesões: ${profile.lesoes || 'Nenhuma registrada'}
@@ -564,7 +577,7 @@ serve(async (req) => {
         ${formatTrainingSessions(trainingSessions)}
 
         [PRs DE FORÇA — MELHOR MARCA POR EXERCÍCIO]
-        *OBRIGATÓRIO: Cite estes números na análise. O Power Index é a soma dos PRs de força bruta.*
+        *OBRIGATÓRIO: Cite estes números na análise. O IFR é a soma dos melhores PRs fundamentais normalizados por KG dividida pelo peso corporal.*
         ${prMaxPerExercise.length > 0
           ? prMaxPerExercise.map((r: any) => `- ${r.exercise}: ${r.pr} ${r.pr_unit || 'kg'} (${r.date})`).join('\n        ')
           : 'Nenhum PR registrado.'}

@@ -36,12 +36,15 @@ class WorkoutRepository {
   // =========================================================
   // Fetches statistics for the planning dashboard
   // =========================================================
-  Future<Map<String, dynamic>?> fetchAthletePlanningStats(String email) async {
+  Future<Map<String, dynamic>?> fetchAthletePlanningStats(String email, double weight) async {
     try {
       await _refreshSessionIfNeeded();
       final response = await _supabase.rpc(
         'get_athlete_planning_stats',
-        params: {'p_email': email},
+        params: {
+          'p_email': email,
+          'p_user_weight': weight,
+        },
       );
       return response as Map<String, dynamic>?;
     } catch (e) {

@@ -28,8 +28,8 @@ Future<void> main() async {
   const String envUrl = String.fromEnvironment('SUPABASE_URL');
   const String envKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
-  final String supabaseUrl = envUrl.isNotEmpty ? envUrl : (dotenv.env['SUPABASE_URL'] ?? '');
-  final String supabaseAnonKey = envKey.isNotEmpty ? envKey : (dotenv.env['SUPABASE_ANON_KEY'] ?? '');
+  final String supabaseUrl = envUrl.isNotEmpty ? envUrl : (dotenv.isInitialized ? (dotenv.env['SUPABASE_URL'] ?? '') : '');
+  final String supabaseAnonKey = envKey.isNotEmpty ? envKey : (dotenv.isInitialized ? (dotenv.env['SUPABASE_ANON_KEY'] ?? '') : '');
 
   if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
     debugPrint("WARNING: Supabase credentials are missing!");
