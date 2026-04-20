@@ -312,9 +312,13 @@ class SupabaseService {
 
   // Fetch all latest PRs by grouping pr_logs
   static Future<List<Map<String, dynamic>>> getLatestPrs() async {
+    final user = client.auth.currentUser;
+    if (user == null || user.email == null) return [];
+
     final response = await client
         .from('pr_log')
         .select()
+        .eq('user_email', user.email!)
         .order('id', ascending: false);
 
     final List<Map<String, dynamic>> logs = List<Map<String, dynamic>>.from(
@@ -336,9 +340,13 @@ class SupabaseService {
   static Future<List<Map<String, dynamic>>> getPrLogsForExercise(
     String exercise,
   ) async {
+    final user = client.auth.currentUser;
+    if (user == null || user.email == null) return [];
+
     final response = await client
         .from('pr_log')
         .select()
+        .eq('user_email', user.email!)
         .eq('exercise', exercise)
         .order('date', ascending: true);
     return List<Map<String, dynamic>>.from(response);
@@ -366,12 +374,64 @@ class SupabaseService {
     String unit,
     String date,
   ) async {
+    final user = client.auth.currentUser;
+    if (user == null || user.email == null) throw Exception("Not authenticated");
+
     await client.from('pr_log').insert({
+      'user_email': user.email,
       'exercise': exercise,
       'pr': pr,
       'pr_unit': unit,
       'date': date,
     });
+  }
+
+  static Future<List<String>> getUniqueExercises() async {
+    try {
+      // 1. Tentar da tabela 'pr' (conforme solicitado)
+      final responsePr = await client.from('pr').select('exercise');
+      final List<String> exercisesPr = (responsePr as List)
+          .map((e) => e['exercise'] as String)
+          .toList();
+      
+      if (exercisesPr.isNotEmpty) {
+        return exercisesPr.toSet().toList()..sort();
+      }
+    } catch (e) {
+      debugPrint("Error fetching from table 'pr': $e");
+    }
+
+    // 2. Fallback: exercise_library
+    try {
+      final responseLib = await client.from('exercise_library').select('name');
+      final List<String> exercisesLib = (responseLib as List)
+          .map((e) => e['name'] as String)
+          .toList();
+      if (exercisesLib.isNotEmpty) {
+        return exercisesLib.toSet().toList()..sort();
+      }
+    } catch (e) {
+      debugPrint("Error fetching from 'exercise_library': $e");
+    }
+
+    // 3. Fallback: pr_log (exercícios únicos já cadastrados pelo próprio usuário)
+    try {
+      final user = client.auth.currentUser;
+      if (user != null && user.email != null) {
+        final responseLog = await client
+            .from('pr_log')
+            .select('exercise')
+            .eq('user_email', user.email!);
+        final List<String> exercisesLog = (responseLog as List)
+            .map((e) => e['exercise'] as String)
+            .toList();
+        return exercisesLog.toSet().toList()..sort();
+      }
+    } catch (e) {
+      debugPrint("Error fetching from 'pr_log' fallback: $e");
+    }
+
+    return [];
   }
 
   // Fetch all benchmarks

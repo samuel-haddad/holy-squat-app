@@ -3,6 +3,7 @@ import 'package:holy_squat_app/theme/app_theme.dart';
 import 'package:holy_squat_app/widgets/app_drawer.dart';
 import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:holy_squat_app/screens/pr_detail_screen.dart';
+import 'package:holy_squat_app/screens/pr_form_screen.dart';
 import 'package:holy_squat_app/widgets/theme_toggle_button.dart';
 
 class PrsScreen extends StatefulWidget {
@@ -42,7 +43,17 @@ class _PrsScreenState extends State<PrsScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const PrFormScreen()),
+                  );
+                  if (result == true) {
+                    setState(() {
+                      _prsFuture = SupabaseService.getLatestPrs();
+                    });
+                  }
+                },
                 icon: const Icon(Icons.add, color: Colors.white),
                 label: const Text('Add', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(

@@ -55,6 +55,7 @@ data_pipeline/raw_data/
 # 2. Ignorar chaves de API e credenciais de banco de dados
 data_pipeline/.env
 .env
+env.json
 
 # 3. Ignorar ambientes virtuais e cache do Python
 data_pipeline/venv/

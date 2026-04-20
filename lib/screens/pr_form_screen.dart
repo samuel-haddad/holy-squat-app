@@ -5,9 +5,9 @@ import 'package:holy_squat_app/services/supabase_service.dart';
 import 'package:intl/intl.dart';
 
 class PrFormScreen extends StatefulWidget {
-  final String exerciseName;
+  final String? exerciseName;
   final Map<String, dynamic>? existingPr;
-  const PrFormScreen({super.key, required this.exerciseName, this.existingPr});
+  const PrFormScreen({super.key, this.exerciseName, this.existingPr});
 
   @override
   State<PrFormScreen> createState() => _PrFormScreenState();
@@ -16,15 +16,22 @@ class PrFormScreen extends StatefulWidget {
 class _PrFormScreenState extends State<PrFormScreen> {
   final _formKey = GlobalKey<FormState>();
   
+  final _exerciseController = TextEditingController();
   final _prController = TextEditingController();
   final _unitController = TextEditingController();
   final _dateController = TextEditingController();
   bool _isLoading = false;
+  List<String> _exerciseSuggestions = [];
 
   @override
   void initState() {
     super.initState();
+    _loadExerciseSuggestions();
+    _exerciseController.text = widget.exerciseName ?? '';
     if (widget.existingPr != null) {
+      if (widget.exerciseName == null) {
+        _exerciseController.text = widget.existingPr!['exercise']?.toString() ?? '';
+      }
       _prController.text = widget.existingPr!['pr']?.toString() ?? '';
       _unitController.text = widget.existingPr!['pr_unit']?.toString() ?? 'kg';
       
@@ -41,8 +48,18 @@ class _PrFormScreenState extends State<PrFormScreen> {
     }
   }
 
+  Future<void> _loadExerciseSuggestions() async {
+    final suggestions = await SupabaseService.getUniqueExercises();
+    if (mounted) {
+      setState(() {
+        _exerciseSuggestions = suggestions;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _exerciseController.dispose();
     _prController.dispose();
     _unitController.dispose();
     _dateController.dispose();
@@ -65,14 +82,94 @@ class _PrFormScreenState extends State<PrFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                widget.exerciseName,
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
+              if (widget.exerciseName != null && widget.exerciseName!.isNotEmpty)
+                Text(
+                  widget.exerciseName!,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                )
+              else
+                Autocomplete<String>(
+                  initialValue: TextEditingValue(text: _exerciseController.text),
+                  optionsBuilder: (TextEditingValue textEditingValue) {
+                    if (textEditingValue.text.isEmpty) {
+                      return _exerciseSuggestions;
+                    }
+                    return _exerciseSuggestions.where((String option) {
+                      return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                    });
+                  },
+                  onSelected: (String selection) {
+                    _exerciseController.text = selection;
+                  },
+                  fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                    // Sincronizar o valor do campo de texto com o controlador principal
+                    if (controller.text != _exerciseController.text && _exerciseController.text.isNotEmpty && controller.text.isEmpty) {
+                       controller.text = _exerciseController.text;
+                    }
+                    
+                    return TextFormField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      style: const TextStyle(color: Colors.white),
+                      onChanged: (val) => _exerciseController.text = val,
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) return 'Required';
+                        return null;
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Exercise Name',
+                        labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: const BorderSide(color: AppTheme.cardColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: const BorderSide(color: AppTheme.primaryTeal),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        filled: true,
+                        fillColor: AppTheme.cardColor,
+                      ),
+                    );
+                  },
+                ),
               const SizedBox(height: 32),
               _buildTextField('New Record (PR)', _prController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
               const SizedBox(height: 16),
-              _buildTextField('Unit (kg, lb, secs)', _unitController),
+              
+              DropdownButtonFormField<String>(
+                value: _unitController.text.isEmpty ? 'kg' : _unitController.text,
+                dropdownColor: AppTheme.cardColor,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Unit',
+                  labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: AppTheme.cardColor),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: AppTheme.primaryTeal),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  filled: true,
+                  fillColor: AppTheme.cardColor,
+                ),
+                items: ['kg', 'lb'].map((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value),
+                  );
+                }).toList(),
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      _unitController.text = newValue;
+                    });
+                  }
+                },
+              ),
+
               const SizedBox(height: 16),
               
               InkWell(
@@ -130,7 +227,7 @@ class _PrFormScreenState extends State<PrFormScreen> {
                          if (widget.existingPr != null) {
                            await SupabaseService.updatePrLog(widget.existingPr!['id'], prVal, unit, isoDate);
                          } else {
-                           await SupabaseService.insertPrLog(widget.exerciseName, prVal, unit, isoDate);
+                           await SupabaseService.insertPrLog(_exerciseController.text.trim(), prVal, unit, isoDate);
                          }
                          if (context.mounted) Navigator.pop(context, true);
                        } catch (e) {
