@@ -42,7 +42,18 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const BenchmarkFormScreen(
+                      exerciseName: '',
+                      initialUnit: 'reps',
+                    )),
+                  );
+                  if (result == true) {
+                    setState(() { _benchmarksFuture = SupabaseService.getBenchmarks(); });
+                  }
+                },
                 icon: const Icon(Icons.add, color: Colors.white),
                 label: const Text('Add', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(
@@ -102,7 +113,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                     separatorBuilder: (context, index) => const Divider(color: AppTheme.cardColor, height: 1),
                     itemBuilder: (context, index) {
                       final benchmark = benchmarks[index];
-                      final ex = benchmark['bench_exercise'] ?? 'Unknown';
+                      final ex = benchmark['exercise'] ?? 'Unknown';
                       
                       String resultStr = '-';
                       final logs = benchmark['benchmarks_logs'];
@@ -115,7 +126,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                           final result = await Navigator.push(
                             context,
                             MaterialPageRoute(builder: (_) => BenchmarkFormScreen(
-                              exerciseName: benchmark['bench_exercise'] ?? 'Exercise',
+                              exerciseName: benchmark['exercise'] ?? 'Exercise',
                               initialUnit: benchmark['result_unit'] ?? 'reps',
                             )),
                           );

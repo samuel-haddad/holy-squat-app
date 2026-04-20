@@ -332,9 +332,9 @@ serve(async (req) => {
           .eq('user_email', email_utilizador)
           .order('date', { ascending: false })
           .limit(100),  // fetch all to compute max per exercise below
-        // Correct columns: 'bench_exercise', 'result', 'date' (NOT 'benchmark_name'/'result_unit'/'logged_at')
+        // Correct columns: 'exercise', 'result', 'date' (NOT 'benchmark_name'/'result_unit'/'logged_at')
         adminClient.from('benchmarks_logs')
-          .select('bench_exercise, result, date')
+          .select('exercise, result, date')
           .order('date', { ascending: false })
           .limit(50)
       ]);
@@ -370,7 +370,7 @@ serve(async (req) => {
         .sort((a: any, b: any) => a.exercise.localeCompare(b.exercise));
       console.log(`[prs] ${prMaxPerExercise.length} unique exercises with PRs`);
 
-      // Benchmarks: one row per exercise (already unique by bench_exercise in the table)
+      // Benchmarks: one row per exercise (already unique by exercise in the table)
       const benchData = benchRes.data || [];
       console.log(`[benchmarks] ${benchData.length} benchmark records`);
 
@@ -585,7 +585,7 @@ serve(async (req) => {
         [BENCHMARKS FUNCIONAIS — RESULTADOS MAIS RECENTES]
         *OBRIGATÓRIO: Cite estes valores como referência de condicionamento e capacidade funcional.*
         ${benchData.length > 0
-          ? benchData.map((b: any) => `- ${b.bench_exercise}: ${b.result} (${b.date || 'data não registrada'})`).join('\n        ')
+          ? benchData.map((b: any) => `- ${b.exercise}: ${b.result} (${b.date || 'data não registrada'})`).join('\n        ')
           : 'Nenhum benchmark registrado.'}
 
         [HISTÓRICO AGREGADO — 12 MESES]

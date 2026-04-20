@@ -177,7 +177,7 @@ class _WorkoutResultFormScreenState extends State<WorkoutResultFormScreen> {
               const SizedBox(height: 16),
               
               _buildLabel('weight'),
-              _buildTextInput(_weightController, keyboardType: TextInputType.number),
+              _buildTextInput(_weightController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
               const SizedBox(height: 16),
               
               _buildLabel('weight_unit'),
@@ -204,7 +204,7 @@ class _WorkoutResultFormScreenState extends State<WorkoutResultFormScreen> {
               const SizedBox(height: 16),
               
               _buildLabel('cardio_result'),
-              _buildTextInput(_cardioResultController, keyboardType: TextInputType.number),
+              _buildTextInput(_cardioResultController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
               const SizedBox(height: 16),
               
               _buildLabel('cardio_unit'),
@@ -265,9 +265,9 @@ class _WorkoutResultFormScreenState extends State<WorkoutResultFormScreen> {
                             duration: _durationController.text.trim(),
                             pse: _pseController.text.trim(),
                             reps: _repsController.text.trim(),
-                            weight: double.tryParse(_weightController.text.trim()),
+                            weight: double.tryParse(_weightController.text.trim().replaceAll(',', '.')),
                             weightUnit: _weightUnit,
-                            cardioResult: double.tryParse(_cardioResultController.text.trim()),
+                            cardioResult: double.tryParse(_cardioResultController.text.trim().replaceAll(',', '.')),
                             cardioUnit: _cardioUnit,
                             annotations: _annotationsController.text.trim(),
                           );

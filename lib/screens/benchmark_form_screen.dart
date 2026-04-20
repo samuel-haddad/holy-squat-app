@@ -14,11 +14,13 @@ class BenchmarkFormScreen extends StatefulWidget {
 
 class _BenchmarkFormScreenState extends State<BenchmarkFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _exerciseController = TextEditingController();
   final _resultController = TextEditingController();
   final _dateController = TextEditingController();
   late String _selectedUnit;
   bool _isLoading = true;
   bool _isSaving = false;
+  List<String> _exerciseSuggestions = [];
   
   final List<String> _unitOptions = ['cal', 'lb', 'kg', 'km', 'reps', 'time'];
 
@@ -26,10 +28,33 @@ class _BenchmarkFormScreenState extends State<BenchmarkFormScreen> {
   void initState() {
     super.initState();
     _selectedUnit = _unitOptions.contains(widget.initialUnit) ? widget.initialUnit : 'reps';
-    _loadBenchmark();
+    if (widget.exerciseName.isNotEmpty) {
+      _exerciseController.text = widget.exerciseName;
+    }
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await Future.wait([
+      _loadBenchmark(),
+      _loadExerciseSuggestions(),
+    ]);
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _loadExerciseSuggestions() async {
+    try {
+      final exercises = await SupabaseService.getUniqueBenchmarkExercises();
+      setState(() {
+        _exerciseSuggestions = exercises;
+      });
+    } catch (e) {
+      debugPrint("Error loading benchmark exercises: $e");
+    }
   }
 
   Future<void> _loadBenchmark() async {
+    if (widget.exerciseName.isEmpty) return;
     try {
       final log = await SupabaseService.getBenchmarkLog(widget.exerciseName);
       if (log != null) {
@@ -41,9 +66,7 @@ class _BenchmarkFormScreenState extends State<BenchmarkFormScreen> {
         }
       }
     } catch (e) {
-      // ignore
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint("Error loading benchmark log: $e");
     }
   }
 
@@ -51,24 +74,31 @@ class _BenchmarkFormScreenState extends State<BenchmarkFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
     
+    final exercise = _exerciseController.text.trim();
     final resultStr = _resultController.text.trim();
     final dateStr = _dateController.text.trim();
+    
+    if (exercise.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exercício é obrigatório', style: TextStyle(color: Colors.white))));
+      setState(() => _isSaving = false);
+      return;
+    }
+    
     if (resultStr.isEmpty) {
       if (mounted) setState(() => _isSaving = false);
        return;
     }
     
-    final resultVal = double.tryParse(resultStr.replaceAll(',', '.'));
-    if (resultVal == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Valor numérico inválido', style: TextStyle(color: Colors.white))));
-      if (mounted) setState(() => _isSaving = false);
-      return;
-    }
+    // Removida a validação de double.tryParse para suportar "20:00" etc.
+    // O banco já é TEXT, então aceitamos o que o usuário digitar.
 
     try {
-      await SupabaseService.upsertBenchmarkLog(widget.exerciseName, resultVal, dateStr.isEmpty ? null : dateStr);
-      // We also update the global Unit definition mapped to the Benchmark row
-      await SupabaseService.updateBenchmarkUnit(widget.exerciseName, _selectedUnit);
+      // Garantir que o exercício existe na biblioteca global
+      await SupabaseService.ensureBenchmarkExists(exercise, _selectedUnit);
+      
+      await SupabaseService.upsertBenchmarkLog(exercise, resultStr, dateStr.isEmpty ? null : dateStr);
+      // Também atualizamos a unidade global mapeada para o benchmark
+      await SupabaseService.updateBenchmarkUnit(exercise, _selectedUnit);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Benchmark salvo com sucesso!', style: TextStyle(color: Colors.white)), backgroundColor: AppTheme.primaryTeal));
         Navigator.pop(context, true);
@@ -86,7 +116,7 @@ class _BenchmarkFormScreenState extends State<BenchmarkFormScreen> {
     return Scaffold(
       appBar: AppBar(
         actions: const [ThemeToggleButton()],
-        title: const Text('Edit Benchmark', style: TextStyle(fontWeight: FontWeight.w600)),
+        title: Text(widget.exerciseName.isEmpty ? 'Add Benchmark' : 'Edit Benchmark', style: const TextStyle(fontWeight: FontWeight.w600)),
         centerTitle: true,
       ),
       body: _isLoading 
@@ -98,10 +128,81 @@ class _BenchmarkFormScreenState extends State<BenchmarkFormScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    widget.exerciseName,
-                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
+                  if (widget.exerciseName.isNotEmpty)
+                    Text(
+                      widget.exerciseName,
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                    )
+                  else
+                    Autocomplete<String>(
+                      optionsBuilder: (TextEditingValue textEditingValue) {
+                        if (textEditingValue.text.isEmpty) {
+                          return _exerciseSuggestions;
+                        }
+                        return _exerciseSuggestions.where((String option) {
+                          return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                        });
+                      },
+                      onSelected: (String selection) {
+                        _exerciseController.text = selection;
+                      },
+                      fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
+                        // Sincronizar o controller do Autocomplete com o nosso _exerciseController
+                        if (controller.text != _exerciseController.text && _exerciseController.text.isNotEmpty) {
+                           controller.text = _exerciseController.text;
+                        }
+                        controller.addListener(() {
+                           _exerciseController.text = controller.text;
+                        });
+                        
+                        return TextFormField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          onEditingComplete: onEditingComplete,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: 'Exercise',
+                            labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: const BorderSide(color: AppTheme.cardColor),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderSide: const BorderSide(color: AppTheme.primaryTeal),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            filled: true,
+                            fillColor: AppTheme.cardColor,
+                          ),
+                          validator: (val) => (val == null || val.isEmpty) ? 'Required' : null,
+                        );
+                      },
+                      optionsViewBuilder: (context, onSelected, options) {
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            elevation: 4.0,
+                            color: AppTheme.cardColor,
+                            borderRadius: BorderRadius.circular(8),
+                            child: SizedBox(
+                              width: MediaQuery.of(context).size.width - 32,
+                              child: ListView.builder(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                itemCount: options.length,
+                                itemBuilder: (BuildContext context, int index) {
+                                  final String option = options.elementAt(index);
+                                  return ListTile(
+                                    title: Text(option, style: const TextStyle(color: Colors.white)),
+                                    onTap: () => onSelected(option),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   const SizedBox(height: 32),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -111,7 +212,7 @@ class _BenchmarkFormScreenState extends State<BenchmarkFormScreen> {
                         child: TextFormField(
                           controller: _resultController,
                           style: const TextStyle(color: Colors.white),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: TextInputType.text, // Mudado de number para text para suportar ":"
                           decoration: InputDecoration(
                             labelText: 'Result (Record)',
                             labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),

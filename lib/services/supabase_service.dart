@@ -444,10 +444,14 @@ class SupabaseService {
 
   // Fetch benchmark log for specific exercise
   static Future<Map<String, dynamic>?> getBenchmarkLog(String exercise) async {
+    final user = client.auth.currentUser;
+    if (user == null || user.email == null) return null;
+
     final response = await client
         .from('benchmarks_logs')
         .select()
-        .eq('bench_exercise', exercise)
+        .eq('user_email', user.email!)
+        .eq('exercise', exercise)
         .maybeSingle();
     return response;
   }
@@ -455,14 +459,19 @@ class SupabaseService {
   // Upsert benchmark log
   static Future<void> upsertBenchmarkLog(
     String exercise,
-    double result,
+    String result,
     String? date,
   ) async {
     final user = client.auth.currentUser;
-    if (user == null) throw Exception('Not authenticated');
+    if (user == null || user.email == null) throw Exception('Not authenticated');
+
+    // First try to find existing log to get the ID for upserting
+    final existing = await getBenchmarkLog(exercise);
 
     await client.from('benchmarks_logs').upsert({
-      'bench_exercise': exercise,
+      if (existing != null) 'id': existing['id'],
+      'user_email': user.email,
+      'exercise': exercise,
       'result': result,
       if (date != null) 'date': date,
     });
@@ -473,7 +482,39 @@ class SupabaseService {
     await client
         .from('benchmarks')
         .update({'result_unit': unit})
-        .eq('bench_exercise', exercise);
+        .eq('exercise', exercise);
+  }
+
+  static Future<List<String>> getUniqueBenchmarkExercises() async {
+    try {
+      final response = await client.from('benchmarks').select('exercise');
+      final List<String> exercises = (response as List)
+          .map((e) => e['exercise'] as String)
+          .toList();
+      return exercises.toSet().toList()..sort();
+    } catch (e) {
+      debugPrint("Error fetching benchmark exercises: $e");
+      return [];
+    }
+  }
+
+  static Future<void> ensureBenchmarkExists(String exercise, String unit) async {
+    try {
+      final response = await client
+          .from('benchmarks')
+          .select()
+          .eq('exercise', exercise)
+          .maybeSingle();
+      
+      if (response == null) {
+        await client.from('benchmarks').insert({
+          'exercise': exercise,
+          'result_unit': unit,
+        });
+      }
+    } catch (e) {
+      debugPrint("Error ensuring benchmark exists: $e");
+    }
   }
 
   // --- ANALYTICS ---
