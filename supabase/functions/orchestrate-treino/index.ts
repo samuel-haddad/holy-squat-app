@@ -80,23 +80,42 @@ async function processJob(jobId: string) {
 }
 
 // =========================================================
-// HTTP call to gerar-treino
+// HTTP call to gerar-treino with 55s timeout
 // =========================================================
-async function callGerarTreino(payload: any): Promise<any> {
-  const url = `${Deno.env.get('SUPABASE_URL')}/functions/v1/gerar-treino`;
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`gerar-treino [${payload.acao}] (${resp.status}): ${errText.substring(0, 500)}`);
+async function callGerarTreino(payload: any, functionName: string): Promise<any> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim() || Deno.env.get('SUPABASE_ANON_KEY')?.trim() || '';
+  
+  const url = `${supabaseUrl}/functions/v1/${functionName}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 59000);
+
+  try {
+    console.log(`[orch] calling ${functionName}:${payload.acao}...`);
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceKey}`,
+        'apikey': serviceKey,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`${functionName} [${payload.acao}] (${resp.status}): ${errText.substring(0, 500)}`);
+    }
+    return await resp.json();
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw new Error(`Timeout: a função ${functionName} (${payload.acao}) excedeu 55s.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return resp.json();
 }
 
 // =========================================================
@@ -115,7 +134,7 @@ async function handleCreatePlanStep(job: any, admin: any) {
       email_utilizador: p.email_utilizador,
       ai_coach_name: p.ai_coach_name,
       training_sessions: p.training_sessions || [],
-    });
+    }, 'gerar-plano');
     await admin.from('ai_generation_jobs').update({
       step_1_result: result, current_step: 2, updated_at: new Date().toISOString(),
     }).eq('id', job.id);
@@ -130,7 +149,7 @@ async function handleCreatePlanStep(job: any, admin: any) {
       diretrizes_plano: p.diretrizes_plano,
       training_sessions: p.training_sessions || [],
       ai_coach_name: p.ai_coach_name,
-    });
+    }, 'gerar-plano');
 
     // PERSIST: create training_plan with analysis + plan blocks
     const planId = await persistCreatePlan(job, result, admin);
@@ -163,19 +182,19 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       if (plan) {
         let analise = {};
         let visao = {};
-        try { analise = JSON.parse(plan.workouts_plan_text || '{}'); } catch (_) {}
-        try { visao = JSON.parse(plan.actual_plan_summary || '{}'); } catch (_) {}
-        contextoMacrociclo = { 
-          analise_historica: analise, 
-          visao_geral_plano: visao, 
-          competicoes: plan.competitions || [] 
+        try { analise = JSON.parse(plan.workouts_plan_text || '{}'); } catch (_) { }
+        try { visao = JSON.parse(plan.actual_plan_summary || '{}'); } catch (_) { }
+        contextoMacrociclo = {
+          analise_historica: analise,
+          visao_geral_plano: visao,
+          competicoes: plan.competitions || []
         };
       }
     }
 
     // Identify next block
     let planSummary: any = {};
-    try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) {}
+    try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) { }
     const blocos = planSummary.blocos || [];
     const mesosJaGerados: string[] = p.mesos_ja_gerados || [];
     const proximoMeso = blocos.find((b: any) => !mesosJaGerados.includes(b.mesociclo)) || {};
@@ -184,7 +203,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     let performanceStats = null;
     let cycleSnapshot = null;
     const ultimoMeso = mesosJaGerados.length > 0 ? mesosJaGerados[mesosJaGerados.length - 1] : null;
-    
+
     // Determine start date of the mesocycle that just finished
     const mesoStartDate = p.current_workouts_table?.[0]?.date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
@@ -208,7 +227,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     // Fetch user profile and training sessions for context
     const { data: profile } = await admin.from('profiles').select('id').eq('email', p.email_utilizador).single();
     let trainingSessions = p.training_sessions || [];
-    
+
     if (profile?.id && trainingSessions.length === 0) {
       const { data: sessionsData } = await admin
         .from('training_sessions')
@@ -230,7 +249,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       training_sessions: trainingSessions,
       data_inicio_meso: p.data_inicio_meso,
       ai_coach_name: p.ai_coach_name,
-    });
+    }, 'gerar-ciclo');
 
     await admin.from('ai_generation_jobs').update({
       step_1_result: {
@@ -252,7 +271,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     const trainingSessions = cicloResult._trainingSessions || p.training_sessions || [];
 
     let planSummary: any = {};
-    try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) {}
+    try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) { }
 
     // Group by week
     const weekGroups: Record<number, any[]> = {};
@@ -281,7 +300,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
           trainingSessions: p.training_sessions || [],
         },
         ai_coach_name: p.ai_coach_name,
-      })
+      }, 'gerar-ciclo')
     ));
 
     const allExercicios = results.flatMap((r: any) => r.exerciciosDetalhados || []);
@@ -322,10 +341,10 @@ async function persistCreatePlan(job: any, planResult: any, admin: any): Promise
     start_date: p.diretrizes_plano?.data_inicio,
     end_date: p.diretrizes_plano?.data_fim || null,
     notes: p.diretrizes_plano?.notas || null,
-    competitions: (p.diretrizes_plano?.competicoes || []).map((c: any) => ({ 
-      name: c.name, 
-      start_date: c.start_date, 
-      end_date: c.end_date 
+    competitions: (p.diretrizes_plano?.competicoes || []).map((c: any) => ({
+      name: c.name,
+      start_date: c.start_date,
+      end_date: c.end_date
     })),
     actual_plan_summary: JSON.stringify(planResult?.visaoGeralPlano || {}),
     workouts_plan_text: JSON.stringify(job.step_1_result?.analiseMacro || {}),
@@ -346,7 +365,7 @@ async function persistGenerateCycle(job: any, exercicios: any[], admin: any) {
   const cicloResult = job.step_1_result || {};
 
   let planSummary: any = {};
-  try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) {}
+  try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) { }
 
   // Recover performanceStats that was stashed in step_1_result during step 1.
   // Its kpis (completion_rate, weekly_freq, load_delta, pr_recovery, neglected_type)
@@ -410,7 +429,7 @@ async function persistExercicios(
 
     records.push({
       date: ex.date, week: ex.week, mesocycle: ex.mesocycle, day: ex.day,
-      session: ex.session, session_type: st, 
+      session: ex.session, session_type: st,
       workout_idx: ex.workout_idx, exercise: ex.exercise,
       exercise_title: ex.exercise_title, exercise_group: ex.exercise_group,
       exercise_type: ex.exercise_type, sets: ex.sets, details: ex.details,

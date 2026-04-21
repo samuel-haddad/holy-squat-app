@@ -167,6 +167,10 @@ function formatHistorySummary(summary: any): string {
 // =========================================================
 // Helper: generate content with the correct provider (Google or Anthropic)
 // =========================================================
+async function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function generateWithProvider(
   prompt: string,
   provider: string,
@@ -175,79 +179,120 @@ async function generateWithProvider(
   actionLabel: string,
   maxTokens: number = 16000
 ): Promise<any> {
-  // TEMPERATURE DYNAMICS: 
-  // 0.2 for Claude (avoid volume hallucinations)
-  // 0.7 for Gemini (maintain some analytical fluidity)
-  const targetTemperature = provider === 'anthropic' ? 0.2 : 0.7;
+  const targetTemperature = provider === 'anthropic' ? 0.2 : 0.7; // Optimized for structural JSON speed
+  const maxRetries = 3;
 
-  if (provider === 'google') {
-    const model = genAI.getGenerativeModel(
-      { model: llmModel, generationConfig: { responseMimeType: "application/json", temperature: targetTemperature } }
-    );
-    const result = await model.generateContent([prompt]);
-    const usage = result.response.usageMetadata;
-    console.log(`[TOKENS] ${actionLabel} | model: ${llmModel} | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'}`);
-    return JSON.parse(result.response.text());
-
-  } else if (provider === 'anthropic') {
-    console.log(`[anthropic] Calling ${llmModel} (maxTok: ${maxTokens})`);
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': Deno.env.get('ANTHROPIC_API_KEY') ?? '',
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: llmModel,
-        max_tokens: maxTokens,
-        temperature: targetTemperature,
-        system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(`Anthropic API error (${response.status}): ${JSON.stringify(data)}`);
-    }
-
-    const stopReason = data.stop_reason;
-    console.log(`[TOKENS] ${actionLabel} | model: ${llmModel} | maxTok: ${maxTokens} | input: ${data.usage?.input_tokens} | output: ${data.usage?.output_tokens} | stop: ${stopReason}`);
-
-    let rawText: string = data.content[0].text.trim();
-
-    // 1. Markdown strip
-    if (rawText.startsWith('```')) {
-      rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-    }
-
-    // 2. Trailing comma fix (Claude Opus often leaves these at the end of large arrays)
-    rawText = rawText.replace(/,\s*([\}\]])/g, '$1');
-
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return JSON.parse(rawText);
-    } catch (e: any) {
-      console.error(`[JSON ERROR] Falha ao parsear resposta do Claude em ${actionLabel}`);
-      console.error(`[JSON PREVIEW] Primeiros 300: ${rawText.substring(0, 300)}`);
-      console.error(`[JSON PREVIEW] Últimos 300: ${rawText.substring(rawText.length - 300)}`);
-      throw new Error(`Invalid JSON from Claude at ${actionLabel}: ${e.message}`);
-    }
+      if (provider === 'google') {
+        const model = genAI.getGenerativeModel(
+          { model: llmModel, generationConfig: { temperature: targetTemperature, maxOutputTokens: maxTokens } },
+          { apiVersion: 'v1beta' }
+        );
+        const result = await model.generateContent([prompt]);
+        const usage = result.response.usageMetadata;
+        console.log(`[TOKENS] ${actionLabel} | model: ${llmModel} | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'}`);
+        
+        let rawText = result.response.text();
+        if (rawText.startsWith('```')) {
+          rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+        }
+        return JSON.parse(rawText);
 
-  } else {
-    throw new Error(`Provider desconhecido: ${provider}`);
+      } else if (provider === 'anthropic') {
+        console.log(`[anthropic] Calling ${llmModel} (maxTok: ${maxTokens})`);
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': Deno.env.get('ANTHROPIC_API_KEY') ?? '',
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: llmModel,
+            max_tokens: maxTokens,
+            temperature: targetTemperature,
+            system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        
+        const data = await response.json();
+        if (!response.ok) {
+          // If it's a rate limit error (429), throw it so it can be retried
+          if (response.status === 429) {
+            throw new Error(`429: ${JSON.stringify(data)}`);
+          }
+          throw new Error(`Anthropic API error (${response.status}): ${JSON.stringify(data)}`);
+        }
+
+        const stopReason = data.stop_reason;
+        console.log(`[TOKENS] ${actionLabel} | model: ${llmModel} | maxTok: ${maxTokens} | input: ${data.usage?.input_tokens} | output: ${data.usage?.output_tokens} | stop: ${stopReason}`);
+
+        let rawText: string = data.content[0].text.trim();
+        if (rawText.startsWith('```')) {
+          rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+        }
+        rawText = rawText.replace(/,\s*([\}\]])/g, '$1');
+
+        try {
+          return JSON.parse(rawText);
+        } catch (e: any) {
+          console.error(`[JSON ERROR] Falha ao parsear resposta do Claude em ${actionLabel}`);
+          throw new Error(`Invalid JSON from Claude at ${actionLabel}: ${e.message}`);
+        }
+
+      } else {
+        throw new Error(`Provider desconhecido: ${provider}`);
+      }
+
+    } catch (err: any) {
+      const errorText = err.message || '';
+      const isRateLimit = errorText.includes('429') || errorText.toLowerCase().includes('quota') || errorText.toLowerCase().includes('limit');
+      
+      if (isRateLimit && attempt < maxRetries) {
+        const delay = attempt * 3500; // 3.5s, 7s...
+        console.warn(`[RETRY] Rate limit (429) detectado em ${actionLabel}. Tentativa ${attempt}/${maxRetries}. Aguardando ${delay}ms...`);
+        await sleep(delay);
+        continue;
+      }
+      // If it's not a rate limit or we're out of retries, throw the error
+      throw err;
+    }
   }
+}
+
+async function getEmbedding(text: string) {
+  const apiKey = Deno.env.get('GEMINI_API_KEY');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "models/gemini-embedding-001",
+      content: { parts: [{ text }] },
+      outputDimensionality: 768
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Erro no Embedding: ${JSON.stringify(error)}`);
+  }
+
+  const data = await response.json();
+  return data.embedding.values;
 }
 
 // =========================================================
 // Helper: query the knowledge base (always Google Embeddings)
 // =========================================================
-async function queryKnowledgeBase(queryText: string, genAI: any, supabaseClient: any) {
+async function queryKnowledgeBase(queryText: string, genAI: any, adminClient: any) {
   if (!queryText) return "";
   try {
-    const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
-    const result = await embeddingModel.embedContent(queryText);
-    const embedding = result.embedding.values;
-    const { data: documents, error } = await supabaseClient.rpc('match_knowledge_base', {
+    const embedding = await getEmbedding(queryText);
+    const { data: documents, error } = await adminClient.rpc('match_knowledge_base', {
       query_embedding: embedding,
       match_threshold: 0.4,
       match_count: 5
@@ -295,7 +340,7 @@ serve(async (req) => {
     let llmModel = 'gemini-pro-latest';
 
     if (ai_coach_name) {
-      const { data: coachData, error: coachError } = await supabaseClient
+      const { data: coachData, error: coachError } = await adminClient
         .from('ai_coach')
         .select('llm_model, provider')
         .eq('ai_coach_name', ai_coach_name)
@@ -318,6 +363,8 @@ serve(async (req) => {
     // =========================================================
     if (acao === 'gerar_analise_historica') {
       const { email_utilizador, user_id } = payload;
+      if (!email_utilizador && !user_id) throw new Error("Parâmetros email_utilizador ou user_id ausentes.");
+      console.log(`[Action 1] Iniciando para ${email_utilizador || user_id}`);
 
       // Parallel DB fetches — lean column selection, capped limits
       const profileQuery = user_id 
@@ -343,19 +390,23 @@ serve(async (req) => {
       const userWeight = Number(profile.weight) || 0;
 
       // Now call RPC with weight after fetching profile
+      console.time('[perf] rpc_planning_stats');
       const athleteStatsRes = await adminClient.rpc('get_athlete_planning_stats', { 
         p_email: email_utilizador,
         p_user_weight: userWeight
       });
+      console.timeEnd('[perf] rpc_planning_stats');
 
       if (athleteStatsRes.error) {
         console.warn('[RPC] get_athlete_planning_stats error:', athleteStatsRes.error);
       } else {
-        console.log('[RPC] get_athlete_planning_stats OK. kpis keys:', Object.keys(athleteStatsRes.data?.kpis || {}));
+        const statsDataCheck = Array.isArray(athleteStatsRes.data) ? athleteStatsRes.data[0] : athleteStatsRes.data;
+        console.log('[RPC] get_athlete_planning_stats OK. kpis keys:', Object.keys(statsDataCheck?.kpis || {}));
       }
 
-      const profile = profileRes.data || {};
-      const athleteStats = payload.athlete_stats_summary || (athleteStatsRes?.data?.kpis) || {};
+      const statsRaw = athleteStatsRes?.data;
+      const statsObj = Array.isArray(statsRaw) ? statsRaw[0] : statsRaw;
+      const athleteStats = payload.athlete_stats_summary || (statsObj?.kpis) || {};
 
       // Aggregate PRs: keep only the MAX value per exercise (as the athlete's all-time best)
       const prByExercise: Record<string, any> = {};
@@ -377,8 +428,10 @@ serve(async (req) => {
       // ── Structured history summary (prefer RPC, direct-query fallback if empty) ──
       // CRITICAL: use adminClient — supabaseClient fails RLS when called from orchestrator
       //           (the Authorization header carries service role key, not a user JWT)
+      console.time('[perf] rpc_history_summary');
       const { data: historySummaryRaw, error: histErr } = await adminClient
         .rpc('get_athlete_history_summary', { p_email: email_utilizador });
+      console.timeEnd('[perf] rpc_history_summary');
 
       if (histErr) {
         console.error('[RPC] get_athlete_history_summary FAILED:', JSON.stringify(histErr));
@@ -488,7 +541,9 @@ serve(async (req) => {
       const ifrSumFromPRs = prMaxPerExercise
         .filter((r: any) => IFR_EXERCISE_KEYWORDS.some(k => r.exercise?.toLowerCase().includes(k)))
         .reduce((sum: number, r: any) => {
-          let val = Number(r.pr) || 0;
+          // Defensive parsing: remove non-numeric chars (except .) to handle "6+10" style strings
+          const cleanPR = String(r.pr || '0').replace(/[^0-9.]/g, '');
+          let val = Number(cleanPR) || 0;
           if (['lb', 'lbs', 'libra', 'libras'].includes(String(r.pr_unit).toLowerCase().trim())) {
             val = val * 0.453592;
           }
@@ -535,17 +590,23 @@ serve(async (req) => {
       }
 
       // ── RAG: knowledge base ──
+      console.time('[perf] rag_query');
       const ragQuery = `${profile.about_me || ''} ${profile.skills_training || ''} ${profile.lesoes || ''}`;
-      const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, supabaseClient);
+      const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, adminClient);
+      console.timeEnd('[perf] rag_query');
 
       const prompt = `
         ${COACH_PERSONA}
         [DATA DE HOJE: ${today}]
 
         [MISSÃO — ANÁLISE DO HISTÓRICO ESPORTIVO]
-        Analise detalhadamente o histórico do atleta abaixo e gere uma análise macro com gráficos 
-        baseados na aderência, carga e volume. Esta análise será usada como entrada para a próxima 
-        etapa de planejamento.
+        Analise detalhadamente o histórico do atleta abaixo. Não se limite a resumir logs; você deve 
+        interpretar a trajetória do atleta. 
+        
+        [HIERARQUIA DE ANÁLISE - PRIORIDADE DE DADOS]
+        1. MARCAS ABSOLUTAS: PRs e Benchmarks são as suas "âncoras de verdade". Use-os para validar se os treinos recentes estão de acordo com a capacidade real do atleta.
+        2. MÉTRICAS DERIVADAS: Utilize o IFR (baseado nos PRs) para avaliar a força relativa por KG.
+        3. TENDÊNCIA DE CARGA: Observe se a 'Evolution' e 'Workload' corroboram os recordes ou se há um platô.
 
         [CONTEXTO CIENTÍFICO (RAG)]
         ${knowledgeContext}
@@ -577,13 +638,13 @@ serve(async (req) => {
         ${formatTrainingSessions(trainingSessions)}
 
         [PRs DE FORÇA — MELHOR MARCA POR EXERCÍCIO]
-        *OBRIGATÓRIO: Cite estes números na análise. O IFR é a soma dos melhores PRs fundamentais normalizados por KG dividida pelo peso corporal.*
+        *DIRETRIZ: Se houver dados abaixo, eles DEVEM fundamentar sua análise de força. O IFR de ${effectiveIfr.toFixed(2)} é reflexo destes levantamentos.*
         ${prMaxPerExercise.length > 0
           ? prMaxPerExercise.map((r: any) => `- ${r.exercise}: ${r.pr} ${r.pr_unit || 'kg'} (${r.date})`).join('\n        ')
           : 'Nenhum PR registrado.'}
 
         [BENCHMARKS FUNCIONAIS — RESULTADOS MAIS RECENTES]
-        *OBRIGATÓRIO: Cite estes valores como referência de condicionamento e capacidade funcional.*
+        *DIRETRIZ: Use estes benchmarks para avaliar a capacidade metabólica e técnica de Crossfit do atleta.*
         ${benchData.length > 0
           ? benchData.map((b: any) => `- ${b.exercise}: ${b.result} (${b.date || 'data não registrada'})`).join('\n        ')
           : 'Nenhum benchmark registrado.'}
@@ -606,8 +667,10 @@ serve(async (req) => {
         }
       `;
 
-      console.log(`gerar_analise_historica | coach: ${ai_coach_name ?? 'default'}`);
+      console.log(`gerar_analise_historica | coach: ${ai_coach_name ?? 'default'} | prompt length: ${prompt.length}`);
+      console.time('[perf] llm_generation');
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_analise_historica', 8000);
+      console.timeEnd('[perf] llm_generation');
 
       // Only include athlete_stats_snapshot if the RPC returned real data.
       // An empty object {} would make Flutter think stats are available but
@@ -636,6 +699,7 @@ serve(async (req) => {
         diretrizes_plano,
         training_sessions,
       } = payload;
+      console.log(`[Action 2] Iniciando para ${email_utilizador || user_id}`);
 
       // Self-fetch profile from DB for safety/completeness
       const profileQuery = user_id 
@@ -692,8 +756,10 @@ serve(async (req) => {
         }
       `;
 
-      console.log(`criar_plano | coach: ${ai_coach_name ?? 'default'}`);
+      console.log(`criar_plano | coach: ${ai_coach_name ?? 'default'} | prompt length: ${prompt.length}`);
+      console.time('[perf] llm_generation_step2');
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'criar_plano', 8000);
+      console.timeEnd('[perf] llm_generation_step2');
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
@@ -749,6 +815,11 @@ serve(async (req) => {
         [MISSÃO — GERAR CALENDÁRIO SEMANAL DO MESOCICLO]
         Gere o calendário semanal completo para o mesociclo especificado abaixo.
         Se houver estatísticas do ciclo anterior, faça uma análise motivacional e técnica.
+
+        [RESTRIÇÕES DE VERBOSIDADE - CRÍTICO PARA EVITAR TIMEOUT]
+        - analiseCicloAnterior.texto: Máximo 80 palavras. Linguagem direta e técnica.
+        - focoPrincipal: Máximo 6 palavras por sessão.
+        - Não adicione textos fora do JSON.
 
         [CONTEXTO DO MACROCICLO — MEMÓRIA DAS ETAPAS ANTERIORES]
         Use as informações abaixo para manter coerência com o planejamento original:
@@ -815,20 +886,50 @@ serve(async (req) => {
           "visaoSemanal": [
             {
               "date": "YYYY-MM-DD",
-              "day": "Segunda-feira",
               "session": 1,
               "session_type": "string",
               "focoPrincipal": "string",
-              "isDescansoAtivo": false,
-              "mesocycle": "${bloco.mesociclo}",
-              "week": 1
+              "isDescansoAtivo": false
             }
           ]
         }
+        
+        [REGRAS DE CONTEÚDO]
+        - focoPrincipal: Máximo 5 palavras. Seja telegráfico.
+        - analiseCicloAnterior.texto: Máximo 80 palavras.
+        - Não retorne day, week ou mesocycle (serão injetados por fora).
       `;
 
       console.log(`gerar_proximo_ciclo | meso: ${bloco.mesociclo} | coach: ${ai_coach_name ?? 'default'}`);
-      const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_proximo_ciclo', 12000);
+      const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_proximo_ciclo', 8000);
+
+      // RE-INJECTION logic: Fill the derived fields to save LLM tokens and prevent timeout
+      if (result.visaoSemanal && Array.isArray(result.visaoSemanal)) {
+        const diasSemana = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+        
+        result.visaoSemanal = result.visaoSemanal.map((dia: any) => {
+          const d = new Date(dia.date + 'T12:00:00Z'); // mid-day to avoid TZ issues
+          const dayName = diasSemana[d.getUTCDay()];
+          
+          // Calculate week within meso based on data_inicio_meso
+          let weekNum = 1;
+          if (data_inicio_meso) {
+            const startD = new Date(data_inicio_meso + 'T12:00:00Z');
+            const diffMs = d.getTime() - startD.getTime();
+            if (diffMs > 0) {
+              weekNum = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
+            }
+          }
+
+          return {
+            ...dia,
+            day: dayName,
+            mesocycle: bloco.mesociclo,
+            week: weekNum
+          };
+        });
+      }
+
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
@@ -875,7 +976,7 @@ serve(async (req) => {
 
       // RAG: query knowledge base for exercise recommendations
       const ragQuery = `${ctx.focoSemana || ''} ${ctx.objetivo || ''} exercícios crossfit`;
-      const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, supabaseClient);
+      const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, adminClient);
 
       const prompt = `
         ${COACH_PERSONA} Gere os exercícios para a Semana ${ctx.semanaNum} de ${ctx.totalSemanas} do mesociclo "${ctx.nome}".

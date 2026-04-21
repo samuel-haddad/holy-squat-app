@@ -41,6 +41,10 @@ WITH
     FROM workouts_logs AS l
     WHERE l.user_email = p_email
       AND l.workout_date >= (CURRENT_DATE - INTERVAL '12 months')::date
+      -- Only process rows where numeric columns actually contain numbers to avoid crash on "6+10" style strings
+      AND (l.weight IS NULL OR l.weight::text ~ '^[0-9]+(\.[0-9]+)?$')
+      AND (l.reps_done IS NULL OR l.reps_done::text ~ '^[0-9]+(\.[0-9]+)?$')
+      AND (l.cardio_result IS NULL OR l.cardio_result::text ~ '^[0-9]+(\.[0-9]+)?$')
     GROUP BY l.workout_date
   ),
 
