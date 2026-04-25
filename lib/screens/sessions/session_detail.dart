@@ -42,7 +42,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final String dayName = DateFormat('EEEE').format(date).toUpperCase();
     final String title = widget.sessionData['session_type'] ?? 'Session';
     final String sessionNum =
-        widget.sessionData['session_num']?.toString() ?? '1';
+        widget.sessionData['session']?.toString() ?? '1';
     final String formattedDate = DateFormat('dd/MM/yyyy').format(date);
     final String? aiCoachName = widget.sessionData['ai_coach_name'] as String?;
 
@@ -298,8 +298,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                 'Feito';
                           }
 
-                          final timeEx = w['time_exercise']?.toString() ?? '-';
-                          final rest = w['rest']?.toString() ?? '-';
+                          final timeEx = '${w['time_exercise'] ?? '-'} ${w['ex_unit'] ?? ''}'.trim();
+                          final rest = '${w['rest'] ?? '-'} ${w['rest_unit'] ?? ''}'.trim();
+                          final expectedTime = '${w['total_time'] ?? '-'} min';
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 16.0),
@@ -308,7 +309,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                               w['exercise'] ?? 'Unknown',
                               w['sets']?.toString() ?? '-',
                               w['details'] ?? '-',
-                              dur,
+                              expectedTime,
                               link != null && link.toString().isNotEmpty,
                               link,
                               actualId,
@@ -423,7 +424,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
           Text(
-            'Duração: $duration',
+            'Expected time: $duration',
             style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
           if (hasVideo) ...[
