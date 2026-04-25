@@ -27,6 +27,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
   Map<String, Map<String, dynamic>?> _coachPlans = {};
   bool _isLoading = true;
   List<Map<String, dynamic>> _aiCoaches = [];
+  Map<String, bool> _workoutsExistMap = {}; // Tracks if workouts exist for the current mesocycle
   // Snapshot stats are now retrieved from each individual plan record
 
   @override
@@ -55,10 +56,47 @@ class _PlanningScreenState extends State<PlanningScreen> {
           _coachPlans = plans;
           _isLoading = false;
         });
+        _checkWorkoutsExist();
       }
     } catch (e) {
       debugPrint('Erro ao carregar dados: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _checkWorkoutsExist() async {
+    final repo = WorkoutRepository();
+    final Map<String, bool> existsMap = {};
+    
+    for (var coach in _aiCoaches) {
+      final name = coach['ai_coach_name'] as String;
+      final plan = _coachPlans[name];
+      if (plan != null) {
+        // Find current mesocycle from actual_plan_summary
+        String? currentMeso;
+        try {
+          final summary = jsonDecode(plan['actual_plan_summary'] ?? '{}');
+          final table = plan['workouts_plan_table'] as List? ?? [];
+          if (table.isNotEmpty) {
+             currentMeso = table.last['mesocycle']?.toString();
+          }
+        } catch (_) {}
+
+        if (currentMeso != null) {
+          final exists = await repo.hasWorkoutsForMesocycle(plan['id'], currentMeso);
+          existsMap[name] = exists;
+        } else {
+          existsMap[name] = false;
+        }
+      } else {
+        existsMap[name] = false;
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _workoutsExistMap = existsMap;
+      });
     }
   }
 
@@ -137,15 +175,21 @@ class _PlanningScreenState extends State<PlanningScreen> {
                 plan['snapshot_stats'],
               ),
               const SizedBox(height: 16),
-              ..._buildWorkoutsPlanSections(plan['workouts_plan_table']),
+              ..._buildWorkoutsPlanSections(plan),
               const SizedBox(height: 16),
               _buildProgressSection(plan['progress_analysis'], plan, coach),
               const SizedBox(height: 24),
-              Row(
+              Column(
                 children: [
-                  Expanded(child: _buildCreatePlanButton(coach)),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildGenerateNextButton(coach, plan)),
+                  SizedBox(width: double.infinity, child: _buildCreatePlanButton(coach)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: _buildGenerateNextButton(coach, plan)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildGenerateWorkoutsButton(coach, plan)),
+                    ],
+                  ),
                 ],
               ),
             ]
@@ -193,9 +237,30 @@ class _PlanningScreenState extends State<PlanningScreen> {
         backgroundColor: Colors.white.withOpacity(0.05),
         padding: const EdgeInsets.symmetric(vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.primaryTeal, width: 0.5)),
+        disabledBackgroundColor: Colors.white.withOpacity(0.02),
       ),
-      onPressed: () => _generateNextMeso(coach, plan),
+      onPressed: () => _generateNextAnalysis(coach, plan),
       child: const Text('Next Cycle', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildGenerateWorkoutsButton(Map<String, dynamic> coach, Map<String, dynamic> plan) {
+    final String name = coach['ai_coach_name'] as String;
+    final bool alreadyGenerated = _workoutsExistMap[name] ?? false;
+    final bool canGenerate = (plan['workouts_plan_table'] as List? ?? []).isNotEmpty;
+
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white.withOpacity(0.05),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: alreadyGenerated || !canGenerate ? Colors.grey : AppTheme.primaryTeal, width: 0.5)),
+        disabledBackgroundColor: Colors.white.withOpacity(0.02),
+      ),
+      onPressed: (alreadyGenerated || !canGenerate) ? null : () => _generateWorkouts(coach, plan),
+      child: Text(
+        alreadyGenerated ? 'Workouts OK' : 'Workouts', 
+        style: TextStyle(color: alreadyGenerated || !canGenerate ? Colors.grey : AppTheme.primaryTeal, fontWeight: FontWeight.bold)
+      ),
     );
   }
 
@@ -253,10 +318,10 @@ class _PlanningScreenState extends State<PlanningScreen> {
           shareText: _formatActualPlanForShare(summaryJson ?? {}, ""),
           children: [
             _buildVisaoGeralContent(summaryJson),
+            const SizedBox(height: 16),
+            _buildPDFExportButton(macroJson, summaryJson, plan['progress_analysis'], snapshotStats),
           ],
         ),
-        const SizedBox(height: 16),
-        _buildPDFExportButton(macroJson, summaryJson, plan['progress_analysis'], snapshotStats),
       ],
     );
   }
@@ -1005,12 +1070,29 @@ class _PlanningScreenState extends State<PlanningScreen> {
     return buffer.toString();
   }
 
-  List<Widget> _buildWorkoutsPlanSections(dynamic tableData) {
+  List<Widget> _buildWorkoutsPlanSections(Map<String, dynamic> plan) {
+    final tableData = plan['workouts_plan_table'];
+    final progressAnalysis = plan['progress_analysis'];
+
+    String? mesoSummary;
+    if (progressAnalysis != null) {
+      try {
+        final data = jsonDecode(progressAnalysis);
+        mesoSummary = data['mesocycle_summary'];
+      } catch (_) {}
+    }
+
     if (tableData == null || tableData is! List || tableData.isEmpty) {
       return [_buildContainer(
         title: 'Workouts Plan',
         shareText: 'Nenhum plano pendente.',
-        children: [const Text('Prescrições pendentes.', style: TextStyle(color: AppTheme.secondaryTextColor))],
+        children: [
+          if (mesoSummary != null) ...[
+            Text(mesoSummary, style: const TextStyle(color: AppTheme.secondaryTextColor, fontStyle: FontStyle.italic)),
+            const SizedBox(height: 16),
+          ],
+          const Text('Prescrições pendentes.', style: TextStyle(color: AppTheme.secondaryTextColor))
+        ],
       )];
     }
 
@@ -1092,7 +1174,21 @@ class _PlanningScreenState extends State<PlanningScreen> {
       buffer.writeln('🏋️‍♂️ *Planejamento - $mesoName*');
 
       final List<Widget> mesoChildren = [
-        Text(mesoName, style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 16)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(child: Text(mesoName, style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 16))),
+            TextButton.icon(
+              onPressed: () => _handleRestoreMeso(plan),
+              icon: const Icon(Icons.history, size: 16, color: AppTheme.secondaryTextColor),
+              label: const Text('Restore', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 12)),
+            ),
+          ],
+        ),
+        if (mesoSummary != null) ...[
+          const SizedBox(height: 8),
+          Text(mesoSummary, style: const TextStyle(color: AppTheme.secondaryTextColor, fontStyle: FontStyle.italic)),
+        ],
         const SizedBox(height: 8),
       ];
 
@@ -1213,18 +1309,16 @@ class _PlanningScreenState extends State<PlanningScreen> {
     );
   }
 
-  Future<void> _generateNextMeso(Map<String, dynamic> coach, Map<String, dynamic> plan) async {
+  Future<void> _generateNextAnalysis(Map<String, dynamic> coach, Map<String, dynamic> plan) async {
     setState(() {
       _isLoading = true;
     });
 
     try {
       final controller = WorkoutController(WorkoutRepository());
-      
-      // Fetch current training sessions to ensure cycle respects them
       final sessions = await SupabaseService.fetchTrainingSessions();
       
-      await controller.gerarProximoCiclo(
+      await controller.gerarAnaliseCiclo(
         planoId: plan['id'],
         actualPlanSummaryJson: plan['actual_plan_summary'] ?? '{}',
         currentWorkoutsTable: (plan['workouts_plan_table'] is List) ? plan['workouts_plan_table'] : [],
@@ -1236,7 +1330,57 @@ class _PlanningScreenState extends State<PlanningScreen> {
       if (controller.state == WorkoutState.success) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Ciclo gerado com sucesso!'), backgroundColor: Colors.green),
+            const SnackBar(content: Text('Análise e calendário gerados com sucesso!'), backgroundColor: Colors.green),
+          );
+        }
+      } else if (controller.state == WorkoutState.error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(controller.errorMessage), backgroundColor: Colors.redAccent),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(content: Text('Erro inesperado: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      await _loadData(); 
+    }
+  }
+
+  Future<void> _generateWorkouts(Map<String, dynamic> coach, Map<String, dynamic> plan) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final controller = WorkoutController(WorkoutRepository());
+      final sessions = await SupabaseService.fetchTrainingSessions();
+      
+      final table = plan['workouts_plan_table'] as List? ?? [];
+      if (table.isEmpty) throw Exception("Nenhum calendário encontrado. Gere o 'Next Cycle' primeiro.");
+      
+      final currentMesoName = table.last['mesocycle']?.toString() ?? 'Próximo Meso';
+      final summary = jsonDecode(plan['actual_plan_summary'] ?? '{}');
+      final blocos = summary['blocos'] as List? ?? [];
+      final blocoAtual = blocos.firstWhere((b) => b['mesociclo'] == currentMesoName, orElse: () => {});
+
+      await controller.gerarExerciciosDetalhados(
+        planoId: plan['id'],
+        visaoSemanal: table,
+        blocoAtual: blocoAtual,
+        trainingSessions: sessions,
+        aiCoachName: coach['ai_coach_name'],
+        emailUtilizador: SupabaseService.client.auth.currentUser?.email ?? UserState.email.value,
+      );
+
+      if (controller.state == WorkoutState.success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Exercícios detalhados com sucesso!'), backgroundColor: Colors.green),
           );
         }
       } else if (controller.state == WorkoutState.error) {
@@ -1447,5 +1591,33 @@ class _PlanningScreenState extends State<PlanningScreen> {
     // Draw a simple box as placeholder since string drawing is complex without easy access to PdfFont here
     canvas.drawRect(center.x - 25, center.y - 25, 50, 50);
     canvas.strokePath();
+  }
+
+  Future<void> _handleRestoreMeso(Map<String, dynamic> plan) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restaurar Ciclo'),
+        content: const Text('Isso removerá a análise atual e permitirá gerar este mesociclo novamente. Deseja continuar?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sim, Restaurar', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final userEmail = UserState.email.value;
+
+    await context.read<WorkoutController>().restaurarCiclo(
+      emailUtilizador: userEmail,
+      planoId: plan['id'],
+      actualPlanSummaryJson: plan['actual_plan_summary_json'],
+      currentWorkoutsTable: plan['workouts_plan_table'] ?? [],
+      aiCoachName: plan['ai_coach_name'],
+    );
+    
+    _loadData();
   }
 }

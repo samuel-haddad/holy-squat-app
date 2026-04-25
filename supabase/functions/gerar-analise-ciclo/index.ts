@@ -41,36 +41,6 @@ const METRICS_DEFINITIONS = `
    - Interpretação: Mede resiliência e formação de hábito. Mais valioso que o streak diário.
 `;
 
-const DATA_CONTRACT = `
-[RESTRIÇÃO DE NOMENCLATURA]
-- session_type: Escolha obrigatoriamente um valor desta lista: [${allowedSessionTypes}]. Proibido inventar termos.
-
-[REGRAS DE OURO DO TEMPO (BUDGETING)]
-1. Respeite a Duração (du): Se a sessão tem 60min, a soma de todos os 'tt' deve totalizar ~54min (90% do tempo). 
-2. Margem de Erro: Os 10% restantes (6min para uma sessão de 60min) são reservados para transições entre blocos.
-3. Distribuição Sugerida: 
-   - Warmup: 10% | Skill/Strength: 40% | Workout: 40% | Cooldown: 10%.
-
-[CONTRATO DE CAMPOS - CÁLCULO DE TT]
-- ts (Sets): Número de séries/rounds. Nunca null.
-- re/ru (Rest/Unit): Descanso entre séries (ex: 90, "seg").
-- te/tu (Time Exercise/Unit): Tempo de execução de 1 série. Dê preferência a "seg" para séries de força (ex: 45) e "min" para cardios longos.
-- tt (Total Time): Cálculo rigoroso em minutos:
-  Fórmula: tt = ((time_exercise + rest) * sets) / 60.
-  *Se o exercício for por tempo fixo (ex: Corrida 10min), tt = 10.*
-
-[HEURÍSTICA DE EXECUÇÃO (Para estimar 'te')]
-- Força (LPO): 5 seg por repetição. (Ex: 10 reps = 50 seg).
-- Ginástica/Acessórios/Agachamentos: 3 seg por repetição. (Ex: 10 reps = 30 seg).
-- Explosivos/Burpees: 2 seg por repetição.
-- SEMPRE preencha 'te' e 're'. Nunca retorne 0 se houver trabalho sendo feito.
-`;
-
-const FEW_SHOT_EXAMPLES = `
-[EXEMPLO DE ALTA PRECISÃO - SESSÃO 60MIN]
-{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":1,"ex":"Back Squat","et":"Força de Pernas","eg":"Lower Body","ey":"Força","ts":4,"de":"4x8 @70% 1RM (Estimativa: 40s on / 90s off)","te":40,"eu":"seg","re":90,"ru":"seg","tt":9,"lo":"Box","sg":"strength","al":""}
-{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":2,"ex":"Burpee Over Bar","et":"Metcon","eg":"Full Body","ey":"Condicionamento","ts":1,"de":"AMRAP 12min","te":12,"eu":"min","re":0,"ru":"seg","tt":12,"lo":"Box","sg":"workout","al":""}
-`;
 // ============================================================================
 // AUTO-HEALER: Reconstrói JSONs truncados usando Pilha (Stack)
 // ============================================================================
@@ -110,16 +80,13 @@ function extractRobustJSON(str: string): any {
   let text = str.trim();
   text = text.replace(/```(json)?/gi, '').trim();
 
-  // 1. Tenta o parse direto
   try { return JSON.parse(text); } catch (_) { }
 
-  // 2. Tenta a Auto-Cura (Stack) para casos de truncamento
   try {
     const healed = autoHealJSON(text);
     return JSON.parse(healed);
   } catch (_) { }
 
-  // 3. Fallback: Extrator iterativo (Corta o lixo do final)
   let currentStr = text.replace(/,\s*([\]}])/g, '$1');
   const start = currentStr.search(/[\{\[]/);
   if (start !== -1) currentStr = currentStr.substring(start);
@@ -138,7 +105,6 @@ function extractRobustJSON(str: string): any {
   throw new Error("Não foi possível extrair um JSON válido mesmo com Auto-Heal.");
 }
 
-// Helper: format training sessions for LLM
 function formatTrainingSessions(sessions: any[]): string {
   if (!sessions || sessions.length === 0) {
     throw new Error("Nenhuma sessão de treino configurada. Por favor, configure suas sessões no perfil ou no onboarding antes de prosseguir.");
@@ -204,7 +170,7 @@ async function generateWithProvider(
           },
           body: JSON.stringify({
             model: llmModel,
-            max_tokens: 5000,
+            max_tokens: maxTokens,
             temperature: targetTemperature,
             system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
             messages: [{ role: 'user', content: prompt }],
@@ -248,48 +214,6 @@ async function generateWithProvider(
   }
 }
 
-async function getEmbedding(text: string) {
-  const apiKey = Deno.env.get('GEMINI_API_KEY');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "models/gemini-embedding-001",
-      content: { parts: [{ text }] },
-      outputDimensionality: 768
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(`Erro no Embedding: ${JSON.stringify(error)}`);
-  }
-
-  const data = await response.json();
-  return data.embedding.values;
-}
-
-async function queryKnowledgeBase(queryText: string, genAI: any, adminClient: any) {
-  if (!queryText) return "";
-  try {
-    const embedding = await getEmbedding(queryText);
-    const { data: documents, error } = await adminClient.rpc('match_knowledge_base', {
-      query_embedding: embedding,
-      match_threshold: 0.4,
-      match_count: 5
-    });
-    if (error) return "";
-    if (documents && documents.length > 0) {
-      return `\n[LITERATURA CIENTÍFICA]\n${documents.map((d: any) => d.content).join("\n---\n")}\n`;
-    }
-    return "";
-  } catch (err) {
-    return "";
-  }
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -298,14 +222,6 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')?.trim() || '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim() || '';
     const geminiKey = Deno.env.get('GEMINI_API_KEY')?.trim() || '';
-
-    if (!supabaseServiceKey) console.warn("[WARN] SUPABASE_SERVICE_ROLE_KEY não encontrada no ambiente.");
-
-    const supabaseClient = createClient(
-      supabaseUrl,
-      supabaseAnonKey,
-      { global: { headers: { Authorization: req.headers.get('Authorization') || `Bearer ${supabaseAnonKey}` } } }
-    )
 
     const adminClient = createClient(
       supabaseUrl,
@@ -334,14 +250,11 @@ serve(async (req) => {
       }
     }
 
-    // =========================================================
-    // ACTION 3a: gerar_analise (Micro-Step 1)
-    // =========================================================
     if (acao === 'gerar_analise') {
       const { email_utilizador, user_id, bloco_atual, performance_stats, cycle_snapshot, training_sessions, contexto_macrociclo } = payload;
       const profileRes = user_id
-        ? await supabaseClient.from('profiles').select('*').eq('id', user_id).single()
-        : await supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single();
+        ? await adminClient.from('profiles').select('*').eq('id', user_id).single()
+        : await adminClient.from('profiles').select('*').eq('email', email_utilizador).single();
 
       const profile = profileRes.data || {};
       const bloco = bloco_atual || {};
@@ -352,52 +265,54 @@ serve(async (req) => {
 
       let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
       if (profile?.id) {
-        const { data: tfData } = await supabaseClient.from('technique_feedbacks').select('exercise_name, resume_text').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(5);
+        const { data: tfData } = await adminClient.from('technique_feedbacks').select('exercise_name, resume_text').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(5);
         if (tfData && tfData.length > 0) techniqueFeedbacksStr = tfData.map((tf: any) => `- Exercício: ${tf.exercise_name}\n  Análise: ${tf.resume_text}`).join('\n');
       }
 
       const prompt = `
         ${COACH_PERSONA}
-        [MISSÃO — GERAR ANÁLISE E VISÃO GERAL DO MESOCICLO]
-        Gere a análise do ciclo anterior e o esqueleto de semanas (visão geral) do novo mesociclo.
-        SEJA EXTREMAMENTE OBJETIVO. Evite introduções e textos longos. Foque nos fatos técnicos.
+        [MISSÃO — ANÁLISE E PLANEJAMENTO DO MESOCICLO]
+        Gere três componentes essenciais: 
+        1. analiseCicloAnterior: Avaliação do progresso.
+        2. visaoGeralCiclo: Esqueleto semanal do mesociclo.
+        3. resumoMesociclo: Apenas repita a definição do foco deste bloco.
 
-        [CONTEXTO DO MACROCICLO]
-        - Análise Histórica: ${macroCtx.analise_historica?.analiseMacro?.analise || 'Não fornecida'}
-        - Objetivo Geral do Plano: ${macroCtx.visao_geral_plano?.objetivoPrincipal || 'Não fornecida'}
+        ${METRICS_DEFINITIONS}
 
-        [SESSÕES CONFIGURADAS]
-        ${formatTrainingSessions(sessions)}
+        [CONTEXTO DO ATLETA]
+        - Nome: ${profile.name} | Objetivo Macro: ${macroCtx.visao_geral_plano?.objetivoPrincipal || 'N/A'}
+        - Histórico/Análise Macro: ${macroCtx.analise_historica?.analiseMacro?.analise || 'N/A'}
+        - Técnica: ${techniqueFeedbacksStr}
+        - Sessões: ${formatTrainingSessions(sessions)}
         
-        [BLOCO ATUAL DO MESOCICLO]
-        - Nome: ${bloco.mesociclo} | Foco: ${bloco.foco}
+        [MESOCICLO ATUAL]
+        - Nome: ${bloco.mesociclo} | Foco Original: ${bloco.foco}
 
-        [ATLETA]
-        - Nome: ${profile.name}
+        [DADOS PARA ANÁLISE DE PROGRESSO]
+        - KPIs Ciclo Anterior: ${JSON.stringify(perfStats?.kpis || perfStats || {})}
+        - Snapshot Atual: ${JSON.stringify(cycleSnap?.kpis || {})}
 
-        [TECNICA]
-        ${techniqueFeedbacksStr}
-
-        [KPIs CICLO ANTERIOR]
-        ${JSON.stringify(perfStats?.kpis || perfStats || {})}
-
-        [SNAPSHOT ATLETA]
-        ${JSON.stringify(cycleSnap?.kpis || {})}
+        [REGRAS DE RESPOSTA]
+        - SEJA ULTRA OBJETIVO. Sem introduções.
+        - analiseCicloAnterior: Texto narrativo em 'texto'.
+        - visaoGeralCiclo: Estrutura de semanas 1 a 4.
 
         [FORMATO — JSON]
         {
-          "analiseCicloAnterior": { "aderencia": "string", "evolucao": "string", "texto": "string" },
-          "visaoGeralCiclo": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }]
+          "analiseCicloAnterior": { "texto": "string" },
+          "visaoGeralCiclo": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }],
+          "resumoMesociclo": "string"
         }
       `;
 
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_analise', 4000, 0.7);
+      
+      // Resgate da definição tal qual (foco do bloco)
+      result.resumoMesociclo = bloco.foco || result.resumoMesociclo;
+
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
-    // =========================================================
-    // ACTION 3b: gerar_calendario (Micro-Step 2)
-    // =========================================================
     else if (acao === 'gerar_calendario') {
       const { bloco_atual, visao_geral, data_inicio_meso, training_sessions } = payload;
       const bloco = bloco_atual || {};
@@ -478,86 +393,6 @@ serve(async (req) => {
         result.visaoSemanal = visaoCompleta;
       }
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
-    }
-
-    // =========================================================
-    // ACTION 4: gerar_detalhamento
-    // =========================================================
-    else if (acao === 'gerar_detalhamento') {
-      const { email_utilizador, user_id, visao_diaria, exercicios_da_semana, meso_context } = payload;
-      const ctx = meso_context || {};
-
-      let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
-      const profileRes = user_id
-        ? await adminClient.from('profiles').select('id').eq('id', user_id).single()
-        : await adminClient.from('profiles').select('id').eq('email', email_utilizador).single();
-
-      if (profileRes.data?.id) {
-        const { data: tfData } = await adminClient
-          .from('technique_feedbacks')
-          .select('exercise_name, resume_text, improve_exercises')
-          .eq('user_id', profileRes.data.id)
-          .order('created_at', { ascending: false })
-          .limit(15);
-        if (tfData && tfData.length > 0) {
-          techniqueFeedbacksStr = tfData.map((tf: any) =>
-            `- Exercício Original: ${tf.exercise_name}\n  Problema/Resumo: ${tf.resume_text}\n  Exercícios Corretivos Recomendados: ${JSON.stringify(tf.improve_exercises)}`
-          ).join('\n');
-        }
-      }
-
-      const diasStr = (visao_diaria || []).map((d: any) => `  - ${d.date} (${d.day}) | session ${d.session || 1} | ${d.session_type} | ${d.focoPrincipal}`).join('\n');
-
-      const exsStr = (exercicios_da_semana || []).map((e: any) => `  - ${e.day}: ${e.exercise} (${e.stage})`).join('\n');
-
-      const ragQuery = `${ctx.focoSemana || ''} ${ctx.objetivo || ''} exercícios crossfit`;
-      const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, adminClient);
-
-      const prompt = `
-        ${COACH_PERSONA} Gere os exercícios para o dia especificado abaixo, pertencente à Semana ${ctx.semanaNum} do mesociclo "${ctx.nome}".
-        [DATA DE HOJE: ${today}]
-        [CONTEXTO CIENTÍFICO (RAG)]
-        ${knowledgeContext}
-        ${DATA_CONTRACT}
-        ${FEW_SHOT_EXAMPLES}
-        [TECNICA]
-        ${techniqueFeedbacksStr}
-        [SESSÕES CONFIGURADAS]
-        ${formatTrainingSessions(ctx.trainingSessions || [])}
-        
-        [EXERCÍCIOS JÁ GERADOS NESTA SEMANA (CONTEXTO)]
-        ${exsStr || "Nenhum exercício gerado ainda nesta semana."}
-        
-        [DIA ALVO PARA GERAÇÃO]
-${diasStr}
-
-        [FORMATO — JSON COMPACTO]
-        { "exs": [{ "dt": "YYYY-MM-DD", "dy": "Dia", "se": 1, "st": "tipo", "du": 60, "idx": 1, "ex": "nome", "et": "titulo", "eg": "grupo", "ey": "tipo_ex", "ts": 3, "de": "detalhes", "te": 0, "eu": "min", "re": 60, "ru": "seg", "tt": 0, "lo": "box", "sg": "workout", "al": "" }] }
-        
-        [REGRAS RESTRITAS DE JSON E OBJETIVIDADE]
-        1. NUNCA coloque vírgulas finais (trailing commas) no último elemento de objetos ou arrays.
-        2. Certifique-se de que TODAS as chaves de propriedades tenham aspas duplas ("chave").
-        3. SEJA EXTREMAMENTE OBJETIVO. Não inclua NENHUM texto conversacional, explicação ou markdown fora do JSON.
-        4. Detalhes ("de") e Títulos ("et") devem ser curtos, diretos e objetivos.
-      `;
-
-      const responseData = await generateWithProvider(prompt, provider, llmModel, genAI, `detalhamento_s${ctx.semanaNum}`, 16000, 0.2);
-
-      const fullExercicios = await Promise.all((responseData.exs || []).map(async (short: any) => {
-        const { data: link } = await adminClient.rpc('get_closest_exercise_link', { search_name: short.et || short.ex });
-        const ts = Number(short.ts) || 1;
-        const te = Number(short.te) || 0;
-        const re = Number(short.re) || 0;
-        const teMin = (short.eu === "seg") ? te / 60 : te;
-        const reMin = (short.ru === "seg") ? re / 60 : re;
-        const tt_final = Number(((teMin * ts) + (reMin * Math.max(0, ts - 1))).toFixed(1));
-
-        return {
-          date: short.dt || today, week: Number(ctx.semanaNum) || 1, mesocycle: ctx.nome, day: short.dy || "", session: Number(short.se) || 1, session_type: short.st || "Metcon", duration: Number(short.du) || 60, workout_idx: Number(short.idx) || 1, exercise: short.ex || "Exercício não especificado", exercise_title: short.et || short.ex || "", exercise_group: short.eg || "Geral", exercise_type: short.ey || "Acessório", sets: ts, details: short.de || "", time_exercise: te, ex_unit: short.eu || "min", rest: re, rest_unit: short.ru || "seg", total_time: tt_final, location: short.lo || "Box", stage: short.sg || "workout", workout_link: link || "", adaptacaoLesao: short.al || ""
-        };
-      }));
-
-      return new Response(JSON.stringify({ "exerciciosDetalhados": fullExercicios }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
     else return new Response(JSON.stringify({ error: `Ação desconhecida: ${acao}` }), { headers: corsHeaders, status: 400 })

@@ -272,12 +272,6 @@ serve(async (req) => {
 
     if (!supabaseServiceKey) console.warn("[WARN] SUPABASE_SERVICE_ROLE_KEY não encontrada no ambiente.");
 
-    const supabaseClient = createClient(
-      supabaseUrl,
-      supabaseAnonKey,
-      { global: { headers: { Authorization: req.headers.get('Authorization') || `Bearer ${supabaseAnonKey}` } } }
-    )
-
     const adminClient = createClient(
       supabaseUrl,
       supabaseServiceKey || supabaseAnonKey
@@ -318,8 +312,8 @@ serve(async (req) => {
       console.log(`[Action 1] Iniciando para ${email_utilizador || user_id}`);
 
       const profileQuery = user_id 
-        ? supabaseClient.from('profiles').select('*').eq('id', user_id).single()
-        : supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single();
+        ? adminClient.from('profiles').select('*').eq('id', user_id).single()
+        : adminClient.from('profiles').select('*').eq('email', email_utilizador).single();
 
       const [profileRes, prRes, benchRes] = await Promise.all([
         profileQuery,

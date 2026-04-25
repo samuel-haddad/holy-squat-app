@@ -40,8 +40,12 @@ class WorkoutController extends ChangeNotifier {
   };
 
   static const _generateCycleSteps = {
-    1: '📆 Ação 1/2 — Gerando calendário semanal...',
-    2: '⚡ Ação 2/2 — Gerando exercícios detalhados...',
+    1: '🧠 Analisando histórico e visão geral...',
+    2: '📆 Estruturando calendário semanal...',
+  };
+
+  static const _generateWorkoutsSteps = {
+    1: '⚡ Gerando detalhamento dos treinos...',
   };
 
   // =========================================================
@@ -119,9 +123,9 @@ class WorkoutController extends ChangeNotifier {
   }
 
   // =========================================================
-  // GENERATE CYCLE (Ações 3+4) — "Next Cycle" button
+  // GENERATE ANALYSIS (Ações 3a+3b) — "Next Cycle" button
   // =========================================================
-  Future<void> gerarProximoCiclo({
+  Future<void> gerarAnaliseCiclo({
     required String emailUtilizador,
     required String planoId,
     required String actualPlanSummaryJson,
@@ -130,7 +134,7 @@ class WorkoutController extends ChangeNotifier {
     String? aiCoachName,
   }) async {
     _state = WorkoutState.loading;
-    _loadingMessage = '🚀 Iniciando geração do ciclo de treino...';
+    _loadingMessage = '🚀 Iniciando análise e calendário do ciclo...';
     notifyListeners();
 
     try {
@@ -164,22 +168,109 @@ class WorkoutController extends ChangeNotifier {
       if (job == null) throw Exception('Job result not found');
       if (job['status'] == 'error') throw Exception(job['error_message'] ?? 'Unknown server error');
 
-      _currentCycleJobId = jobId;
       _planoGerado = _buildResponseFromGenerateCycleJob(job);
       _state = WorkoutState.success;
       _loadingMessage = '';
 
-      // Se o job estiver aguardando aprovação, não faz cleanup ainda.
-      if (job['status'] == 'pending_approval') {
-        _cleanupJobChannel();
-        notifyListeners();
-        return;
+    } catch (e) {
+      _errorMessage = 'Falha ao gerar a análise do ciclo: ${e.toString()}';
+      _state = WorkoutState.error;
+    } finally {
+      _cleanupJobChannel();
+      notifyListeners();
+    }
+  }
+
+  // =========================================================
+  // RESTORE CYCLE — "Restore" button
+  // =========================================================
+  Future<void> restaurarCiclo({
+    required String emailUtilizador,
+    required String planoId,
+    required String actualPlanSummaryJson,
+    required List currentWorkoutsTable,
+    List<TrainingSession>? trainingSessions,
+    String? aiCoachName,
+  }) async {
+    try {
+      await _repository.removeLastMeso(planoId);
+      
+      // Remove the last mesocycle from the in-memory table so it gets regenerated
+      String? lastMeso;
+      if (currentWorkoutsTable.isNotEmpty) {
+        lastMeso = currentWorkoutsTable.last['mesocycle']?.toString();
+      }
+      final newTable = List.from(currentWorkoutsTable);
+      if (lastMeso != null) {
+        newTable.removeWhere((row) => row['mesocycle']?.toString() == lastMeso);
       }
 
-      _currentCycleJobId = null;
+      await gerarAnaliseCiclo(
+        emailUtilizador: emailUtilizador,
+        planoId: planoId,
+        actualPlanSummaryJson: actualPlanSummaryJson,
+        currentWorkoutsTable: newTable,
+        trainingSessions: trainingSessions,
+        aiCoachName: aiCoachName,
+      );
+    } catch (e) {
+      _errorMessage = 'Falha ao restaurar ciclo: ${e.toString()}';
+      _state = WorkoutState.error;
+      notifyListeners();
+    }
+  }
+
+  // =========================================================
+  // GENERATE WORKOUTS (Ação 4) — "Workouts" button
+  // =========================================================
+  Future<void> gerarExerciciosDetalhados({
+    required String emailUtilizador,
+    required String planoId,
+    required List visaoSemanal,
+    required Map blocoAtual,
+    List<TrainingSession>? trainingSessions,
+    String? aiCoachName,
+  }) async {
+    _state = WorkoutState.loading;
+    _loadingMessage = '⚡ Iniciando detalhamento dos treinos...';
+    notifyListeners();
+
+    try {
+      final plan = await SupabaseService.fetchLatestTrainingPlan(aiCoachName: aiCoachName);
+      Map<String, dynamic> planSummary = {};
+      try { planSummary = jsonDecode(plan?['actual_plan_summary'] ?? '{}'); } catch (_) {}
+
+      final activeDaysCount = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
+
+      final jobId = await _repository.criarJobGeracao(
+        jobType: 'generate_workouts',
+        totalSteps: activeDaysCount,
+        aiCoachName: aiCoachName,
+        inputParams: {
+          'email_utilizador': emailUtilizador,
+          'plano_id': planoId,
+          'ai_coach_name': aiCoachName,
+          'visao_semanal': visaoSemanal,
+          'bloco_atual': blocoAtual,
+          'plan_summary': planSummary,
+          'training_sessions': (trainingSessions ?? []).map((s) => s.toJson()).toList(),
+        },
+      );
+
+      _loadingMessage = '⚡ Gerando treino do dia 1/$activeDaysCount...';
+      notifyListeners();
+
+      await _subscribeAndWait(jobId, {}, isGenerateWorkouts: true);
+
+      final job = await _repository.fetchJobResult(jobId);
+      if (job == null) throw Exception('Job result not found');
+      if (job['status'] == 'error') throw Exception(job['error_message'] ?? 'Unknown server error');
+
+      _state = WorkoutState.success;
+      _loadingMessage = '';
 
     } catch (e) {
-      _errorMessage = 'Falha ao gerar o ciclo: ${e.toString()}';
+      _errorMessage = 'Falha ao detalhar o ciclo: ${e.toString()}';
       _state = WorkoutState.error;
     } finally {
       _cleanupJobChannel();
@@ -226,7 +317,7 @@ class WorkoutController extends ChangeNotifier {
   // =========================================================
   // Realtime subscription
   // =========================================================
-  Future<void> _subscribeAndWait(String jobId, Map<int, String> stepMessages, {bool isGenerateCycle = false}) async {
+  Future<void> _subscribeAndWait(String jobId, Map<int, String> stepMessages, {bool isGenerateCycle = false, bool isGenerateWorkouts = false}) async {
     _jobCompleter = Completer<void>();
     final supabase = Supabase.instance.client;
     Timer? pollTimer;
@@ -254,18 +345,18 @@ class WorkoutController extends ChangeNotifier {
               } else if (step == 2) {
                 _loadingMessage = '📆 Estruturando dias do calendário...';
                 notifyListeners();
-              } else if (step >= 3) {
-                int totalDays = 1;
-                try {
-                  final step1Result = newData['step_1_result'] as Map<String, dynamic>? ?? {};
-                  final visaoSemanal = step1Result['visaoSemanal'] as List<dynamic>? ?? [];
-                  totalDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
-                  if (totalDays == 0) totalDays = 1;
-                } catch (_) {}
-                
-                _loadingMessage = '⚡ Gerando treino do dia ${step - 2}/$totalDays...';
-                notifyListeners();
               }
+            } else if (isGenerateWorkouts) {
+              int totalDays = 1;
+              try {
+                final input = newData['input_params'] as Map<String, dynamic>? ?? {};
+                final visaoSemanal = input['visao_semanal'] as List<dynamic>? ?? [];
+                totalDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
+                if (totalDays == 0) totalDays = 1;
+              } catch (_) {}
+              
+              _loadingMessage = '⚡ Gerando treino do dia $step/$totalDays...';
+              notifyListeners();
             } else if (stepMessages.containsKey(step)) {
               _loadingMessage = stepMessages[step]!;
               notifyListeners();
@@ -299,18 +390,18 @@ class WorkoutController extends ChangeNotifier {
           } else if (step == 2) {
             _loadingMessage = '📆 Estruturando dias do calendário...';
             notifyListeners();
-          } else if (step >= 3) {
-            int totalDays = 1;
-            try {
-              final step1Result = job['step_1_result'] as Map<String, dynamic>? ?? {};
-              final visaoSemanal = step1Result['visaoSemanal'] as List<dynamic>? ?? [];
-              totalDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
-              if (totalDays == 0) totalDays = 1;
-            } catch (_) {}
-            
-            _loadingMessage = '⚡ Gerando treino do dia ${step - 2}/$totalDays...';
-            notifyListeners();
           }
+        } else if (isGenerateWorkouts) {
+          int totalDays = 1;
+          try {
+            final input = job['input_params'] as Map<String, dynamic>? ?? {};
+            final visaoSemanal = input['visao_semanal'] as List<dynamic>? ?? [];
+            totalDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
+            if (totalDays == 0) totalDays = 1;
+          } catch (_) {}
+          
+          _loadingMessage = '⚡ Gerando treino do dia $step/$totalDays...';
+          notifyListeners();
         } else if (stepMessages.containsKey(step)) {
           _loadingMessage = stepMessages[step]!;
           notifyListeners();

@@ -410,3 +410,23 @@ entrypoint = "./functions/gerar-plano/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/gerar-ciclo/index.ts"
+
+[functions.gerar-analise-ciclo]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/gerar-analise-ciclo/index.ts"
+
+[functions.gerar-exercicios]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/gerar-exercicios/index.ts"
+
+[functions.orchestrate-treino]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/orchestrate-treino/index.ts"
+
+[functions.process-technique]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/process-technique/index.ts"

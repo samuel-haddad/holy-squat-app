@@ -162,6 +162,23 @@ class WorkoutRepository {
     return response;
   }
 
+  /// Checks if there are any workouts already generated for a given plan and mesocycle.
+  Future<bool> hasWorkoutsForMesocycle(String planId, String mesocycleName) async {
+    try {
+      await _refreshSessionIfNeeded();
+      final response = await _supabase
+          .from('workouts')
+          .select('wod_exercise_id')
+          .eq('plan_id', planId)
+          .eq('mesocycle', mesocycleName)
+          .limit(1);
+      return (response as List).isNotEmpty;
+    } catch (e) {
+      print('Error checking workouts: $e');
+      return false;
+    }
+  }
+
   // =========================================================
   // ACTION 1: gerar_analise_historica (DIRECT CALL FALLBACK)
   // Analyzes the athlete's sports history (heavy DB queries).
@@ -341,6 +358,23 @@ class WorkoutRepository {
     } catch (e) {
       print('Error saving exercises: $e');
       rethrow;
+    }
+  }
+  Future<void> removeLastMeso(String planId) async {
+    await _refreshSessionIfNeeded();
+    final response = await _supabase
+        .from('training_plans')
+        .select('mesos_ja_gerados')
+        .eq('id', planId)
+        .single();
+    
+    final List<dynamic> mesos = List<dynamic>.from(response['mesos_ja_gerados'] ?? []);
+    if (mesos.isNotEmpty) {
+      mesos.removeLast();
+      await _supabase
+          .from('training_plans')
+          .update({'mesos_ja_gerados': mesos})
+          .eq('id', planId);
     }
   }
 }

@@ -69,6 +69,8 @@ async function processJob(jobId: string) {
       await handleCreatePlanStep(job, admin);
     } else if (job.job_type === 'generate_cycle') {
       await handleGenerateCycleStep(job, admin);
+    } else if (job.job_type === 'generate_workouts') {
+      await handleGenerateWorkoutsStep(job, admin);
     } else {
       throw new Error(`Unknown job_type: ${job.job_type}`);
     }
@@ -248,7 +250,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       contexto_macrociclo: contextoMacrociclo,
       training_sessions: trainingSessions,
       ai_coach_name: p.ai_coach_name,
-    }, 'gerar-ciclo');
+    }, 'gerar-analise-ciclo');
 
     await admin.from('ai_generation_jobs').update({
       step_1_result: {
@@ -276,87 +278,95 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       data_inicio_meso: cicloResult._blocoAtual?.dataInicioMeso || p.data_inicio_macro,
       training_sessions: cicloResult._trainingSessions || p.training_sessions || [],
       ai_coach_name: p.ai_coach_name,
-    }, 'gerar-ciclo');
+    }, 'gerar-analise-ciclo');
+
+    job.step_1_result = {
+      ...cicloResult,
+      visaoSemanal: result.visaoSemanal
+    };
+
+    // Persiste os resultados intermediários (Análise + Calendário)
+    await persistGenerateCycle(job, [], admin);
 
     await admin.from('ai_generation_jobs').update({
-      step_1_result: {
-        ...cicloResult,
-        visaoSemanal: result.visaoSemanal
-      },
+      step_1_result: job.step_1_result,
       current_step: 3,
-      // Continua processando para iniciar o loop do Step 3 (Dias)
-      status: 'processing', 
+      status: 'completed', // Finaliza aqui. O detalhamento (exercícios) será outro Job.
       updated_at: new Date().toISOString(),
-    }).eq('id', job.id);
+    }).eq('id', job.id).throwOnError();
 
   } else if (step >= 3) {
-    console.log(`[orch] generate_cycle step ${step}: gerar_detalhamento (micro-steps diários)`);
-    const cicloResult = job.step_1_result || {};
-    const visaoSemanal = cicloResult.visaoSemanal || [];
-    const blocoAtual = cicloResult._blocoAtual || {};
-    const trainingSessions = cicloResult._trainingSessions || p.training_sessions || [];
+    // Fallback de segurança se o step passar dos dias configurados no job antigo
+    await admin.from('ai_generation_jobs').update({
+      status: 'completed', updated_at: new Date().toISOString(),
+    }).eq('id', job.id);
+  }
+}
 
-    let planSummary: any = {};
-    try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) { }
+// =========================================================
+// GENERATE_WORKOUTS: Ação 4 (Loop diário)
+// "Workouts" button
+// =========================================================
+async function handleGenerateWorkoutsStep(job: any, admin: any) {
+  const step = job.current_step;
+  const p = job.input_params;
+  const visaoSemanal = p.visao_semanal || [];
+  const blocoAtual = p.bloco_atual || {};
+  const trainingSessions = p.training_sessions || [];
+  const planSummary = p.plan_summary || {};
 
-    const activeDays = visaoSemanal.filter((d: any) => !d.isDescansoAtivo);
-    const dayIndex = step - 3;
+  const activeDays = visaoSemanal.filter((d: any) => !d.isDescansoAtivo);
+  const dayIndex = step - 1; // Inicia no step 1
 
-    if (dayIndex < activeDays.length) {
-      const dia = activeDays[dayIndex];
-      const weekNum = dia.week || 1;
-      console.log(`[orch] Processando dia ${dia.date} (Index: ${dayIndex} / Total: ${activeDays.length})`);
+  if (dayIndex < activeDays.length) {
+    const dia = activeDays[dayIndex];
+    const weekNum = dia.week || 1;
+    console.log(`[orch] Processando exercícios dia ${dia.date} (Step: ${step} / Total: ${activeDays.length})`);
 
-      const accumulatedExercicios = job.step_2_result?.exerciciosDetalhados || [];
-      const exerciciosDaSemana = accumulatedExercicios.filter((ex: any) => ex.week === weekNum);
+    const accumulatedExercicios = job.step_1_result?.exerciciosDetalhados || [];
+    const exerciciosDaSemana = accumulatedExercicios.filter((ex: any) => ex.week === weekNum);
 
-      // Single LLM call for the specific DAY
-      const result = await callGerarTreino({
-        acao: 'gerar_detalhamento',
-        user_id: job.user_id,
-        email_utilizador: p.email_utilizador,
-        visao_diaria: [dia],
-        exercicios_da_semana: exerciciosDaSemana,
-        meso_context: {
-          nome: blocoAtual.mesociclo || 'Próximo Meso',
-          objetivo: planSummary.objetivoPrincipal || '',
-          semanaNum: weekNum,
-          totalSemanas: 4,
-          focoSemana: blocoAtual.foco || '',
-          trainingSessions: trainingSessions,
-        },
-        ai_coach_name: p.ai_coach_name,
-      }, 'gerar-ciclo');
+    const result = await callGerarTreino({
+      acao: 'gerar_detalhamento',
+      user_id: job.user_id,
+      email_utilizador: p.email_utilizador,
+      visao_diaria: [dia],
+      exercicios_da_semana: exerciciosDaSemana,
+      meso_context: {
+        nome: blocoAtual.mesociclo || 'Próximo Meso',
+        objetivo: planSummary.objetivoPrincipal || '',
+        semanaNum: weekNum,
+        totalSemanas: 4,
+        focoSemana: blocoAtual.foco || '',
+        trainingSessions: trainingSessions,
+      },
+      ai_coach_name: p.ai_coach_name,
+    }, 'gerar-exercicios');
 
-      const newExercicios = result.exerciciosDetalhados || [];
-      const allExercicios = [...accumulatedExercicios, ...newExercicios];
+    const newExercicios = result.exerciciosDetalhados || [];
+    const allExercicios = [...accumulatedExercicios, ...newExercicios];
 
-      if (dayIndex === activeDays.length - 1) {
-        // Último dia: persiste os resultados e finaliza o job
-        await persistGenerateCycle(job, allExercicios, admin);
+    if (dayIndex === activeDays.length - 1) {
+      // Último dia: persiste e finaliza
+      await persistExercicios(allExercicios, p.email_utilizador, p.plano_id, p.ai_coach_name, admin);
 
-        await admin.from('ai_generation_jobs').update({
-          step_2_result: { exerciciosDetalhados: allExercicios },
-          plan_id: p.plano_id,
-          status: 'completed', updated_at: new Date().toISOString(),
-        }).eq('id', job.id);
-
-        console.log(`[orch] generate_cycle COMPLETED. total exercises=${allExercicios.length}`);
-      } else {
-        // Avança para o próximo step (próximo dia)
-        await admin.from('ai_generation_jobs').update({
-          step_2_result: { exerciciosDetalhados: allExercicios },
-          current_step: step + 1, updated_at: new Date().toISOString(),
-        }).eq('id', job.id);
-        
-        console.log(`[orch] generate_cycle day ${dia.date} completed. Proceeding to step ${step + 1}.`);
-      }
-    } else {
-      // Fallback de segurança se o step passar dos dias configurados
       await admin.from('ai_generation_jobs').update({
+        step_1_result: { exerciciosDetalhados: allExercicios },
         status: 'completed', updated_at: new Date().toISOString(),
       }).eq('id', job.id);
+
+      console.log(`[orch] generate_workouts COMPLETED. total exercises=${allExercicios.length}`);
+    } else {
+      // Próximo dia
+      await admin.from('ai_generation_jobs').update({
+        step_1_result: { exerciciosDetalhados: allExercicios },
+        current_step: step + 1, updated_at: new Date().toISOString(),
+      }).eq('id', job.id);
     }
+  } else {
+    await admin.from('ai_generation_jobs').update({
+      status: 'completed', updated_at: new Date().toISOString(),
+    }).eq('id', job.id);
   }
 }
 
@@ -419,10 +429,17 @@ async function persistGenerateCycle(job: any, exercicios: any[], admin: any) {
   const rawSnapshot = cicloResult._cycleSnapshot;
   const hasValidSnapshot = rawSnapshot && rawSnapshot.kpis && rawSnapshot.radar !== undefined;
 
+  const currentMesoName = cicloResult._blocoAtual?.mesociclo;
+  const mesosJaGerados = Array.isArray(p.mesos_ja_gerados) ? [...p.mesos_ja_gerados] : [];
+  if (currentMesoName && !mesosJaGerados.includes(currentMesoName)) {
+    mesosJaGerados.push(currentMesoName);
+  }
+
   await admin.from('training_plans').update({
     progress_analysis: JSON.stringify({
-      // Narrative text fields from the LLM (texto, aderencia, evolucao)
+      // Narrative text fields from the LLM (texto, resumo, etc)
       ...(cicloResult.analiseCicloAnterior || {}),
+      mesocycle_summary: cicloResult.resumoMesociclo || null,
       // Structured KPIs from get_mesocycle_performance_stats → renders progress grid + charts
       kpis: performanceStats?.kpis || null,
       charts: performanceStats?.charts || null,
@@ -430,9 +447,11 @@ async function persistGenerateCycle(job: any, exercicios: any[], admin: any) {
       cycle_snapshot: hasValidSnapshot ? rawSnapshot : null,
     }),
     workouts_plan_table: [
+      ...(p.current_workouts_table || []),
       ...(cicloResult.visaoSemanal || []),
     ],
-  }).eq('id', p.plano_id);
+    mesos_ja_gerados: mesosJaGerados,
+  }).eq('id', p.plano_id).throwOnError();
 
   // Save exercises
   await persistExercicios(exercicios, p.email_utilizador, p.plano_id, p.ai_coach_name, admin);
