@@ -32,8 +32,9 @@ serve(async (req) => {
     if (!job_id) {
       return new Response(JSON.stringify({ error: 'job_id required' }), { headers: corsHeaders, status: 400 });
     }
-    // @ts-ignore: EdgeRuntime is a Supabase global
-    EdgeRuntime.waitUntil(processJob(job_id));
+    // Aguardamos o processamento do step atual terminar antes de liberar o container
+    await processJob(job_id);
+    
     return new Response(JSON.stringify({ received: true, job_id }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
     });
@@ -57,7 +58,7 @@ async function processJob(jobId: string) {
     .from('ai_generation_jobs').select('*').eq('id', jobId).single();
 
   if (error || !job) { console.error(`[orch] Job ${jobId} not found:`, error); return; }
-  if (job.status === 'completed' || job.status === 'error') { return; }
+  if (job.status === 'completed' || job.status === 'error' || job.status === 'pending_approval') { return; }
 
   await admin.from('ai_generation_jobs')
     .update({ status: 'processing', updated_at: new Date().toISOString() })
@@ -88,7 +89,7 @@ async function callGerarTreino(payload: any, functionName: string): Promise<any>
   
   const url = `${supabaseUrl}/functions/v1/${functionName}`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 59000);
+  const timeoutId = setTimeout(() => controller.abort(), 300000);
 
   try {
     console.log(`[orch] calling ${functionName}:${payload.acao}...`);
@@ -110,7 +111,7 @@ async function callGerarTreino(payload: any, functionName: string): Promise<any>
     return await resp.json();
   } catch (err: any) {
     if (err.name === 'AbortError') {
-      throw new Error(`Timeout: a função ${functionName} (${payload.acao}) excedeu 55s.`);
+      throw new Error(`Timeout: a função ${functionName} (${payload.acao}) excedeu 300s.`);
     }
     throw err;
   } finally {
@@ -172,7 +173,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
   const p = job.input_params;
 
   if (step === 1) {
-    console.log(`[orch] generate_cycle step 1: gerar_proximo_ciclo`);
+    console.log(`[orch] generate_cycle step 1: gerar_analise`);
 
     // Read training_plan for macro context (memory)
     let contextoMacrociclo: any = {};
@@ -238,16 +239,14 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     }
 
     const result = await callGerarTreino({
-      acao: 'gerar_proximo_ciclo',
+      acao: 'gerar_analise',
       user_id: job.user_id,
       email_utilizador: p.email_utilizador,
       bloco_atual: proximoMeso,
       performance_stats: performanceStats,
-      // Also pass cycleSnapshot so the LLM can interpret athlete KPIs in context
       cycle_snapshot: cycleSnapshot,
       contexto_macrociclo: contextoMacrociclo,
       training_sessions: trainingSessions,
-      data_inicio_meso: p.data_inicio_meso,
       ai_coach_name: p.ai_coach_name,
     }, 'gerar-ciclo');
 
@@ -256,15 +255,42 @@ async function handleGenerateCycleStep(job: any, admin: any) {
         ...result,
         _blocoAtual: proximoMeso,
         _cycleSnapshot: cycleSnapshot,
-        // Store performanceStats so persistGenerateCycle (step 2) can write kpis/charts to progress_analysis
         _performanceStats: performanceStats,
         _trainingSessions: trainingSessions,
       },
-      current_step: 2, updated_at: new Date().toISOString(),
+      current_step: 2,
+      updated_at: new Date().toISOString(),
     }).eq('id', job.id);
 
   } else if (step === 2) {
-    console.log(`[orch] generate_cycle step 2: gerar_detalhamento (parallel)`);
+    console.log(`[orch] generate_cycle step 2: gerar_calendario`);
+    const p = job.input_params;
+    const cicloResult = job.step_1_result || {};
+    
+    const result = await callGerarTreino({
+      acao: 'gerar_calendario',
+      user_id: job.user_id,
+      email_utilizador: p.email_utilizador,
+      bloco_atual: cicloResult._blocoAtual,
+      visao_geral: cicloResult.visaoGeralCiclo,
+      data_inicio_meso: cicloResult._blocoAtual?.dataInicioMeso || p.data_inicio_macro,
+      training_sessions: cicloResult._trainingSessions || p.training_sessions || [],
+      ai_coach_name: p.ai_coach_name,
+    }, 'gerar-ciclo');
+
+    await admin.from('ai_generation_jobs').update({
+      step_1_result: {
+        ...cicloResult,
+        visaoSemanal: result.visaoSemanal
+      },
+      current_step: 3,
+      // Continua processando para iniciar o loop do Step 3 (Dias)
+      status: 'processing', 
+      updated_at: new Date().toISOString(),
+    }).eq('id', job.id);
+
+  } else if (step >= 3) {
+    console.log(`[orch] generate_cycle step ${step}: gerar_detalhamento (micro-steps diários)`);
     const cicloResult = job.step_1_result || {};
     const visaoSemanal = cicloResult.visaoSemanal || [];
     const blocoAtual = cicloResult._blocoAtual || {};
@@ -273,48 +299,64 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     let planSummary: any = {};
     try { planSummary = JSON.parse(p.actual_plan_summary_json || '{}'); } catch (_) { }
 
-    // Group by week
-    const weekGroups: Record<number, any[]> = {};
-    for (const dia of visaoSemanal) {
-      if (!dia.isDescansoAtivo) {
-        const w = dia.week || 1;
-        if (!weekGroups[w]) weekGroups[w] = [];
-        weekGroups[w].push(dia);
-      }
-    }
-    const weeks = Object.keys(weekGroups).map(Number).sort((a, b) => a - b);
+    const activeDays = visaoSemanal.filter((d: any) => !d.isDescansoAtivo);
+    const dayIndex = step - 3;
 
-    // Parallel LLM calls for each week
-    const results = await Promise.all(weeks.map(weekNum =>
-      callGerarTreino({
+    if (dayIndex < activeDays.length) {
+      const dia = activeDays[dayIndex];
+      const weekNum = dia.week || 1;
+      console.log(`[orch] Processando dia ${dia.date} (Index: ${dayIndex} / Total: ${activeDays.length})`);
+
+      const accumulatedExercicios = job.step_2_result?.exerciciosDetalhados || [];
+      const exerciciosDaSemana = accumulatedExercicios.filter((ex: any) => ex.week === weekNum);
+
+      // Single LLM call for the specific DAY
+      const result = await callGerarTreino({
         acao: 'gerar_detalhamento',
         user_id: job.user_id,
         email_utilizador: p.email_utilizador,
-        visao_semanal: weekGroups[weekNum],
+        visao_diaria: [dia],
+        exercicios_da_semana: exerciciosDaSemana,
         meso_context: {
           nome: blocoAtual.mesociclo || 'Próximo Meso',
           objetivo: planSummary.objetivoPrincipal || '',
           semanaNum: weekNum,
-          totalSemanas: weeks.length,
+          totalSemanas: 4,
           focoSemana: blocoAtual.foco || '',
-          trainingSessions: p.training_sessions || [],
+          trainingSessions: trainingSessions,
         },
         ai_coach_name: p.ai_coach_name,
-      }, 'gerar-ciclo')
-    ));
+      }, 'gerar-ciclo');
 
-    const allExercicios = results.flatMap((r: any) => r.exerciciosDetalhados || []);
+      const newExercicios = result.exerciciosDetalhados || [];
+      const allExercicios = [...accumulatedExercicios, ...newExercicios];
 
-    // PERSIST: save sessions + workouts + update plan
-    await persistGenerateCycle(job, allExercicios, admin);
+      if (dayIndex === activeDays.length - 1) {
+        // Último dia: persiste os resultados e finaliza o job
+        await persistGenerateCycle(job, allExercicios, admin);
 
-    await admin.from('ai_generation_jobs').update({
-      step_2_result: { exerciciosDetalhados: allExercicios },
-      plan_id: p.plano_id,
-      status: 'completed', updated_at: new Date().toISOString(),
-    }).eq('id', job.id);
+        await admin.from('ai_generation_jobs').update({
+          step_2_result: { exerciciosDetalhados: allExercicios },
+          plan_id: p.plano_id,
+          status: 'completed', updated_at: new Date().toISOString(),
+        }).eq('id', job.id);
 
-    console.log(`[orch] generate_cycle COMPLETED. exercises=${allExercicios.length}`);
+        console.log(`[orch] generate_cycle COMPLETED. total exercises=${allExercicios.length}`);
+      } else {
+        // Avança para o próximo step (próximo dia)
+        await admin.from('ai_generation_jobs').update({
+          step_2_result: { exerciciosDetalhados: allExercicios },
+          current_step: step + 1, updated_at: new Date().toISOString(),
+        }).eq('id', job.id);
+        
+        console.log(`[orch] generate_cycle day ${dia.date} completed. Proceeding to step ${step + 1}.`);
+      }
+    } else {
+      // Fallback de segurança se o step passar dos dias configurados
+      await admin.from('ai_generation_jobs').update({
+        status: 'completed', updated_at: new Date().toISOString(),
+      }).eq('id', job.id);
+    }
   }
 }
 

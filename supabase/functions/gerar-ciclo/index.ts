@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { GoogleGenerativeAI } from "npm:@google/generative-ai"
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "npm:@google/generative-ai"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -71,13 +71,79 @@ const FEW_SHOT_EXAMPLES = `
 {"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":1,"ex":"Back Squat","et":"Força de Pernas","eg":"Lower Body","ey":"Força","ts":4,"de":"4x8 @70% 1RM (Estimativa: 40s on / 90s off)","te":40,"eu":"seg","re":90,"ru":"seg","tt":9,"lo":"Box","sg":"strength","al":""}
 {"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":2,"ex":"Burpee Over Bar","et":"Metcon","eg":"Full Body","ey":"Condicionamento","ts":1,"de":"AMRAP 12min","te":12,"eu":"min","re":0,"ru":"seg","tt":12,"lo":"Box","sg":"workout","al":""}
 `;
+// ============================================================================
+// AUTO-HEALER: Reconstrói JSONs truncados usando Pilha (Stack)
+// ============================================================================
+function autoHealJSON(str: string): string {
+  let text = str.trim();
+  const start = text.search(/[\{\[]/);
+  if (start === -1) return str;
+  text = text.substring(start);
+
+  let stack: string[] = [];
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (escape) { escape = false; continue; }
+    if (char === '\\') { escape = true; continue; }
+    if (char === '"') { inString = !inString; continue; }
+    if (!inString) {
+      if (char === '{' || char === '[') stack.push(char);
+      else if (char === '}') { if (stack.length > 0 && stack[stack.length - 1] === '{') stack.pop(); }
+      else if (char === ']') { if (stack.length > 0 && stack[stack.length - 1] === '[') stack.pop(); }
+    }
+  }
+
+  let healed = text;
+  if (inString) healed += '"';
+  while (stack.length > 0) {
+    const last = stack.pop();
+    if (last === '{') healed += '}';
+    else if (last === '[') healed += ']';
+  }
+  return healed;
+}
+
+function extractRobustJSON(str: string): any {
+  let text = str.trim();
+  text = text.replace(/```(json)?/gi, '').trim();
+
+  // 1. Tenta o parse direto
+  try { return JSON.parse(text); } catch (_) { }
+
+  // 2. Tenta a Auto-Cura (Stack) para casos de truncamento
+  try {
+    const healed = autoHealJSON(text);
+    return JSON.parse(healed);
+  } catch (_) { }
+
+  // 3. Fallback: Extrator iterativo (Corta o lixo do final)
+  let currentStr = text.replace(/,\s*([\]}])/g, '$1');
+  const start = currentStr.search(/[\{\[]/);
+  if (start !== -1) currentStr = currentStr.substring(start);
+
+  while (currentStr.length > 0) {
+    try {
+      return JSON.parse(currentStr);
+    } catch (e: any) {
+      const lastBrace = currentStr.lastIndexOf('}', currentStr.length - 2);
+      const lastBracket = currentStr.lastIndexOf(']', currentStr.length - 2);
+      const lastValid = Math.max(lastBrace, lastBracket);
+      if (lastValid === -1) break;
+      currentStr = currentStr.substring(0, lastValid + 1);
+    }
+  }
+  throw new Error("Não foi possível extrair um JSON válido mesmo com Auto-Heal.");
+}
 
 // Helper: format training sessions for LLM
 function formatTrainingSessions(sessions: any[]): string {
   if (!sessions || sessions.length === 0) {
     throw new Error("Nenhuma sessão de treino configurada. Por favor, configure suas sessões no perfil ou no onboarding antes de prosseguir.");
   }
-  return sessions.map((s: any) => 
+  return sessions.map((s: any) =>
     `- Sessão ${s.session_number}: Locais=[${s.locations?.join(', ')}] | Duração=${s.duration_minutes}min | Dias=[${s.schedule?.join(', ')}] | Turno=${s.time_of_day}${s.notes ? ` | Notas: ${s.notes}` : ''}`
   ).join('\n        ');
 }
@@ -92,24 +158,41 @@ async function generateWithProvider(
   llmModel: string,
   genAI: any,
   actionLabel: string,
-  maxTokens: number = 16000
+  maxTokens: number = 16000,
+  customTemperature?: number
 ): Promise<any> {
-  const targetTemperature = provider === 'anthropic' ? 0.2 : 0.7;
-  const maxRetries = 3;
+  const targetTemperature = customTemperature ?? (provider === 'anthropic' ? 0.2 : 0.7);
+  const maxRetries = 2;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       if (provider === 'google') {
         const model = genAI.getGenerativeModel(
-          { model: llmModel, generationConfig: { temperature: targetTemperature, maxOutputTokens: maxTokens } },
+          {
+            model: llmModel,
+            systemInstruction: { role: "system", parts: [{ text: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble." }] },
+            generationConfig: {
+              temperature: targetTemperature,
+              maxOutputTokens: maxTokens,
+              responseMimeType: "application/json"
+            },
+            safetySettings: [
+              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
+            ]
+          },
           { apiVersion: 'v1beta' }
         );
         const result = await model.generateContent([prompt]);
-        let rawText = result.response.text();
-        if (rawText.startsWith('```')) {
-          rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+        const rawText = result.response.text();
+
+        try {
+          return extractRobustJSON(rawText);
+        } catch (e: any) {
+          throw new Error(`JSON Parse falhou no provider Google (${actionLabel}): ${e.message}`);
         }
-        return JSON.parse(rawText);
 
       } else if (provider === 'anthropic') {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -121,27 +204,23 @@ async function generateWithProvider(
           },
           body: JSON.stringify({
             model: llmModel,
-            max_tokens: maxTokens,
+            max_tokens: 5000,
             temperature: targetTemperature,
             system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
             messages: [{ role: 'user', content: prompt }],
           }),
         });
-        
+
         const data = await response.json();
         if (!response.ok) {
           if (response.status === 429) throw new Error(`429: ${JSON.stringify(data)}`);
           throw new Error(`Anthropic API error (${response.status}): ${JSON.stringify(data)}`);
         }
 
-        let rawText: string = data.content[0].text.trim();
-        if (rawText.startsWith('```')) {
-          rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-        }
-        rawText = rawText.replace(/,\s*([\}\]])/g, '$1');
+        const rawText: string = data.content[0].text;
 
         try {
-          return JSON.parse(rawText);
+          return extractRobustJSON(rawText);
         } catch (e: any) {
           throw new Error(`Invalid JSON from Claude at ${actionLabel}: ${e.message}`);
         }
@@ -153,9 +232,15 @@ async function generateWithProvider(
     } catch (err: any) {
       const errorText = err.message || '';
       const isRateLimit = errorText.includes('429') || errorText.toLowerCase().includes('quota') || errorText.toLowerCase().includes('limit');
-      
+      const isParseError = errorText.includes('JSON Parse falhou') || errorText.includes('Invalid JSON') || errorText.includes('Parse falhou') || errorText.includes('Não foi possível extrair um JSON');
+
       if (isRateLimit && attempt < maxRetries) {
+        console.warn(`[RETRY ${attempt}/${maxRetries}] Rate Limit detectado. Aguardando...`);
         await sleep(attempt * 3500);
+        continue;
+      }
+      if (isParseError && attempt < maxRetries) {
+        console.warn(`[RETRY ${attempt}/${maxRetries}] JSON truncado/quebrado. Retentativa imediata... (${errorText.substring(0, 100)})`);
         continue;
       }
       throw err;
@@ -250,11 +335,11 @@ serve(async (req) => {
     }
 
     // =========================================================
-    // ACTION 3: gerar_proximo_ciclo
+    // ACTION 3a: gerar_analise (Micro-Step 1)
     // =========================================================
-    if (acao === 'gerar_proximo_ciclo') {
-      const { email_utilizador, user_id, bloco_atual, performance_stats, cycle_snapshot, training_sessions, data_inicio_meso, contexto_macrociclo } = payload;
-      const profileRes = user_id 
+    if (acao === 'gerar_analise') {
+      const { email_utilizador, user_id, bloco_atual, performance_stats, cycle_snapshot, training_sessions, contexto_macrociclo } = payload;
+      const profileRes = user_id
         ? await supabaseClient.from('profiles').select('*').eq('id', user_id).single()
         : await supabaseClient.from('profiles').select('*').eq('email', email_utilizador).single();
 
@@ -267,29 +352,19 @@ serve(async (req) => {
 
       let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
       if (profile?.id) {
-        const { data: tfData } = await supabaseClient
-          .from('technique_feedbacks')
-          .select('exercise_name, resume_text, improve_exercises')
-          .eq('user_id', profile.id)
-          .order('created_at', { ascending: false })
-          .limit(15);
-        if (tfData && tfData.length > 0) {
-          techniqueFeedbacksStr = tfData.map((tf: any) => 
-            `- Exercício: ${tf.exercise_name}\n  Análise: ${tf.resume_text}\n  Recomendação (Correção): ${JSON.stringify(tf.improve_exercises)}`
-          ).join('\n');
-        }
+        const { data: tfData } = await supabaseClient.from('technique_feedbacks').select('exercise_name, resume_text').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(5);
+        if (tfData && tfData.length > 0) techniqueFeedbacksStr = tfData.map((tf: any) => `- Exercício: ${tf.exercise_name}\n  Análise: ${tf.resume_text}`).join('\n');
       }
 
       const prompt = `
         ${COACH_PERSONA}
-        [DATA DE HOJE: ${today}]
-        [MISSÃO — GERAR CALENDÁRIO SEMANAL DO MESOCICLO]
-        Gere o calendário semanal completo para o mesociclo especificado abaixo.
+        [MISSÃO — GERAR ANÁLISE E VISÃO GERAL DO MESOCICLO]
+        Gere a análise do ciclo anterior e o esqueleto de semanas (visão geral) do novo mesociclo.
+        SEJA EXTREMAMENTE OBJETIVO. Evite introduções e textos longos. Foque nos fatos técnicos.
 
         [CONTEXTO DO MACROCICLO]
-        - Análise Histórica: ${JSON.stringify(macroCtx.analise_historica || 'Não fornecida')}
-        - Visão Geral do Plano: ${JSON.stringify(macroCtx.visao_geral_plano || 'Não fornecida')}
-        - COMPETIÇÕES: ${JSON.stringify(macroCtx.competicoes || [])}
+        - Análise Histórica: ${macroCtx.analise_historica?.analiseMacro?.analise || 'Não fornecida'}
+        - Objetivo Geral do Plano: ${macroCtx.visao_geral_plano?.objetivoPrincipal || 'Não fornecida'}
 
         [SESSÕES CONFIGURADAS]
         ${formatTrainingSessions(sessions)}
@@ -304,7 +379,7 @@ serve(async (req) => {
         ${techniqueFeedbacksStr}
 
         [KPIs CICLO ANTERIOR]
-        ${JSON.stringify(perfStats)}
+        ${JSON.stringify(perfStats?.kpis || perfStats || {})}
 
         [SNAPSHOT ATLETA]
         ${JSON.stringify(cycleSnap?.kpis || {})}
@@ -312,26 +387,95 @@ serve(async (req) => {
         [FORMATO — JSON]
         {
           "analiseCicloAnterior": { "aderencia": "string", "evolucao": "string", "texto": "string" },
-          "visaoGeralCiclo": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }],
-          "visaoSemanal": [{ "date": "YYYY-MM-DD", "session": 1, "session_type": "string", "focoPrincipal": "string", "isDescansoAtivo": false }]
+          "visaoGeralCiclo": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }]
         }
       `;
 
-      const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_proximo_ciclo', 8000);
+      const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_analise', 4000, 0.7);
+      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
+    }
+
+    // =========================================================
+    // ACTION 3b: gerar_calendario (Micro-Step 2)
+    // =========================================================
+    else if (acao === 'gerar_calendario') {
+      const { bloco_atual, visao_geral, data_inicio_meso, training_sessions } = payload;
+      const bloco = bloco_atual || {};
+      const sessions = training_sessions || [];
+
+      const prompt = `
+        ${COACH_PERSONA}
+        [DATA DE HOJE: ${today}]
+        [MISSÃO — GERAR CALENDÁRIO SEMANAL DO MESOCICLO]
+        Gere o calendário com os dias ativos de treino, baseado na visão geral fornecida.
+        SEJA O MAIS CONCISO POSSÍVEL. Apenas o JSON puro, sem explicações.
+
+        [VISÃO GERAL DO CICLO (ESTRUTURA APLICADA)]
+        ${JSON.stringify(visao_geral || [])}
+        
+        [SESSÕES CONFIGURADAS (ROTINA DO ATLETA)]
+        ${formatTrainingSessions(sessions)}
+        
+        [BLOCO ATUAL DO MESOCICLO]
+        - Nome: ${bloco.mesociclo} | Foco: ${bloco.foco}
+
+        [FORMATO — JSON]
+        {
+          "visaoSemanal": [{ "date": "YYYY-MM-DD", "session": 1, "session_type": "string", "focoPrincipal": "string" }]
+        }
+      `;
+
+      const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_calendario', 6000, 0.2);
 
       if (result.visaoSemanal && Array.isArray(result.visaoSemanal)) {
         const diasSemana = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
-        result.visaoSemanal = result.visaoSemanal.map((dia: any) => {
-          const d = new Date(dia.date + 'T12:00:00Z');
-          const dayName = diasSemana[d.getUTCDay()];
-          let weekNum = 1;
-          if (data_inicio_meso) {
-            const startD = new Date(data_inicio_meso + 'T12:00:00Z');
-            const diffMs = d.getTime() - startD.getTime();
-            if (diffMs > 0) weekNum = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
-          }
-          return { ...dia, day: dayName, mesocycle: bloco.mesociclo, week: weekNum };
+
+        const duracaoSemanas = (visao_geral && visao_geral.length > 0) ? visao_geral.length : 4;
+        const totalDias = duracaoSemanas * 7;
+
+        let startD = new Date();
+        if (data_inicio_meso) {
+          startD = new Date(data_inicio_meso + 'T12:00:00Z');
+        } else if (result.visaoSemanal.length > 0) {
+          startD = new Date(result.visaoSemanal[0].date + 'T12:00:00Z');
+        }
+
+        const mapDiasAtivos = new Map();
+        result.visaoSemanal.forEach((dia: any) => {
+          mapDiasAtivos.set(dia.date, dia);
         });
+
+        const visaoCompleta = [];
+        for (let i = 0; i < totalDias; i++) {
+          const d = new Date(startD.getTime() + i * 24 * 60 * 60 * 1000);
+          const dateStr = d.toISOString().split('T')[0];
+          const dayName = diasSemana[d.getUTCDay()];
+          const weekNum = Math.floor(i / 7) + 1;
+
+          if (mapDiasAtivos.has(dateStr)) {
+            const diaObj = mapDiasAtivos.get(dateStr);
+            visaoCompleta.push({
+              ...diaObj,
+              day: dayName,
+              mesocycle: bloco.mesociclo,
+              week: weekNum,
+              isDescansoAtivo: false
+            });
+          } else {
+            visaoCompleta.push({
+              date: dateStr,
+              session: 1,
+              session_type: "Descanso",
+              focoPrincipal: "Recuperação",
+              day: dayName,
+              mesocycle: bloco.mesociclo,
+              week: weekNum,
+              isDescansoAtivo: true
+            });
+          }
+        }
+
+        result.visaoSemanal = visaoCompleta;
       }
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
@@ -340,11 +484,11 @@ serve(async (req) => {
     // ACTION 4: gerar_detalhamento
     // =========================================================
     else if (acao === 'gerar_detalhamento') {
-      const { email_utilizador, user_id, visao_semanal, meso_context } = payload;
+      const { email_utilizador, user_id, visao_diaria, exercicios_da_semana, meso_context } = payload;
       const ctx = meso_context || {};
-      
+
       let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
-      const profileRes = user_id 
+      const profileRes = user_id
         ? await adminClient.from('profiles').select('id').eq('id', user_id).single()
         : await adminClient.from('profiles').select('id').eq('email', email_utilizador).single();
 
@@ -356,19 +500,21 @@ serve(async (req) => {
           .order('created_at', { ascending: false })
           .limit(15);
         if (tfData && tfData.length > 0) {
-          techniqueFeedbacksStr = tfData.map((tf: any) => 
+          techniqueFeedbacksStr = tfData.map((tf: any) =>
             `- Exercício Original: ${tf.exercise_name}\n  Problema/Resumo: ${tf.resume_text}\n  Exercícios Corretivos Recomendados: ${JSON.stringify(tf.improve_exercises)}`
           ).join('\n');
         }
       }
 
-      const diasStr = (visao_semanal || []).map((d: any) => `  - ${d.date} (${d.day}) | session ${d.session || 1} | ${d.session_type} | ${d.focoPrincipal}`).join('\n');
+      const diasStr = (visao_diaria || []).map((d: any) => `  - ${d.date} (${d.day}) | session ${d.session || 1} | ${d.session_type} | ${d.focoPrincipal}`).join('\n');
+
+      const exsStr = (exercicios_da_semana || []).map((e: any) => `  - ${e.day}: ${e.exercise} (${e.stage})`).join('\n');
 
       const ragQuery = `${ctx.focoSemana || ''} ${ctx.objetivo || ''} exercícios crossfit`;
       const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, adminClient);
 
       const prompt = `
-        ${COACH_PERSONA} Gere os exercícios para a Semana ${ctx.semanaNum} de ${ctx.totalSemanas} do mesociclo "${ctx.nome}".
+        ${COACH_PERSONA} Gere os exercícios para o dia especificado abaixo, pertencente à Semana ${ctx.semanaNum} do mesociclo "${ctx.nome}".
         [DATA DE HOJE: ${today}]
         [CONTEXTO CIENTÍFICO (RAG)]
         ${knowledgeContext}
@@ -378,24 +524,33 @@ serve(async (req) => {
         ${techniqueFeedbacksStr}
         [SESSÕES CONFIGURADAS]
         ${formatTrainingSessions(ctx.trainingSessions || [])}
-        [DIAS]
+        
+        [EXERCÍCIOS JÁ GERADOS NESTA SEMANA (CONTEXTO)]
+        ${exsStr || "Nenhum exercício gerado ainda nesta semana."}
+        
+        [DIA ALVO PARA GERAÇÃO]
 ${diasStr}
+
         [FORMATO — JSON COMPACTO]
         { "exs": [{ "dt": "YYYY-MM-DD", "dy": "Dia", "se": 1, "st": "tipo", "du": 60, "idx": 1, "ex": "nome", "et": "titulo", "eg": "grupo", "ey": "tipo_ex", "ts": 3, "de": "detalhes", "te": 0, "eu": "min", "re": 60, "ru": "seg", "tt": 0, "lo": "box", "sg": "workout", "al": "" }] }
+        
+        [REGRAS RESTRITAS DE JSON E OBJETIVIDADE]
+        1. NUNCA coloque vírgulas finais (trailing commas) no último elemento de objetos ou arrays.
+        2. Certifique-se de que TODAS as chaves de propriedades tenham aspas duplas ("chave").
+        3. SEJA EXTREMAMENTE OBJETIVO. Não inclua NENHUM texto conversacional, explicação ou markdown fora do JSON.
+        4. Detalhes ("de") e Títulos ("et") devem ser curtos, diretos e objetivos.
       `;
 
-      const responseData = await generateWithProvider(prompt, provider, llmModel, genAI, `detalhamento_s${ctx.semanaNum}`, 16000);
+      const responseData = await generateWithProvider(prompt, provider, llmModel, genAI, `detalhamento_s${ctx.semanaNum}`, 16000, 0.2);
 
       const fullExercicios = await Promise.all((responseData.exs || []).map(async (short: any) => {
         const { data: link } = await adminClient.rpc('get_closest_exercise_link', { search_name: short.et || short.ex });
         const ts = Number(short.ts) || 1;
         const te = Number(short.te) || 0;
         const re = Number(short.re) || 0;
-        const ai_tt = Number(short.tt) || 0;
         const teMin = (short.eu === "seg") ? te / 60 : te;
         const reMin = (short.ru === "seg") ? re / 60 : re;
-        const calc_tt = (teMin * ts) + (reMin * Math.max(0, ts - 1));
-        const tt_final = (ai_tt === 0 || Math.abs(ai_tt - calc_tt) > 0.1) ? Number(calc_tt.toFixed(1)) : ai_tt;
+        const tt_final = Number(((teMin * ts) + (reMin * Math.max(0, ts - 1))).toFixed(1));
 
         return {
           date: short.dt || today, week: Number(ctx.semanaNum) || 1, mesocycle: ctx.nome, day: short.dy || "", session: Number(short.se) || 1, session_type: short.st || "Metcon", duration: Number(short.du) || 60, workout_idx: Number(short.idx) || 1, exercise: short.ex || "Exercício não especificado", exercise_title: short.et || short.ex || "", exercise_group: short.eg || "Geral", exercise_type: short.ey || "Acessório", sets: ts, details: short.de || "", time_exercise: te, ex_unit: short.eu || "min", rest: re, rest_unit: short.ru || "seg", total_time: tt_final, location: short.lo || "Box", stage: short.sg || "workout", workout_link: link || "", adaptacaoLesao: short.al || ""

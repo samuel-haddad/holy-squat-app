@@ -21,6 +21,7 @@ class WorkoutController extends ChangeNotifier {
 
   RealtimeChannel? _jobChannel;
   Completer<void>? _jobCompleter;
+  String? _currentCycleJobId;
 
   WorkoutState get state => _state;
   bool get isLoading => _state == WorkoutState.loading;
@@ -28,6 +29,7 @@ class WorkoutController extends ChangeNotifier {
   String get loadingMessage => _loadingMessage;
   AIWorkoutResponse? get planoGerado => _planoGerado;
   Map<String, dynamic>? get athleteStats => _athleteStats;
+  String? get currentCycleJobId => _currentCycleJobId;
 
   WorkoutController(this._repository);
 
@@ -97,7 +99,7 @@ class WorkoutController extends ChangeNotifier {
       _loadingMessage = _createPlanSteps[1]!;
       notifyListeners();
 
-      await _subscribeAndWait(jobId, _createPlanSteps);
+      await _subscribeAndWait(jobId, _createPlanSteps, isGenerateCycle: false);
 
       final job = await _repository.fetchJobResult(jobId);
       if (job == null) throw Exception('Job result not found');
@@ -156,15 +158,25 @@ class WorkoutController extends ChangeNotifier {
       _loadingMessage = _generateCycleSteps[1]!;
       notifyListeners();
 
-      await _subscribeAndWait(jobId, _generateCycleSteps);
+      await _subscribeAndWait(jobId, _generateCycleSteps, isGenerateCycle: true);
 
       final job = await _repository.fetchJobResult(jobId);
       if (job == null) throw Exception('Job result not found');
       if (job['status'] == 'error') throw Exception(job['error_message'] ?? 'Unknown server error');
 
+      _currentCycleJobId = jobId;
       _planoGerado = _buildResponseFromGenerateCycleJob(job);
       _state = WorkoutState.success;
       _loadingMessage = '';
+
+      // Se o job estiver aguardando aprovação, não faz cleanup ainda.
+      if (job['status'] == 'pending_approval') {
+        _cleanupJobChannel();
+        notifyListeners();
+        return;
+      }
+
+      _currentCycleJobId = null;
 
     } catch (e) {
       _errorMessage = 'Falha ao gerar o ciclo: ${e.toString()}';
@@ -176,9 +188,45 @@ class WorkoutController extends ChangeNotifier {
   }
 
   // =========================================================
+  // Resume the Job for Action 4
+  // =========================================================
+  Future<void> gerarDetalhamento() async {
+    if (_currentCycleJobId == null) return;
+    
+    _state = WorkoutState.loading;
+    _loadingMessage = '⚡ Iniciando detalhamento dos treinos...';
+    notifyListeners();
+
+    try {
+      final supabase = Supabase.instance.client;
+      await supabase.from('ai_generation_jobs').update({
+        'status': 'processing'
+      }).eq('id', _currentCycleJobId!);
+
+      await _subscribeAndWait(_currentCycleJobId!, {}, isGenerateCycle: true);
+
+      final job = await _repository.fetchJobResult(_currentCycleJobId!);
+      if (job == null) throw Exception('Job result not found');
+      if (job['status'] == 'error') throw Exception(job['error_message'] ?? 'Unknown server error');
+
+      _planoGerado = _buildResponseFromGenerateCycleJob(job);
+      _state = WorkoutState.success;
+      _loadingMessage = '';
+      _currentCycleJobId = null;
+
+    } catch (e) {
+      _errorMessage = 'Falha ao detalhar o ciclo: ${e.toString()}';
+      _state = WorkoutState.error;
+    } finally {
+      _cleanupJobChannel();
+      notifyListeners();
+    }
+  }
+
+  // =========================================================
   // Realtime subscription
   // =========================================================
-  Future<void> _subscribeAndWait(String jobId, Map<int, String> stepMessages) async {
+  Future<void> _subscribeAndWait(String jobId, Map<int, String> stepMessages, {bool isGenerateCycle = false}) async {
     _jobCompleter = Completer<void>();
     final supabase = Supabase.instance.client;
     Timer? pollTimer;
@@ -199,12 +247,31 @@ class WorkoutController extends ChangeNotifier {
             final step = newData['current_step'] as int? ?? 1;
             final status = newData['status'] as String? ?? 'processing';
 
-            if (stepMessages.containsKey(step)) {
+            if (isGenerateCycle) {
+              if (step == 1) {
+                _loadingMessage = '🧠 Analisando histórico e visão geral...';
+                notifyListeners();
+              } else if (step == 2) {
+                _loadingMessage = '📆 Estruturando dias do calendário...';
+                notifyListeners();
+              } else if (step >= 3) {
+                int totalDays = 1;
+                try {
+                  final step1Result = newData['step_1_result'] as Map<String, dynamic>? ?? {};
+                  final visaoSemanal = step1Result['visaoSemanal'] as List<dynamic>? ?? [];
+                  totalDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
+                  if (totalDays == 0) totalDays = 1;
+                } catch (_) {}
+                
+                _loadingMessage = '⚡ Gerando treino do dia ${step - 2}/$totalDays...';
+                notifyListeners();
+              }
+            } else if (stepMessages.containsKey(step)) {
               _loadingMessage = stepMessages[step]!;
               notifyListeners();
             }
 
-            if (status == 'completed') {
+            if (status == 'completed' || status == 'pending_approval') {
               _loadingMessage = '💾 Dados salvos. Finalizando...';
               notifyListeners();
               if (!_jobCompleter!.isCompleted) _jobCompleter!.complete();
@@ -225,12 +292,31 @@ class WorkoutController extends ChangeNotifier {
         final status = job['status'] as String? ?? 'processing';
         final step   = job['current_step'] as int? ?? 1;
 
-        if (stepMessages.containsKey(step)) {
+        if (isGenerateCycle) {
+          if (step == 1) {
+            _loadingMessage = '🧠 Analisando histórico e visão geral...';
+            notifyListeners();
+          } else if (step == 2) {
+            _loadingMessage = '📆 Estruturando dias do calendário...';
+            notifyListeners();
+          } else if (step >= 3) {
+            int totalDays = 1;
+            try {
+              final step1Result = job['step_1_result'] as Map<String, dynamic>? ?? {};
+              final visaoSemanal = step1Result['visaoSemanal'] as List<dynamic>? ?? [];
+              totalDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
+              if (totalDays == 0) totalDays = 1;
+            } catch (_) {}
+            
+            _loadingMessage = '⚡ Gerando treino do dia ${step - 2}/$totalDays...';
+            notifyListeners();
+          }
+        } else if (stepMessages.containsKey(step)) {
           _loadingMessage = stepMessages[step]!;
           notifyListeners();
         }
 
-        if (status == 'completed') {
+        if (status == 'completed' || status == 'pending_approval') {
           _loadingMessage = '💾 Dados salvos. Finalizando (polling)...';
           notifyListeners();
           if (!_jobCompleter!.isCompleted) _jobCompleter!.complete();
