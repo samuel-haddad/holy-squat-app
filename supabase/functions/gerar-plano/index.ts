@@ -416,21 +416,7 @@ serve(async (req) => {
         historySummaryText = monthLines.join('\n');
       }
 
-      const IFR_EXERCISE_KEYWORDS = ['back squat', 'deadlift', 'shoulder press', 'strict press', 'overhead press'];
-      const ifrSumFromPRs = prMaxPerExercise
-        .filter((r: any) => IFR_EXERCISE_KEYWORDS.some(k => r.exercise?.toLowerCase().includes(k)))
-        .reduce((sum: number, r: any) => {
-          const cleanPR = String(r.pr || '0').replace(/[^0-9.]/g, '');
-          let val = Number(cleanPR) || 0;
-          if (['lb', 'lbs', 'libra', 'libras'].includes(String(r.pr_unit).toLowerCase().trim())) {
-            val = val * 0.453592;
-          }
-          return sum + val;
-        }, 0);
-      const computedIfr = userWeight > 0 ? Number((ifrSumFromPRs / userWeight).toFixed(2)) : 0;
-      const effectiveIfr = (athleteStats.ifr && athleteStats.ifr > 0)
-        ? athleteStats.ifr
-        : computedIfr;
+      const effectiveIfr = athleteStats.ifr || 0;
 
 
 
@@ -464,7 +450,7 @@ serve(async (req) => {
         
         [HIERARQUIA DE ANÁLISE - PRIORIDADE DE DADOS]
         1. MARCAS ABSOLUTAS: PRs e Benchmarks são as suas "âncoras de verdade". Use-os para validar se os treinos recentes estão de acordo com a capacidade real do atleta.
-        2. MÉTRICAS DERIVADAS: Utilize o IFR (baseado nos PRs) para avaliar a força relativa por KG.
+        2. MÉTRICAS DERIVADAS: Utilize o IFR (baseado no histórico de treinos do período analisado) para avaliar a força relativa por KG.
         3. TENDÊNCIA DE CARGA: Observe se a 'Evolution' e 'Workload' corroboram os recordes ou se há um platô.
 
         [CONTEXTO CIENTÍFICO (RAG)]
@@ -476,7 +462,7 @@ serve(async (req) => {
         [KPIs DETERMINÍSTICOS DO ATLETA]
         - Aderência Global: ${athleteStats.adherence}%
         - PSE Médio (90 dias): ${athleteStats.avg_pse}
-        - IFR (Índice de Força Relativa): ${effectiveIfr}${effectiveIfr !== athleteStats.ifr ? ' (calculado dos PRs registrados)' : ''}
+        - IFR (Índice de Força Relativa): ${effectiveIfr} (calculado a partir dos melhores resultados nos treinos do período analisado)
         - Evolução de Esforço: ${athleteStats.best_evolution?.percent}% vs baseline 6 meses
         - Streak Atual: ${athleteStats.streak} semanas
         - Frequência Semanal: ${athleteStats.weekly_freq} treinos/semana
