@@ -34,8 +34,8 @@ SELECT jsonb_build_object(
               CASE
                 WHEN wl.weight IS NULL OR wl.weight::text = '' THEN 0
                 WHEN LOWER(TRIM(COALESCE(wl.weight_unit, ''))) IN ('lb', 'lbs', 'libra', 'libras')
-                THEN (CASE WHEN wl.weight::text ~ '^[0-9]+(\.[0-9]+)?$' THEN wl.weight::text::numeric ELSE 0 END) * 0.453592
-                ELSE (CASE WHEN wl.weight::text ~ '^[0-9]+(\.[0-9]+)?$' THEN wl.weight::text::numeric ELSE 0 END)
+                THEN (CASE WHEN wl.weight::text ~ '[0-9]' THEN (SUBSTRING(wl.weight::text FROM '([0-9]+[.]?[0-9]*)'))::numeric ELSE 0 END) * 0.453592
+                ELSE (CASE WHEN wl.weight::text ~ '[0-9]' THEN (SUBSTRING(wl.weight::text FROM '([0-9]+[.]?[0-9]*)'))::numeric ELSE 0 END)
               END
             ) as max_recent_weight_kg
           FROM public.workouts w
@@ -169,8 +169,8 @@ AS $$
               CASE
                 WHEN wl.weight IS NULL OR wl.weight::text = '' THEN 0
                 WHEN LOWER(TRIM(COALESCE(wl.weight_unit, ''))) IN ('lb', 'lbs', 'libra', 'libras')
-                THEN (CASE WHEN wl.weight::text ~ '^[0-9]+(\.[0-9]+)?$' THEN wl.weight::text::numeric ELSE 0 END) * 0.453592
-                ELSE (CASE WHEN wl.weight::text ~ '^[0-9]+(\.[0-9]+)?$' THEN wl.weight::text::numeric ELSE 0 END)
+                THEN (CASE WHEN wl.weight::text ~ '[0-9]' THEN (SUBSTRING(wl.weight::text FROM '([0-9]+[.]?[0-9]*)'))::numeric ELSE 0 END) * 0.453592
+                ELSE (CASE WHEN wl.weight::text ~ '[0-9]' THEN (SUBSTRING(wl.weight::text FROM '([0-9]+[.]?[0-9]*)'))::numeric ELSE 0 END)
               END
             ) as max_recent_weight_kg
           FROM public.workouts w
