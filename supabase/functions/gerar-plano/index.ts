@@ -301,17 +301,13 @@ serve(async (req) => {
         ? adminClient.from('profiles').select('*').eq('id', user_id).single()
         : adminClient.from('profiles').select('*').eq('email', email_utilizador).single();
 
-      const [profileRes, prRes, benchRes] = await Promise.all([
+      const [profileRes, prRes] = await Promise.all([
         profileQuery,
         adminClient.from('pr_log')
           .select('exercise, pr, pr_unit, date')
           .eq('user_email', email_utilizador)
           .order('date', { ascending: false })
-          .limit(100),
-        adminClient.from('benchmarks_logs')
-          .select('exercise, result, date')
-          .order('date', { ascending: false })
-          .limit(50)
+          .limit(100)
       ]);
 
       const profile = profileRes.data || {};
@@ -337,7 +333,7 @@ serve(async (req) => {
       const prMaxPerExercise = Object.values(prByExercise)
         .sort((a: any, b: any) => a.exercise.localeCompare(b.exercise));
 
-      const benchData = benchRes.data || [];
+
 
       const { data: historySummaryRaw } = await adminClient
         .rpc('get_athlete_history_summary', { p_email: email_utilizador });
@@ -436,20 +432,7 @@ serve(async (req) => {
         ? athleteStats.ifr
         : computedIfr;
 
-      let trainingSessions: any[] = [];
-      if (payload.training_sessions && payload.training_sessions.length > 0) {
-        trainingSessions = payload.training_sessions;
-      } else {
-        const sessionFilter = user_id ? { user_id } : (profile.id ? { user_id: profile.id } : null);
-        if (sessionFilter) {
-          const { data: sessionsData } = await adminClient
-            .from('training_sessions')
-            .select('session_number, locations, duration_minutes, schedule, time_of_day, notes')
-            .eq('user_id', sessionFilter.user_id)
-            .order('session_number', { ascending: true });
-          trainingSessions = sessionsData || [];
-        }
-      }
+
 
       let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
       if (profile?.id) {
@@ -510,18 +493,10 @@ serve(async (req) => {
         ${techniqueFeedbacksStr}
         *DIRETRIZ: Mencione essas deficiências na sua análise e recomende a correção rigorosa nas etapas de Skill e Prehab.*
 
-        [SESSÕES DE TREINO DISPONÍVEIS]
-        ${formatTrainingSessions(trainingSessions)}
-
         [PRs DE FORÇA — MELHOR MARCA POR EXERCÍCIO]
         ${prMaxPerExercise.length > 0
           ? prMaxPerExercise.map((r: any) => `- ${r.exercise}: ${r.pr} ${r.pr_unit || 'kg'} (${r.date})`).join('\n        ')
           : 'Nenhum PR registrado.'}
-
-        [BENCHMARKS FUNCIONAIS — RESULTADOS MAIS RECENTES]
-        ${benchData.length > 0
-          ? benchData.map((b: any) => `- ${b.exercise}: ${b.result} (${b.date || 'data não registrada'})`).join('\n        ')
-          : 'Nenhum benchmark registrado.'}
 
         [HISTÓRICO AGREGADO — 12 MESES]
         ${historySummaryText || 'Nenhum dado de treino encontrado nos últimos 6 meses.'}
@@ -531,10 +506,7 @@ serve(async (req) => {
           "analiseMacro": {
             "analise": "string",
             "historico": {
-              "texto": "string",
-              "graficos": [
-                { "tipo": "linha|barra", "titulo": "string", "dados": [{ "x": "string", "y": 0 }] }
-              ]
+              "texto": "string"
             }
           }
         }
@@ -569,9 +541,8 @@ serve(async (req) => {
         Projética um macrociclo completo dividido em mesociclos. Define nome, duração em semanas e foco de cada bloco.
 
         [HIERARQUIA DE PRIORIDADE - LEI ZERO]
-        1. SEGURANÇA E LESÕES: O usuário tem histórico em ${profile.lesoes}.
-        2. COMPETIÇÕES: Respeite rigorosamente as datas de início e fim das competições.
-        3. NOMENCLATURA: Use apenas os session_type da lista oficial.
+        1. COMPETIÇÕES: Respeite rigorosamente as datas de início e fim das competições.
+        2. NOMENCLATURA: Use apenas os session_type da lista oficial.
 
         [ANÁLISE DO HISTÓRICO]
         ${JSON.stringify(analise)}
