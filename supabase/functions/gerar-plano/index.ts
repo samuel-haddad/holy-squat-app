@@ -558,6 +558,8 @@ serve(async (req) => {
         - Objetivo: ${diretrizes_plano?.objetivo}
         - Início: ${diretrizes_plano?.data_inicio} | Fim: ${diretrizes_plano?.data_fim}
         - Competições: ${JSON.stringify(diretrizes_plano?.competicoes)}
+        - Férias: ${JSON.stringify(diretrizes_plano?.ferias)}
+        - Lesões: ${JSON.stringify(diretrizes_plano?.lesoes)}
 
         [FORMATO — JSON PURO SEM MARKDOWN]
         {

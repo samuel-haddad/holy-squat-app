@@ -24,6 +24,8 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
   final _objetivoController = TextEditingController();
   final _notesController = TextEditingController();
   final List<Map<String, dynamic>> _competitions = [];
+  final List<Map<String, dynamic>> _vacations = [];
+  final List<Map<String, dynamic>> _injuries = [];
 
   // Training Sessions
   List<TrainingSession> _trainingSessions = [];
@@ -122,6 +124,13 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
     for (var comp in _competitions) {
       comp['nameController'].dispose();
     }
+    for (var vac in _vacations) {
+      vac['titleController'].dispose();
+      vac['obsController'].dispose();
+    }
+    for (var inj in _injuries) {
+      inj['controller'].dispose();
+    }
     super.dispose();
   }
 
@@ -131,6 +140,25 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
         'nameController': TextEditingController(),
         'startDate': null,
         'endDate': null,
+      });
+    });
+  }
+
+  void _addVacation() {
+    setState(() {
+      _vacations.add({
+        'titleController': TextEditingController(),
+        'obsController': TextEditingController(),
+        'startDate': null,
+        'endDate': null,
+      });
+    });
+  }
+
+  void _addInjury() {
+    setState(() {
+      _injuries.add({
+        'controller': TextEditingController(),
       });
     });
   }
@@ -197,6 +225,37 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
     }
   }
 
+  Future<void> _selectVacationDate(int index, bool isStart) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppTheme.primaryTeal,
+              onPrimary: Colors.black,
+              surface: AppTheme.cardColor,
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStart) {
+          _vacations[index]['startDate'] = picked;
+        } else {
+          _vacations[index]['endDate'] = picked;
+        }
+      });
+    }
+  }
+
   Future<void> _savePlan() async {
     if (!_formKey.currentState!.validate() || _startDate == null) {
       if (_startDate == null) {
@@ -235,6 +294,21 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
             })
         .toList();
 
+    final List<Map<String, dynamic>> feriasFormatadas = _vacations
+        .where((vac) => vac['titleController'].text.isNotEmpty && vac['startDate'] != null && vac['endDate'] != null)
+        .map((vac) => {
+              'title': vac['titleController'].text,
+              'observations': vac['obsController'].text,
+              'start_date': DateFormat('yyyy-MM-dd').format(vac['startDate']),
+              'end_date': DateFormat('yyyy-MM-dd').format(vac['endDate']),
+            })
+        .toList();
+
+    final List<String> lesoesFormatadas = _injuries
+        .where((inj) => inj['controller'].text.isNotEmpty)
+        .map((inj) => inj['controller'].text as String)
+        .toList();
+
     final startDateFormatted = DateFormat('yyyy-MM-dd').format(_startDate!);
     final endDateFormatted = _endDate != null ? DateFormat('yyyy-MM-dd').format(_endDate!) : '';
 
@@ -244,6 +318,8 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
       dataInicio: startDateFormatted,
       dataFim: endDateFormatted,
       competicoes: competicoesFormatadas,
+      ferias: feriasFormatadas,
+      lesoes: lesoesFormatadas,
       notasAdicionais: _notesController.text,
       aiCoachId: _selectedCoach!['id'] as int?,
       aiCoachName: _selectedCoach!['ai_coach_name'] as String,
@@ -412,6 +488,43 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
               ),
               const SizedBox(height: 12),
               ..._competitions.asMap().entries.map((entry) => _buildCompetitionItem(entry.key)).toList(),
+              const SizedBox(height: 32),
+
+              // ── Vacations ───────────────────────────────────────────
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Vacations',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle, color: AppTheme.primaryTeal, size: 30),
+                    onPressed: _addVacation,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ..._vacations.asMap().entries.map((entry) => _buildVacationItem(entry.key)).toList(),
+              const SizedBox(height: 32),
+
+              // ── Injuries ────────────────────────────────────────────
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Injuries',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle, color: AppTheme.primaryTeal, size: 30),
+                    onPressed: _addInjury,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ..._injuries.asMap().entries.map((entry) => _buildInjuryItem(entry.key)).toList(),
+              const SizedBox(height: 32),
               const SizedBox(height: 32),
 
               // ── Notes ───────────────────────────────────────────────
@@ -717,6 +830,171 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVacationItem(int index) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _vacations[index]['titleController'],
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Vacation Title *',
+                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                    isDense: true,
+                    border: InputBorder.none,
+                  ),
+                  validator: (value) => value == null || value.isEmpty ? 'Required' : null,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _vacations[index]['titleController'].dispose();
+                    _vacations[index]['obsController'].dispose();
+                    _vacations.removeAt(index);
+                  });
+                },
+              ),
+            ],
+          ),
+          const Divider(color: Colors.white10),
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => _selectVacationDate(index, true),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Start Date *',
+                          style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _vacations[index]['startDate'] == null
+                                ? 'Select'
+                                : DateFormat('dd/MM/yyyy')
+                                    .format(_vacations[index]['startDate']),
+                            style: TextStyle(
+                              color: _vacations[index]['startDate'] == null
+                                  ? Colors.white.withOpacity(0.3)
+                                  : Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const Icon(Icons.event,
+                              color: AppTheme.primaryTeal, size: 16),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: InkWell(
+                  onTap: () => _selectVacationDate(index, false),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('End Date *',
+                          style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _vacations[index]['endDate'] == null
+                                ? 'Select'
+                                : DateFormat('dd/MM/yyyy')
+                                    .format(_vacations[index]['endDate']),
+                            style: TextStyle(
+                              color: _vacations[index]['endDate'] == null
+                                  ? Colors.white.withOpacity(0.3)
+                                  : Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const Icon(Icons.event,
+                              color: AppTheme.primaryTeal, size: 16),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _vacations[index]['obsController'],
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            maxLines: 2,
+            decoration: InputDecoration(
+              hintText: 'Observations (optional)',
+              hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+              fillColor: Colors.black26,
+              filled: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInjuryItem(int index) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextFormField(
+              controller: _injuries[index]['controller'],
+              style: const TextStyle(color: Colors.white),
+              maxLength: 250,
+              maxLines: null,
+              decoration: InputDecoration(
+                hintText: 'Describe your injury...',
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                counterStyle: const TextStyle(color: Colors.white24, fontSize: 10),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+            onPressed: () {
+              setState(() {
+                _injuries[index]['controller'].dispose();
+                _injuries.removeAt(index);
+              });
+            },
           ),
         ],
       ),
