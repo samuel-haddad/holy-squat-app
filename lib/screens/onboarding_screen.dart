@@ -26,18 +26,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   late TextEditingController _weightController;
   late String _weightUnit;
   late TextEditingController _goalController;
-
-  // Page 2 Controllers (Skills & Training)
   late TextEditingController _anamnesisController;
-  late TextEditingController _activeHoursController;
-  late String _activeHoursUnit;
-  late TextEditingController _sessionsPerDayController;
-  List<String> _selectedWhere = [];
-  late TextEditingController _additionalInfoController;
-  PlatformFile? _backgroundFile;
-  List<TrainingSession> _trainingSessions = [];
 
-  final List<String> _whereOptions = ['box', 'academia', 'corrida de rua'];
+  // Page 2 Controllers (Training Sessions)
+  List<TrainingSession> _trainingSessions = [];
 
   @override
   void initState() {
@@ -49,11 +41,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _goalController = TextEditingController(text: UserState.goal.value);
 
     _anamnesisController = TextEditingController(text: UserState.anamnesis.value);
-    _activeHoursController = TextEditingController(text: UserState.activeHoursValue.value.toString());
-    _activeHoursUnit = UserState.activeHoursUnit.value;
-    _sessionsPerDayController = TextEditingController(text: UserState.sessionsPerDay.value.toString());
-    _selectedWhere = List<String>.from(UserState.whereTrain.value);
-    _additionalInfoController = TextEditingController(text: UserState.additionalInfo.value);
   }
 
   @override
@@ -63,9 +50,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _weightController.dispose();
     _goalController.dispose();
     _anamnesisController.dispose();
-    _activeHoursController.dispose();
-    _sessionsPerDayController.dispose();
-    _additionalInfoController.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -82,41 +66,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'txt', 'doc', 'docx'],
-      withData: true, // Important for web and some native cases
-    );
-    if (result != null) {
-      setState(() => _backgroundFile = result.files.first);
-    }
-  }
-
   Future<void> _finish() async {
-    // Save everything to UserState
-    UserState.name.value = _nameController.text;
-    UserState.birthdate.value = _birthdateController.text;
-    UserState.weight.value = _weightController.text;
-    UserState.weightUnit.value = _weightUnit;
     UserState.goal.value = _goalController.text;
-
     UserState.anamnesis.value = _anamnesisController.text;
-    UserState.activeHoursValue.value = double.tryParse(_activeHoursController.text) ?? 1.0;
-    UserState.activeHoursUnit.value = _activeHoursUnit;
-    UserState.sessionsPerDay.value = int.tryParse(_sessionsPerDayController.text) ?? 1;
-    UserState.whereTrain.value = _selectedWhere;
-    UserState.additionalInfo.value = _additionalInfoController.text;
 
     try {
-      if (_backgroundFile != null) {
-        final url = await SupabaseService.uploadTrainingBackground(_backgroundFile!);
-        if (url == null) {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to upload file. Please check your storage settings.')));
-          return; // Stop if upload fails to avoid inconsistent state
-        }
-      }
-      
       await SupabaseService.upsertProfile();
       await SupabaseService.upsertAllTrainingSessions(_trainingSessions);
       if (mounted) {
@@ -192,6 +146,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             _buildWeightField(),
             const SizedBox(height: 16),
             _buildTextField('Training Goal', _goalController),
+            const SizedBox(height: 16),
+            _buildTextField('Anamnesis', _anamnesisController, maxLines: 3, required: false, maxLength: 1500),
             const SizedBox(height: 48),
             _buildNextButton(),
           ],
@@ -208,23 +164,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Skills & Training', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white)),
+            const Text('Training Sessions', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white)),
             const SizedBox(height: 8),
-            const Text('Help us personalize your journey.', style: TextStyle(color: AppTheme.secondaryTextColor)),
+            const Text('When and where do you usually train?', style: TextStyle(color: AppTheme.secondaryTextColor)),
             const SizedBox(height: 32),
-            const SizedBox(height: 16),
-            _buildTrainingBackgroundField(),
-            const SizedBox(height: 16),
-            _buildActiveHoursField(),
-            const SizedBox(height: 16),
-            _buildTextField('Sessions per day', _sessionsPerDayController, keyboardType: TextInputType.number),
-            const SizedBox(height: 16),
-            const Text('Where do you train?', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 14)),
-            const SizedBox(height: 8),
-            _buildWhereCheckboxes(),
-            const SizedBox(height: 16),
-            _buildTextField('Additional Info (Optional)', _additionalInfoController, maxLines: 2, required: false),
-            const SizedBox(height: 24),
             TrainingSessionsEditor(
               sessions: _trainingSessions,
               onChanged: (sessions) => _trainingSessions = sessions,
@@ -271,102 +214,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildTrainingBackgroundField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildTextField('Training Background (Optional)', _anamnesisController, maxLines: 3, required: false),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: _pickFile,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: AppTheme.cardColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.primaryTeal.withOpacity(0.3), width: 1),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.attach_file, color: AppTheme.primaryTeal, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _backgroundFile != null ? _backgroundFile!.name : 'Upload PDF or Text file',
-                    style: TextStyle(color: _backgroundFile != null ? Colors.white : AppTheme.secondaryTextColor),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (_backgroundFile != null)
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.red, size: 18),
-                    onPressed: () => setState(() => _backgroundFile = null),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWhereCheckboxes() {
-    return Wrap(
-      spacing: 8,
-      children: _whereOptions.map((option) {
-        final isSelected = _selectedWhere.contains(option);
-        return FilterChip(
-          label: Text(option),
-          selected: isSelected,
-          onSelected: (selected) {
-            setState(() {
-              if (selected) {
-                _selectedWhere.add(option);
-              } else {
-                _selectedWhere.remove(option);
-              }
-            });
-          },
-          selectedColor: AppTheme.primaryTeal.withOpacity(0.3),
-          checkmarkColor: AppTheme.primaryTeal,
-          labelStyle: TextStyle(color: isSelected ? AppTheme.primaryTeal : Colors.white),
-          backgroundColor: AppTheme.cardColor,
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildActiveHoursField() {
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: _buildTextField('Active hours per session', _activeHoursController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: DropdownButtonFormField<String>(
-            value: _activeHoursUnit,
-            dropdownColor: AppTheme.cardColor,
-            style: const TextStyle(color: Colors.white),
-            decoration: _inputDecoration('Unit'),
-            items: ['hour', 'min'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-            onChanged: (val) => setState(() => _activeHoursUnit = val!),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTextField(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType, bool required = true}) {
+  Widget _buildTextField(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType, bool required = true, int? maxLength}) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
+      maxLength: maxLength,
       keyboardType: keyboardType,
       style: const TextStyle(color: Colors.white),
-      decoration: _inputDecoration(label),
+      decoration: _inputDecoration(label).copyWith(
+        counterStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+      ),
       validator: required ? (v) => v == null || v.isEmpty ? 'Required' : null : null,
     );
   }

@@ -13,13 +13,8 @@ class UserState {
   static final ValueNotifier<String> goal = ValueNotifier('Hypertrophy');
   static final ValueNotifier<bool> stravaConnected = ValueNotifier(false);
 
-  // New Skills & Training fields
+  // Preserved field (now part of About section)
   static final ValueNotifier<String> anamnesis = ValueNotifier('');
-  static final ValueNotifier<double> activeHoursValue = ValueNotifier(1.0);
-  static final ValueNotifier<String> activeHoursUnit = ValueNotifier('hour');
-  static final ValueNotifier<int> sessionsPerDay = ValueNotifier(1);
-  static final ValueNotifier<List<String>> whereTrain = ValueNotifier([]);
-  static final ValueNotifier<String> additionalInfo = ValueNotifier('');
-  static final ValueNotifier<String?> backgroundFileUrl = ValueNotifier(null);
+  
   static final ValueNotifier<bool> isProfileComplete = ValueNotifier(true); // Default to true to avoid flicker
 }

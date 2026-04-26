@@ -30,16 +30,8 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
 
   // Skills & Training Section
   late TextEditingController _anamnesisController;
-  late TextEditingController _activeHoursController;
-  late String _activeHoursUnit;
-  late TextEditingController _sessionsPerDayController;
-  List<String> _selectedWhere = [];
-  late TextEditingController _additionalInfoController;
-  PlatformFile? _backgroundFile;
   List<TrainingSession> _trainingSessions = [];
   bool _loadingSessions = true;
-
-  final List<String> _whereOptions = ['box', 'academia', 'corrida de rua'];
 
   @override
   void initState() {
@@ -53,11 +45,6 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     _sportController = TextEditingController(text: UserState.sport.value);
 
     _anamnesisController = TextEditingController(text: UserState.anamnesis.value);
-    _activeHoursController = TextEditingController(text: UserState.activeHoursValue.value.toString());
-    _activeHoursUnit = UserState.activeHoursUnit.value;
-    _sessionsPerDayController = TextEditingController(text: UserState.sessionsPerDay.value.toString());
-    _selectedWhere = List<String>.from(UserState.whereTrain.value);
-    _additionalInfoController = TextEditingController(text: UserState.additionalInfo.value);
     _loadSessions();
   }
 
@@ -80,9 +67,6 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     _goalController.dispose();
     _sportController.dispose();
     _anamnesisController.dispose();
-    _activeHoursController.dispose();
-    _sessionsPerDayController.dispose();
-    _additionalInfoController.dispose();
     super.dispose();
   }
 
@@ -93,17 +77,6 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
       final bytes = await image.readAsBytes();
       UserState.avatarBytes.value = bytes;
       SupabaseService.upsertProfile().catchError((e) => debugPrint('Auto-save failed: $e'));
-    }
-  }
-
-  Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'txt', 'doc', 'docx'],
-      withData: true,
-    );
-    if (result != null) {
-      setState(() => _backgroundFile = result.files.first);
     }
   }
 
@@ -134,23 +107,12 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
               _buildTextField('Favorite Sport', _sportController),
               const SizedBox(height: 16),
               _buildTextField('Training Goal', _goalController),
+              const SizedBox(height: 16),
+              _buildTextField('Anamnesis', _anamnesisController, maxLines: 3, required: false, maxLength: 1500),
               
               const SizedBox(height: 32),
-              _buildSectionHeader('Skills & Training'),
+              _buildSectionHeader('Training Sessions'),
               const SizedBox(height: 16),
-              _buildTrainingBackgroundField(),
-              const SizedBox(height: 16),
-              _buildActiveHoursField(),
-              const SizedBox(height: 16),
-              _buildTextField('Sessions per day', _sessionsPerDayController, keyboardType: TextInputType.number),
-              const SizedBox(height: 16),
-              const Text('Where do you train?', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 14)),
-              const SizedBox(height: 8),
-              _buildWhereCheckboxes(),
-              const SizedBox(height: 16),
-              _buildTextField('Additional Info (Optional)', _additionalInfoController, maxLines: 2, required: false),
-
-              const SizedBox(height: 24),
               _loadingSessions
                   ? const Center(child: Padding(
                       padding: EdgeInsets.all(16.0),
@@ -212,102 +174,16 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     );
   }
 
-  Widget _buildTrainingBackgroundField() {
-    String? currentFileName;
-    if (UserState.backgroundFileUrl.value != null) {
-      currentFileName = UserState.backgroundFileUrl.value!.split('/').last;
-      if (currentFileName.contains('_')) {
-        currentFileName = currentFileName.split('_').sublist(1).join('_');
-      }
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildTextField('Training Background (Optional)', _anamnesisController, maxLines: 3, required: false),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: _pickFile,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: AppTheme.cardColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.primaryTeal.withOpacity(0.3), width: 1),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.attach_file, color: AppTheme.primaryTeal, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _backgroundFile != null 
-                      ? _backgroundFile!.name 
-                      : (currentFileName != null ? '📄 $currentFileName' : 'Upload PDF or Text file'),
-                    style: TextStyle(color: (_backgroundFile != null || currentFileName != null) ? Colors.white : AppTheme.secondaryTextColor),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (_backgroundFile != null)
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.red, size: 18),
-                    onPressed: () => setState(() => _backgroundFile = null),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWhereCheckboxes() {
-    return Wrap(
-      spacing: 8,
-      children: _whereOptions.map((option) {
-        final isSelected = _selectedWhere.contains(option);
-        return FilterChip(
-          label: Text(option),
-          selected: isSelected,
-          onSelected: (selected) {
-            setState(() { if (selected) _selectedWhere.add(option); else _selectedWhere.remove(option); });
-          },
-          selectedColor: AppTheme.primaryTeal.withOpacity(0.3),
-          labelStyle: TextStyle(color: isSelected ? AppTheme.primaryTeal : Colors.white),
-          backgroundColor: AppTheme.cardColor,
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildActiveHoursField() {
-    return Row(
-      children: [
-        Expanded(flex: 2, child: _buildTextField('Active hours per session', _activeHoursController, keyboardType: const TextInputType.numberWithOptions(decimal: true))),
-        const SizedBox(width: 8),
-        Expanded(
-          child: DropdownButtonFormField<String>(
-            value: _activeHoursUnit,
-            dropdownColor: AppTheme.cardColor,
-            style: const TextStyle(color: Colors.white),
-            decoration: _inputDecoration('Unit'),
-            items: ['hour', 'min'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-            onChanged: (val) => setState(() => _activeHoursUnit = val!),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTextField(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType, bool required = true}) {
+  Widget _buildTextField(String label, TextEditingController controller, {int maxLines = 1, TextInputType? keyboardType, bool required = true, int? maxLength}) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
+      maxLength: maxLength,
       keyboardType: keyboardType,
       style: const TextStyle(color: Colors.white),
-      decoration: _inputDecoration(label),
+      decoration: _inputDecoration(label).copyWith(
+        counterStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+      ),
       validator: required ? (v) => v == null || v.isEmpty ? 'Required' : null : null,
     );
   }
@@ -375,22 +251,9 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
             UserState.weightUnit.value = _weightUnit;
             UserState.goal.value = _goalController.text;
             UserState.sport.value = _sportController.text;
-            
             UserState.anamnesis.value = _anamnesisController.text;
-            UserState.activeHoursValue.value = double.tryParse(_activeHoursController.text) ?? 1.0;
-            UserState.activeHoursUnit.value = _activeHoursUnit;
-            UserState.sessionsPerDay.value = int.tryParse(_sessionsPerDayController.text) ?? 1;
-            UserState.whereTrain.value = _selectedWhere;
-            UserState.additionalInfo.value = _additionalInfoController.text;
 
             try {
-              if (_backgroundFile != null) {
-                final url = await SupabaseService.uploadTrainingBackground(_backgroundFile!);
-                if (url == null) {
-                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to upload file. Check storage bucket & policies.')));
-                  return;
-                }
-              }
               await SupabaseService.upsertProfile();
               await SupabaseService.upsertAllTrainingSessions(_trainingSessions);
               if (mounted) Navigator.pop(context);

@@ -40,14 +40,8 @@ class SupabaseService {
         if (response['training_goal'] != null)
           UserState.goal.value = response['training_goal'];
         
-        // New Skill & Training fields (defensive checks)
+        // Anamnesis (Preserved and migrated to About)
         if (response['anamnesis'] != null) UserState.anamnesis.value = response['anamnesis'];
-        if (response['active_hours_value'] != null) UserState.activeHoursValue.value = (response['active_hours_value'] as num).toDouble();
-        if (response['active_hours_unit'] != null) UserState.activeHoursUnit.value = response['active_hours_unit'];
-        if (response['sessions_per_day'] != null) UserState.sessionsPerDay.value = response['sessions_per_day'];
-        if (response['where_train'] != null) UserState.whereTrain.value = List<String>.from(response['where_train']);
-        if (response['additional_info'] != null) UserState.additionalInfo.value = response['additional_info'];
-        if (response['background_file_url'] != null) UserState.backgroundFileUrl.value = response['background_file_url'];
 
         UserState.stravaConnected.value = response['strava_athlete_id'] != null;
         // Profile is complete if birthdate is set (standard for our app)
@@ -103,58 +97,7 @@ class SupabaseService {
       'favorite_sport': UserState.sport.value,
       'training_goal': UserState.goal.value,
       'anamnesis': UserState.anamnesis.value,
-      'active_hours_value': UserState.activeHoursValue.value,
-      'active_hours_unit': UserState.activeHoursUnit.value,
-      'sessions_per_day': UserState.sessionsPerDay.value,
-      'where_train': UserState.whereTrain.value,
-      'additional_info': UserState.additionalInfo.value,
-      'background_file_url': UserState.backgroundFileUrl.value,
     });
-  }
-
-  static Future<String?> uploadTrainingBackground(PlatformFile file) async {
-    final user = client.auth.currentUser;
-    if (user == null) return null;
-
-    try {
-      // Very aggressive sanitization: remove EVERYTHING that is not a letter or number
-      // We keep the extension by splitting it first
-      final extension = file.extension ?? 'pdf';
-      final baseName = file.name.split('.').first;
-      String sanitizedName = baseName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-      
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$sanitizedName.$extension';
-      final path = '${user.id}/$fileName';
-      
-      debugPrint("Uploading storage file to path: backgrounds/$path");
-      
-      if (kIsWeb) {
-        if (file.bytes != null) {
-          await client.storage.from('backgrounds').uploadBinary(
-            path, 
-            file.bytes!,
-            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
-          );
-        } else {
-          return null;
-        }
-      } else {
-        // Native platform
-        final fileToUpload = File(file.path!);
-        await client.storage.from('backgrounds').upload(
-          path, 
-          fileToUpload,
-          fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
-        );
-      }
-
-      final url = client.storage.from('backgrounds').getPublicUrl(path);
-      UserState.backgroundFileUrl.value = url;
-      return url;
-    } catch (e) {
-      debugPrint("Error uploading training background: $e");
-      rethrow; // Rethrow so the UI can catch it and show the error message
-    }
   }
 
   static Future<List<Map<String, dynamic>>> getAICoaches() async {

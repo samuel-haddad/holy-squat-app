@@ -78,26 +78,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _buildInfoRow('Weight', '${UserState.weight.value} ${UserState.weightUnit.value}'),
                 _buildInfoRow('Sport', UserState.sport.value),
                 _buildInfoRow('Goal', UserState.goal.value),
+                const Divider(color: Colors.white10),
+                _buildLongTextRow('Anamnesis', UserState.anamnesis.value),
               ],
             ),
             const SizedBox(height: 12),
             _buildExpandableSection(
-              title: 'Skills & Training',
+              title: 'Training Sessions',
               icon: Icons.fitness_center,
               children: [
-                _buildInfoRow('Active hours per session', '${UserState.activeHoursValue.value} ${UserState.activeHoursUnit.value}'),
-                _buildInfoRow('Sessions/Day', UserState.sessionsPerDay.value.toString()),
-                _buildInfoRow('Where', UserState.whereTrain.value.join(', ')),
-                const Divider(color: Colors.white10),
-                _buildLongTextRow('Training Background', UserState.anamnesis.value),
-                ValueListenableBuilder<String?>(
-                  valueListenable: UserState.backgroundFileUrl,
-                  builder: (context, url, _) => url != null ? _buildFileRow(url) : const SizedBox.shrink(),
-                ),
-                _buildLongTextRow('Additional Info', UserState.additionalInfo.value),
                 if (_trainingSessions.isNotEmpty) ...[
-                  const Divider(color: Colors.white10),
-                  const Text('Training Sessions', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 15)),
+                  const Text('My Weekly Schedule', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 15)),
                   const SizedBox(height: 8),
                   ..._trainingSessions.map((s) => Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -106,6 +97,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: const TextStyle(color: Colors.white70, fontSize: 13),
                     ),
                   )),
+                ] else ...[
+                  const Text('No training sessions configured.', style: TextStyle(color: Colors.white38, fontSize: 13)),
                 ],
               ],
             ),

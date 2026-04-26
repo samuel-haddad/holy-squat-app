@@ -7,20 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const allowedSessionTypes = `
-Acessório, Acessórios-Blindagem, Calistenia, 
-Cardio, Cardio-Mobilidade, Core, Core Strength, Core-Prep, 
-Crossfit, Descanso, Endurance, EMOM, FBB, 
-Força-Heavy, Força-Metcon, Força-Skill, 
-Full Body Pump, Full Session, Ginástica-Metcon, 
-Hipertrofia, Hipertrofia-Blindagem, 
-LPO, LPO-Força-Metcon, LPO-Metcon, LPO-Potência, Metcon, 
-Mobilidade, Mobilidade-Flow, Mobilidade-Cardio, Mobilidade-Core, 
-Mobilidade-Inferiores, Mobilidade-Prep, Multi, Musculação, 
-Musculação-Cardio, Musculação-Funcional, Musculação-Força, 
-Natação, Prehab, Prehab-Força, Prehab-Mobilidade, Recuperação Ativa, 
-Reintrodução-FBB, Skill, Skill-Metcon`;
-
 const COACH_PERSONA = `Você é o AI Coach do Holy Squat App. Seu perfil: Coach Level de Crossfit, com grande conhecimento sobre reabilitação de lesões, em especial de ombro e joelho, especializado na integração do treinamento de força tradicional, com ênfase em isolamento, bodybuilding funcional e protocolos de Prehab para CrossFit. Seu foco são protocolos de Concurrent Training que buscam mitigar o "efeito de interferência" entre eles.`;
 
 const METRICS_DEFINITIONS = `
@@ -481,7 +467,7 @@ serve(async (req) => {
       }
 
       console.time('[perf] rag_query');
-      const ragQuery = `${profile.about_me || ''} ${profile.skills_training || ''} ${profile.lesoes || ''}`;
+      const ragQuery = `${profile.anamnesis || ''} ${profile.training_goal || ''}`;
       const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, adminClient);
       console.timeEnd('[perf] rag_query');
 
@@ -515,9 +501,9 @@ serve(async (req) => {
         [PERFIL DO ATLETA]
         - Nome: ${profile.name}
         - Peso Corporal: ${userWeight} kg
-        - About: ${profile.about_me || 'Não informado'}
-        - Skills: ${profile.skills_training || 'Não informado'}
-        - Lesões: ${profile.lesoes || 'Nenhuma registrada'}
+        - Anamnese: ${profile.anamnesis || 'Não informado'}
+        - Objetivo: ${profile.training_goal || 'Não informado'}
+        - Esporte Favorito: ${profile.favorite_sport || 'Não informado'}
 
         [AVALIAÇÃO BIOMECÂNICA E TÉCNICA (TECHNIQUE FEEDBACK)]
         O atleta realizou testes de biomecânica usando IA. Aqui estão os feedbacks mais recentes:
@@ -592,7 +578,7 @@ serve(async (req) => {
 
         [PERFIL DO ATLETA]
         - Nome: ${profile.name}
-        - Lesões: ${profile.lesoes || 'Nenhuma registrada'}
+        - Anamnese: ${profile.anamnesis || 'Não informado'}
 
         [SESSÕES DE TREINO DISPONÍVEIS]
         ${formatTrainingSessions(sessions)}
