@@ -159,6 +159,13 @@ async function generateWithProvider(
         }
 
       } else if (provider === 'anthropic') {
+        const anthropicBody: any = {
+          model: llmModel,
+          max_tokens: maxTokens,
+          system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
+          messages: [{ role: 'user', content: prompt }],
+        };
+
         const response = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -166,13 +173,7 @@ async function generateWithProvider(
             'x-api-key': Deno.env.get('ANTHROPIC_API_KEY') ?? '',
             'anthropic-version': '2023-06-01',
           },
-          body: JSON.stringify({
-            model: llmModel,
-            max_tokens: maxTokens,
-            temperature: targetTemperature,
-            system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
-            messages: [{ role: 'user', content: prompt }],
-          }),
+          body: JSON.stringify(anthropicBody),
         });
 
         const data = await response.json();
