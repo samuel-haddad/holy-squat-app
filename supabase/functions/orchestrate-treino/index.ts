@@ -278,7 +278,6 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       user_id: job.user_id,
       email_utilizador: p.email_utilizador,
       bloco_atual: cicloResult._blocoAtual,
-      visao_geral: cicloResult.visaoGeralCiclo,
       data_inicio_meso: cicloResult._blocoAtual?.dataInicioMeso || p.data_inicio_macro,
       training_sessions: cicloResult._trainingSessions || p.training_sessions || [],
       ai_coach_name: p.ai_coach_name,
@@ -286,7 +285,9 @@ async function handleGenerateCycleStep(job: any, admin: any) {
 
     job.step_1_result = {
       ...cicloResult,
-      visaoSemanal: result.visaoSemanal
+      visaoSemanal: result.visaoSemanal,
+      visaoGeralCiclo: result.visaoGeralCiclo,
+      resumoMesociclo: result.resumoMesociclo
     };
 
     // Persiste os resultados intermediários (Análise + Calendário)

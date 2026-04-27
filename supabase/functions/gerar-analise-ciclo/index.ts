@@ -263,7 +263,7 @@ serve(async (req) => {
 
       let techniqueFeedbacksStr = "Nenhum feedback de técnica registrado.";
       if (profile?.id) {
-        const { data: tfData } = await adminClient.from('technique_feedbacks').select('exercise_name, resume_text').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(5);
+        const { data: tfData } = await adminClient.from('technique_feedbacks').select('exercise_name, resume_text').eq('user_id', profile.id).order('created_at', { ascending: false });
         if (tfData && tfData.length > 0) techniqueFeedbacksStr = tfData.map((tf: any) => `- Exercício: ${tf.exercise_name}\n  Análise: ${tf.resume_text}`).join('\n');
       }
 
@@ -271,10 +271,8 @@ serve(async (req) => {
         ${COACH_PERSONA}
         [MISSÃO — ANÁLISE E PLANEJAMENTO DO MESOCICLO]
         ${payload.model_observations ? `\n        [OBSERVAÇÕES DO MODELO]\n        ${payload.model_observations}\n` : ''}
-        Gere três componentes essenciais: 
+        Gere apenas 1 componente essencial:
         1. analiseCicloAnterior: Avaliação do progresso.
-        2. visaoGeralCiclo: Esqueleto semanal do mesociclo.
-        3. resumoMesociclo: Apenas repita a definição do foco deste bloco.
 
         ${METRICS_DEFINITIONS}
 
@@ -282,7 +280,6 @@ serve(async (req) => {
         - Nome: ${profile.name} | Objetivo Macro: ${macroCtx.visao_geral_plano?.objetivoPrincipal || 'N/A'}
         - Histórico/Análise Macro: ${macroCtx.analise_historica?.analiseMacro?.analise || 'N/A'}
         - Técnica: ${techniqueFeedbacksStr}
-        - Sessões: ${formatTrainingSessions(sessions)}
         
         [MESOCICLO ATUAL]
         - Nome: ${bloco.mesociclo} | Foco Original: ${bloco.foco}
@@ -294,20 +291,16 @@ serve(async (req) => {
         [REGRAS DE RESPOSTA]
         - SEJA ULTRA OBJETIVO. Sem introduções.
         - analiseCicloAnterior: Texto narrativo em 'texto'.
-        - visaoGeralCiclo: Estrutura de semanas 1 a 4.
 
         [FORMATO — JSON]
         {
-          "analiseCicloAnterior": { "texto": "string" },
-          "visaoGeralCiclo": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }],
-          "resumoMesociclo": "string"
+          "analiseCicloAnterior": { "texto": "string" }
         }
       `;
 
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_analise', 4000, 0.7);
       
-      // Resgate da definição tal qual (foco do bloco)
-      result.resumoMesociclo = bloco.foco || result.resumoMesociclo;
+
 
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
@@ -317,34 +310,66 @@ serve(async (req) => {
       const bloco = bloco_atual || {};
       const sessions = training_sessions || [];
 
-      const prompt = `
+      const promptGeral = `
         ${COACH_PERSONA}
         [DATA DE HOJE: ${today}]
-        [MISSÃO — GERAR CALENDÁRIO SEMANAL DO MESOCICLO]
-        Gere o calendário com os dias ativos de treino, baseado na visão geral fornecida.
-        SEJA O MAIS CONCISO POSSÍVEL. Apenas o JSON puro, sem explicações.
+        [DATA DE INÍCIO DO MESOCICLO: ${data_inicio_meso || today}]
+        [MISSÃO — GERAR VISÃO GERAL DO MESOCICLO]
+        Gere a visão macroscópica de cada semana do ciclo.
+        1. visaoGeralCiclo: A lista de objetos deve ter EXATAMENTE ${bloco.duracaoSemanas || 4} semanas de duração. Cada objeto deve conter o foco da semana e uma descrição detalhada do que deve ser feito em cada dia (seg a dom).
+        2. resumoMesociclo: Apenas repita a definição do foco deste bloco.
+        
+        [BLOCO ATUAL DO MESOCICLO]
+        - Nome: ${bloco.mesociclo} | Foco: ${bloco.foco} | Duração: ${bloco.duracaoSemanas || 4} semanas
 
-        [VISÃO GERAL DO CICLO (ESTRUTURA APLICADA)]
-        ${JSON.stringify(visao_geral || [])}
+        [FORMATO — JSON]
+        {
+          "visaoGeralCiclo": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }],
+          "resumoMesociclo": "string"
+        }
+      `;
+      console.log("[gerar_calendario] Solicitando visão geral (etapa 1/2)...");
+      const resultGeral = await generateWithProvider(promptGeral, provider, llmModel, genAI, 'gerar_calendario_geral', 8000, 0.2);
+
+      const promptSemanal = `
+        ${COACH_PERSONA}
+        [DATA DE HOJE: ${today}]
+        [DATA DE INÍCIO DO MESOCICLO: ${data_inicio_meso || today}]
+        [MISSÃO — GERAR VISÃO SEMANAL DETALHADA]
+        Baseado na visão macroscópica já definida, distribua os treinos exatos nas datas corretas seguindo a rotina de sessões configuradas do atleta.
+        1. visaoSemanal: O calendário detalhado de treinos para TODAS AS ${bloco.duracaoSemanas || 4} SEMANAS.
+        ATENÇÃO: É obrigatório que o array visaoSemanal contenha os treinos de TODAS as semanas descritas na Visão Geral, sem deixar nenhum 'focoPrincipal' em branco.
+        
+        [VISÃO GERAL DO CICLO (Use isso como guia de conteúdo e duração)]
+        ${JSON.stringify(resultGeral.visaoGeralCiclo)}
         
         [SESSÕES CONFIGURADAS (ROTINA DO ATLETA)]
         ${formatTrainingSessions(sessions)}
         
         [BLOCO ATUAL DO MESOCICLO]
-        - Nome: ${bloco.mesociclo} | Foco: ${bloco.foco}
+        - Nome: ${bloco.mesociclo} | Duração: ${bloco.duracaoSemanas || 4} semanas
 
         [FORMATO — JSON]
         {
           "visaoSemanal": [{ "date": "YYYY-MM-DD", "session": 1, "session_type": "string", "focoPrincipal": "string" }]
         }
       `;
+      console.log("[gerar_calendario] Solicitando visão semanal (etapa 2/2)...");
+      const resultSemanal = await generateWithProvider(promptSemanal, provider, llmModel, genAI, 'gerar_calendario_semanal', 8000, 0.2);
 
-      const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_calendario', 6000, 0.2);
+      const result = {
+        visaoGeralCiclo: resultGeral.visaoGeralCiclo,
+        resumoMesociclo: resultGeral.resumoMesociclo,
+        visaoSemanal: resultSemanal.visaoSemanal
+      };
 
       if (result.visaoSemanal && Array.isArray(result.visaoSemanal)) {
         const diasSemana = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
 
-        const duracaoSemanas = (visao_geral && visao_geral.length > 0) ? visao_geral.length : 4;
+        // Resgate da definição tal qual (foco do bloco)
+        result.resumoMesociclo = bloco.foco || result.resumoMesociclo;
+
+        const duracaoSemanas = (result.visaoGeralCiclo && result.visaoGeralCiclo.length > 0) ? result.visaoGeralCiclo.length : 4;
         const totalDias = duracaoSemanas * 7;
 
         let startD = new Date();

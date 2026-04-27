@@ -40,8 +40,8 @@ class WorkoutController extends ChangeNotifier {
   };
 
   static const _generateCycleSteps = {
-    1: '🧠 Analisando histórico e visão geral...',
-    2: '📆 Estruturando calendário semanal...',
+    1: '🧠 Ação 1/2 — Analisando histórico e visão geral...',
+    2: '📆 Ação 2/2 — Estruturando calendário semanal...',
   };
 
   static const _generateWorkoutsSteps = {
@@ -342,15 +342,7 @@ class WorkoutController extends ChangeNotifier {
             final step = newData['current_step'] as int? ?? 1;
             final status = newData['status'] as String? ?? 'processing';
 
-            if (isGenerateCycle) {
-              if (step == 1) {
-                _loadingMessage = '🧠 Analisando histórico e visão geral...';
-                notifyListeners();
-              } else if (step == 2) {
-                _loadingMessage = '📆 Estruturando dias do calendário...';
-                notifyListeners();
-              }
-            } else if (isGenerateWorkouts) {
+            if (isGenerateWorkouts) {
               int totalDays = 1;
               try {
                 final input = newData['input_params'] as Map<String, dynamic>? ?? {};
@@ -387,15 +379,7 @@ class WorkoutController extends ChangeNotifier {
         final status = job['status'] as String? ?? 'processing';
         final step   = job['current_step'] as int? ?? 1;
 
-        if (isGenerateCycle) {
-          if (step == 1) {
-            _loadingMessage = '🧠 Analisando histórico e visão geral...';
-            notifyListeners();
-          } else if (step == 2) {
-            _loadingMessage = '📆 Estruturando dias do calendário...';
-            notifyListeners();
-          }
-        } else if (isGenerateWorkouts) {
+        if (isGenerateWorkouts) {
           int totalDays = 1;
           try {
             final input = job['input_params'] as Map<String, dynamic>? ?? {};

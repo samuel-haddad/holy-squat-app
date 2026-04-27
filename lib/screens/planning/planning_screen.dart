@@ -28,6 +28,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _aiCoaches = [];
   Map<String, bool> _workoutsExistMap = {}; // Tracks if workouts exist for the current mesocycle
+  WorkoutController? _activeController;
   // Snapshot stats are now retrieved from each individual plan record
 
   @override
@@ -111,7 +112,31 @@ class _PlanningScreenState extends State<PlanningScreen> {
       ),
       drawer: const AppDrawer(),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryTeal))
+          ? Center(
+              child: _activeController != null
+                  ? AnimatedBuilder(
+                      animation: _activeController!,
+                      builder: (context, _) => Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(color: AppTheme.primaryTeal),
+                          const SizedBox(height: 24),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                            child: Text(
+                              _activeController!.loadingMessage.isNotEmpty
+                                  ? _activeController!.loadingMessage
+                                  : 'Processando...',
+                              style: const TextStyle(
+                                  color: AppTheme.primaryTeal, fontSize: 16, fontWeight: FontWeight.bold),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const CircularProgressIndicator(color: AppTheme.primaryTeal),
+            )
           : RefreshIndicator(
               onRefresh: _loadData,
               child: ListView.builder(
@@ -1310,12 +1335,13 @@ class _PlanningScreenState extends State<PlanningScreen> {
   }
 
   Future<void> _generateNextAnalysis(Map<String, dynamic> coach, Map<String, dynamic> plan) async {
+    final controller = WorkoutController(WorkoutRepository());
     setState(() {
+      _activeController = controller;
       _isLoading = true;
     });
 
     try {
-      final controller = WorkoutController(WorkoutRepository());
       final sessions = await SupabaseService.fetchTrainingSessions();
       
       await controller.gerarAnaliseCiclo(
@@ -1347,17 +1373,23 @@ class _PlanningScreenState extends State<PlanningScreen> {
         );
       }
     } finally {
+      if (mounted) {
+        setState(() {
+          _activeController = null;
+        });
+      }
       await _loadData(); 
     }
   }
 
   Future<void> _generateWorkouts(Map<String, dynamic> coach, Map<String, dynamic> plan) async {
+    final controller = WorkoutController(WorkoutRepository());
     setState(() {
+      _activeController = controller;
       _isLoading = true;
     });
 
     try {
-      final controller = WorkoutController(WorkoutRepository());
       final sessions = await SupabaseService.fetchTrainingSessions();
       
       final table = plan['workouts_plan_table'] as List? ?? [];
@@ -1397,6 +1429,11 @@ class _PlanningScreenState extends State<PlanningScreen> {
         );
       }
     } finally {
+      if (mounted) {
+        setState(() {
+          _activeController = null;
+        });
+      }
       await _loadData(); 
     }
   }
@@ -1608,16 +1645,52 @@ class _PlanningScreenState extends State<PlanningScreen> {
 
     if (confirmed != true) return;
 
-    final userEmail = UserState.email.value;
-
-    await context.read<WorkoutController>().restaurarCiclo(
-      emailUtilizador: userEmail,
-      planoId: plan['id'],
-      actualPlanSummaryJson: plan['actual_plan_summary_json'],
-      currentWorkoutsTable: plan['workouts_plan_table'] ?? [],
-      aiCoachName: plan['ai_coach_name'],
-    );
+    final userEmail = SupabaseService.client.auth.currentUser?.email ?? UserState.email.value;
+    final controller = WorkoutController(WorkoutRepository());
     
-    _loadData();
+    setState(() {
+      _activeController = controller;
+      _isLoading = true;
+    });
+
+    try {
+      final sessions = await SupabaseService.fetchTrainingSessions();
+      
+      await controller.restaurarCiclo(
+        emailUtilizador: userEmail,
+        planoId: plan['id'],
+        actualPlanSummaryJson: plan['actual_plan_summary'] ?? '{}',
+        currentWorkoutsTable: plan['workouts_plan_table'] ?? [],
+        trainingSessions: sessions,
+        aiCoachName: plan['ai_coach_name'],
+      );
+
+      if (controller.state == WorkoutState.success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Ciclo restaurado com sucesso!'), backgroundColor: Colors.green),
+          );
+        }
+      } else if (controller.state == WorkoutState.error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(controller.errorMessage), backgroundColor: Colors.redAccent),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(content: Text('Erro inesperado: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _activeController = null;
+        });
+      }
+      await _loadData(); 
+    }
   }
 }
