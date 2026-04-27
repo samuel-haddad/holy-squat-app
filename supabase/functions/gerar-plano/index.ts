@@ -309,7 +309,11 @@ serve(async (req) => {
       ]);
 
       const profile = profileRes.data || {};
-      const userWeight = Number(profile.weight) || 0;
+      const rawWeight = Number(profile.weight) || 0;
+      const weightUnitRaw = (profile.weight_unit || '').toLowerCase().trim();
+      const isLbs = weightUnitRaw.includes('lb');
+      // Garante que p_user_weight está sempre em kg, independente da unidade do perfil
+      const userWeight = isLbs ? rawWeight * 0.453592 : rawWeight;
 
       const athleteStatsRes = await adminClient.rpc('get_athlete_planning_stats', { 
         p_email: email_utilizador,

@@ -36,7 +36,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final repo = WorkoutRepository();
       final String userEmail = SupabaseService.client.auth.currentUser?.email ?? UserState.email.value;
-      final double userWeight = double.tryParse(UserState.weight.value) ?? 0.0;
+      final double rawWeight = double.tryParse(UserState.weight.value) ?? 0.0;
+      final bool isLbs = UserState.weightUnit.value.toLowerCase().contains('lb');
+      final double userWeight = isLbs ? rawWeight * 0.453592 : rawWeight;
 
       // Fetch dynamic stats in parallel
       final statsFuture = repo.fetchAthletePlanningStats(userEmail, userWeight);
@@ -240,7 +242,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       {'label': 'PSE Médio', 'value': '${kpis['avg_pse']}', 'icon': Icons.speed},
       {'label': 'IFR', 'value': '${kpis['ifr']}', 'icon': Icons.fitness_center},
       {'label': 'Evolução', 'value': '+${kpis['best_evolution']?['percent']}%', 'icon': Icons.trending_up, 'sub': kpis['best_evolution']?['exercise']},
-      {'label': 'Streak', 'value': '${kpis['streak']} d', 'icon': Icons.fireplace},
+      {'label': 'Streak', 'value': '${kpis['streak']} w', 'icon': Icons.fireplace},
       {'label': 'Freq. Sem.', 'value': '${kpis['weekly_freq']}/w', 'icon': Icons.calendar_view_week},
     ];
 

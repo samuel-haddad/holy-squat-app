@@ -81,7 +81,9 @@ class WorkoutController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final double userWeight = double.tryParse(UserState.weight.value) ?? 0.0;
+      final double rawWeight = double.tryParse(UserState.weight.value) ?? 0.0;
+      final bool isLbs = UserState.weightUnit.value.toLowerCase().contains('lb');
+      final double userWeight = isLbs ? rawWeight * 0.453592 : rawWeight;
       await fetchPlanningStats(emailUtilizador, userWeight);
 
       final jobId = await _repository.criarJobGeracao(

@@ -621,7 +621,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
       {'label': 'PSE Médio', 'value': '${kpis['avg_pse']}', 'icon': Icons.speed},
       {'label': 'IFR', 'value': '${kpis['ifr'] ?? kpis['power_index'] ?? 0}', 'icon': Icons.fitness_center},
       {'label': 'Evolução', 'value': '+${kpis['best_evolution']?['percent']}%', 'icon': Icons.trending_up, 'sub': kpis['best_evolution']?['exercise']},
-      {'label': 'Streak', 'value': '${kpis['streak']} d', 'icon': Icons.fireplace},
+      {'label': 'Streak', 'value': '${kpis['streak']} w', 'icon': Icons.fireplace},
       {'label': 'Freq. Sem.', 'value': '${kpis['weekly_freq']}/w', 'icon': Icons.calendar_view_week},
     ];
 
@@ -1515,7 +1515,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
       {'l': 'PSE Medio', 'v': '${kpis['avg_pse']}'},
       {'l': 'Power Idx', 'v': '${kpis['power_index']}'},
       {'l': 'Evolucao', 'v': '+${kpis['best_evolution']?['percent']}%'},
-      {'l': 'Streak', 'v': '${kpis['streak']} d'},
+      {'l': 'Streak', 'v': '${kpis['streak']} w'},
       {'l': 'Freq/Sem', 'v': '${kpis['weekly_freq']}/w'},
     ];
 
