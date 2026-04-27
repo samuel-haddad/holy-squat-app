@@ -328,6 +328,9 @@ serve(async (req) => {
           "visaoGeralCiclo": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }],
           "resumoMesociclo": "string"
         }
+
+        [DIRETRIZES DE RECOVERY]
+        - Importante: Dias de descanso e descanso ativo podem ocorrer em dias que também possuem sessões de treino, se a metodologia julgar pertinente.
       `;
       console.log("[gerar_calendario] Solicitando visão geral (etapa 1/2)...");
       const resultGeral = await generateWithProvider(promptGeral, provider, llmModel, genAI, 'gerar_calendario_geral', 8000, 0.2);
@@ -354,6 +357,9 @@ serve(async (req) => {
         {
           "visaoSemanal": [{ "date": "YYYY-MM-DD", "session": 1, "session_type": "string", "focoPrincipal": "string" }]
         }
+
+        [DIRETRIZES DE RECOVERY]
+        - Lembre-se: Descansos e descansos ativos podem coexistir com sessões de treino no mesmo dia. Se o atleta treina mas também precisa de recuperação ativa, ambos devem ser listados para a mesma data.
       `;
       console.log("[gerar_calendario] Solicitando visão semanal (etapa 2/2)...");
       const resultSemanal = await generateWithProvider(promptSemanal, provider, llmModel, genAI, 'gerar_calendario_semanal', 8000, 0.2);
@@ -382,7 +388,10 @@ serve(async (req) => {
 
         const mapDiasAtivos = new Map();
         result.visaoSemanal.forEach((dia: any) => {
-          mapDiasAtivos.set(dia.date, dia);
+          if (!mapDiasAtivos.has(dia.date)) {
+            mapDiasAtivos.set(dia.date, []);
+          }
+          mapDiasAtivos.get(dia.date).push(dia);
         });
 
         const visaoCompleta = [];
@@ -393,13 +402,15 @@ serve(async (req) => {
           const weekNum = Math.floor(i / 7) + 1;
 
           if (mapDiasAtivos.has(dateStr)) {
-            const diaObj = mapDiasAtivos.get(dateStr);
-            visaoCompleta.push({
-              ...diaObj,
-              day: dayName,
-              mesocycle: bloco.mesociclo,
-              week: weekNum,
-              isDescansoAtivo: false
+            const itensDoDia = mapDiasAtivos.get(dateStr);
+            itensDoDia.forEach((diaObj: any) => {
+              visaoCompleta.push({
+                ...diaObj,
+                day: dayName,
+                mesocycle: bloco.mesociclo,
+                week: weekNum,
+                isDescansoAtivo: diaObj.session_type === "Descanso" || diaObj.session_type === "Recuperação Ativa"
+              });
             });
           } else {
             visaoCompleta.push({
