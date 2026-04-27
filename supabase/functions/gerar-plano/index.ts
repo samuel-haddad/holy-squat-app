@@ -11,19 +11,17 @@ const COACH_PERSONA = `Você é o AI Coach do Holy Squat App. Seu perfil: Coach 
 
 const METRICS_DEFINITIONS = `
 [DICIONÁRIO E INTERPRETAÇÃO DE MÉTRICAS (KPIs)]
-1. Adherence (Taxa de Adesão): % de exercícios planejados concluídos nos últimos 30 dias. 
+1. Adherence (Taxa de Adesão): % de exercícios planejados concluídos nos últimos 180 dias (Ignorando sessões de Descanso). 
    - Interpretação: > 90% (Alta disciplina); < 70% (Necessário reduzir volume ou ajustar rotina).
-2. IFR (Índice de Força Relativa): Soma dos melhores PRs em Back Squat, Deadlift e Press dividida pelo peso corporal.
+2. IFR (Índice de Força Relativa): Soma dos melhores PRs em Back Squat, Deadlift e Press dividida pelo peso corporal, considerando os melhores resultados dos últimos 6 meses.
    - Interpretação: Exprime a força bruta em relação ao peso do atleta. > 5.0 (Excelente); 3.0-4.0 (Intermediário).
-3. Avg_PSE (Média de Esforço Percebido): Média da escala 1-10 nos últimos 90 dias.
+3. Avg_PSE (Média de Esforço Percebido): Média da escala 1-10 nos últimos 180 dias de treino.
    - Interpretação: 8-9 (Limite/Risco de burnout); 5-6 (Manutenção/Base aeróbica).
-4. Current_Workload (IEA): Volume total * Intensidade nos últimos 30 dias.
-   - Interpretação: "Carga Aguda". Use para evitar aumentos bruscos que causem lesões.
-5. Best_Evolution: Comparação % entre Workload atual e baseline de 6 meses.
+4. Best_Evolution: Comparação % entre Esforço Global atual (último mês) e baseline de 6 meses.
    - Interpretação: Positivo (Overload progressivo); Negativo (Deload ou perda de consistência).
-6. Weekly_Freq: Média de dias únicos treinados por semana nos últimos 30 dias.
+5. Weekly_Freq: Média de dias únicos treinados por semana nos últimos 180 dias (Soma de dias treinados / 26 semanas).
    - Interpretação: Mede o ritmo biológico e a capacidade de recuperação (recovery).
-7. Streak: Semanas consecutivas com pelo menos 3 treinos realizados.
+6. Streak: Semanas consecutivas com pelo menos 3 treinos realizados.
    - Interpretação: Mede resiliência e formação de hábito. Mais valioso que o streak diário.
 `;
 
@@ -443,7 +441,7 @@ serve(async (req) => {
       const prompt = `
         ${COACH_PERSONA}
         [DATA DE HOJE: ${today}]
-
+        ${payload.model_observations ? `\n        [OBSERVAÇÕES DO MODELO]\n        ${payload.model_observations}\n` : ''}
         [MISSÃO — ANÁLISE DO HISTÓRICO ESPORTIVO]
         Analise detalhadamente o histórico do atleta abaixo. Não se limite a resumir logs; você deve 
         interpretar a trajetória do atleta. 

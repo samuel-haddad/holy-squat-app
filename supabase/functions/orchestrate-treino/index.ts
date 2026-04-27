@@ -20,6 +20,8 @@ const validSessionTypes = new Set([
   'Reintrodução-FBB', 'Skill', 'Skill-Metcon',
 ]);
 
+const AI_MODEL_OBSERVATIONS = "IMPORTANTE: Um dia pode ter uma ou mais sessões de treino. As análises e gerações de treino devem considerar cada sessão de forma independente, respeitando sua numeração (session_number), turnos e objetivos específicos, mesmo que ocorram na mesma data. Nunca assuma que existe apenas uma sessão por dia.";
+
 // =========================================================
 // Main handler
 // =========================================================
@@ -137,6 +139,7 @@ async function handleCreatePlanStep(job: any, admin: any) {
       email_utilizador: p.email_utilizador,
       ai_coach_name: p.ai_coach_name,
       training_sessions: p.training_sessions || [],
+      model_observations: AI_MODEL_OBSERVATIONS,
     }, 'gerar-plano');
     await admin.from('ai_generation_jobs').update({
       step_1_result: result, current_step: 2, updated_at: new Date().toISOString(),
@@ -250,6 +253,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       contexto_macrociclo: contextoMacrociclo,
       training_sessions: trainingSessions,
       ai_coach_name: p.ai_coach_name,
+      model_observations: AI_MODEL_OBSERVATIONS,
     }, 'gerar-analise-ciclo');
 
     await admin.from('ai_generation_jobs').update({
