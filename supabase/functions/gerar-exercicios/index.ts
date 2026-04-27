@@ -168,11 +168,18 @@ async function generateWithProvider(
           throw new Error(`JSON Parse falhou no provider Google (${actionLabel}): ${e.message}`);
         }
       } else if (provider === 'anthropic') {
+        // On retry attempts for parse errors, use a stricter prompt prefix
+        const isRetryAttempt = attempt > 1;
+        const systemPrompt = isRetryAttempt
+          ? "CRITICAL: Your ENTIRE response MUST be a single valid JSON object. NO text before or after the JSON. NO markdown code fences. NO trailing commas. ALL keys must be double-quoted strings. Start your response with '{' and end with '}'. Nothing else."
+          : "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.";
+
         const anthropicBody: any = {
           model: llmModel,
-          max_tokens: 5000,
-          system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
-          messages: [{ role: 'user', content: prompt }],
+          max_tokens: isRetryAttempt ? 8000 : 5000,
+          temperature: targetTemperature,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: isRetryAttempt ? prompt + '\n\nIMPORTANT: Respond ONLY with valid JSON. No text before or after the JSON object.' : prompt }],
         };
 
         const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -343,6 +350,7 @@ ${diasStr}
         2. Certifique-se de que TODAS as chaves de propriedades tenham aspas duplas ("chave").
         3. SEJA EXTREMAMENTE OBJETIVO. Não inclua NENHUM texto conversacional, explicação ou markdown fora do JSON.
         4. Detalhes ("de") e Títulos ("et") devem ser curtos, diretos e objetivos.
+        5. NOMENCLATURA OBRIGATÓRIA: O campo "st" (session_type) DEVE usar EXCLUSIVAMENTE os valores em PORTUGUÊS da lista fornecida. PROIBIDO usar nomes em inglês (ex: "Force-Metcon" é INVÁLIDO → use "Força-Metcon"). Use EXATAMENTE um dos valores listados em [RESTRIÇÃO DE NOMENCLATURA].
       `;
 
       const responseData = await generateWithProvider(prompt, provider, llmModel, genAI, `detalhamento_s${ctx.semanaNum}`, 16000, 0.2);

@@ -162,6 +162,7 @@ async function generateWithProvider(
         const anthropicBody: any = {
           model: llmModel,
           max_tokens: maxTokens,
+          temperature: targetTemperature,
           system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
           messages: [{ role: 'user', content: prompt }],
         };

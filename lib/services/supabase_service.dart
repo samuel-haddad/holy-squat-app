@@ -163,11 +163,11 @@ class SupabaseService {
     return response;
   }
 
-  // Fetch all sessions with their respective icons
+  // Fetch all sessions (icon resolved locally via session_type)
   static Future<List<Map<String, dynamic>>> getSessions() async {
     final response = await client
         .from('sessions')
-        .select('*, icons(img)')
+        .select('*')
         .order('date', ascending: false)
         .limit(2000);
     debugPrint("Fetched ${response.length} sessions from Supabase");
@@ -179,7 +179,7 @@ class SupabaseService {
     debugPrint("Querying sessions for date: '$dateStr'");
     final response = await client
         .from('sessions')
-        .select('*, icons(img)')
+        .select('*')
         .eq('date', dateStr)
         .order('session', ascending: true);
     
@@ -599,7 +599,7 @@ class SupabaseService {
 
     var query = client
         .from('sessions')
-        .select('*, icons(img)')
+        .select('*')
         .eq('user_email', user.email!)
         .eq('ai_coach_name', coach)
         .gte('date', DateFormat('yyyy-MM-dd').format(start));
