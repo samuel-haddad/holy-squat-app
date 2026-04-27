@@ -114,13 +114,28 @@ function extractRobustJSON(str: string): any {
   throw new Error("Não foi possível extrair um JSON válido mesmo com Auto-Heal.");
 }
 
+function parseNotesIntoRestrictions(notes: string): string {
+  if (!notes || !notes.trim()) return '';
+  const items = notes
+    .split(/[;\n]+/)
+    .map((s: string) => s.trim())
+    .filter((s: string) => s.length > 3);
+  if (items.length <= 1) {
+    return `    ⚠ Restrição Absoluta: ${notes.trim()}`;
+  }
+  return items.map((item: string, i: number) => `    ⚠ Restrição ${i + 1}: ${item}`).join('\n');
+}
+
 function formatTrainingSessions(sessions: any[]): string {
   if (!sessions || sessions.length === 0) {
     throw new Error("Nenhuma sessão de treino configurada. Por favor, configure suas sessões no perfil ou no onboarding antes de prosseguir.");
   }
-  return sessions.map((s: any) =>
-    `- Sessão ${s.session_number}: Locais=[${s.locations?.join(', ')}] | Duração=${s.duration_minutes}min | Dias=[${s.schedule?.join(', ')}] | Turno=${s.time_of_day}${s.notes ? ` | Notas: ${s.notes}` : ''}`
-  ).join('\n        ');
+  return sessions.map((s: any) => {
+    const notesBlock = s.notes
+      ? `\n  NOTAS/RESTRIÇÕES ABSOLUTAS:\n${parseNotesIntoRestrictions(s.notes)}`
+      : '';
+    return `- Sessão ${s.session_number}: Local=[${s.locations?.join(', ')}] | Duração=${s.duration_minutes}min | Dias=[${s.schedule?.join(', ')}] | Turno=${s.time_of_day}${notesBlock}`;
+  }).join('\n  ');
 }
 
 async function sleep(ms: number) {
@@ -333,8 +348,18 @@ serve(async (req) => {
         ${FEW_SHOT_EXAMPLES}
         [TECNICA]
         ${techniqueFeedbacksStr}
-        [SESSÕES CONFIGURADAS]
+
+        [SESSÕES CONFIGURADAS — CONTRATOS IMUTÁVEIS DO ATLETA]
+        As configurações abaixo são CONTRATOS do atleta e NÃO PODEM ser ignoradas:
+        - O Local definido em cada sessão é uma RESTRIÇÃO DE INFRAESTRUTURA: os exercícios devem ser compatíveis com o(s) equipamento(s) disponível(is) naquele local. O campo "lo" no output deve refletir exatamente o local da sessão alvo.
+        - As Notas são RESTRIÇÕES ABSOLUTAS DE DESIGN: NÃO é permitido gerar exercícios que conflitem com as notas da sessão.
         ${formatTrainingSessions(ctx.trainingSessions || [])}
+
+        [REGRA CRÍTICA — IDENTIDADE DA SESSÃO]
+        Você está gerando exercícios APENAS para a sessão identificada pelo campo "session" no [DIA ALVO].
+        O campo "se" de TODOS os exercícios gerados DEVE ser IDENTICO ao número de sessão do dia alvo.
+        NÃO misture exercícios de sessões diferentes no mesmo output.
+        Respeite a duração (du), o local (lo) e as notas da sessão correspondente.
         
         [EXERCÍCIOS JÁ GERADOS NESTA SEMANA (CONTEXTO)]
         ${exsStr || "Nenhum exercício gerado ainda nesta semana."}

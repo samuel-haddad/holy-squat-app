@@ -103,13 +103,79 @@ function extractRobustJSON(str: string): any {
   throw new Error("Não foi possível extrair um JSON válido mesmo com Auto-Heal.");
 }
 
+function parseNotesIntoRestrictions(notes: string): string {
+  if (!notes || !notes.trim()) return '';
+  const items = notes
+    .split(/[;\n]+/)
+    .map((s: string) => s.trim())
+    .filter((s: string) => s.length > 3);
+  if (items.length <= 1) {
+    return `    ⚠ Restrição Absoluta: ${notes.trim()}`;
+  }
+  return items.map((item: string, i: number) => `    ⚠ Restrição ${i + 1}: ${item}`).join('\n');
+}
+
+function normalizeDayName(day: string): string {
+  const m: Record<string, string> = {
+    'seg': 'Segunda-feira', 'segunda': 'Segunda-feira', 'segunda-feira': 'Segunda-feira',
+    'ter': 'Terça-feira', 'terca': 'Terça-feira', 'terça': 'Terça-feira', 'terça-feira': 'Terça-feira',
+    'qua': 'Quarta-feira', 'quarta': 'Quarta-feira', 'quarta-feira': 'Quarta-feira',
+    'qui': 'Quinta-feira', 'quinta': 'Quinta-feira', 'quinta-feira': 'Quinta-feira',
+    'sex': 'Sexta-feira', 'sexta': 'Sexta-feira', 'sexta-feira': 'Sexta-feira',
+    'sab': 'Sábado', 'sabado': 'Sábado', 'sábado': 'Sábado',
+    'dom': 'Domingo', 'domingo': 'Domingo',
+  };
+  return m[day.toLowerCase()] || day;
+}
+
+function validateVisaoSemanal(visaoSemanal: any[], sessions: any[]): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!sessions || sessions.length === 0) return { valid: true, errors };
+
+  // Build map: normalized_day → expected session_numbers
+  const dayToExpected: Record<string, number[]> = {};
+  for (const s of sessions) {
+    for (const day of (s.schedule || [])) {
+      const norm = normalizeDayName(day);
+      if (!dayToExpected[norm]) dayToExpected[norm] = [];
+      dayToExpected[norm].push(Number(s.session_number));
+    }
+  }
+
+  // Build map: date → Set of generated session numbers (skip pure Descanso entries)
+  const dateToGenerated: Record<string, Set<number>> = {};
+  const diasSemanaArr = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+  for (const entry of visaoSemanal) {
+    if (entry.session_type === 'Descanso') continue;
+    if (!dateToGenerated[entry.date]) dateToGenerated[entry.date] = new Set();
+    dateToGenerated[entry.date].add(Number(entry.session));
+  }
+
+  // For each active date, check that all expected sessions were generated
+  for (const [date, generatedSet] of Object.entries(dateToGenerated)) {
+    const d = new Date(date + 'T12:00:00Z');
+    const dayName = diasSemanaArr[d.getUTCDay()];
+    const expected = dayToExpected[dayName] || [];
+    for (const expSession of expected) {
+      if (!generatedSet.has(expSession)) {
+        errors.push(`${date} (${dayName}): Sessão ${expSession} foi omitida`);
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
 function formatTrainingSessions(sessions: any[]): string {
   if (!sessions || sessions.length === 0) {
     throw new Error("Nenhuma sessão de treino configurada. Por favor, configure suas sessões no perfil ou no onboarding antes de prosseguir.");
   }
-  return sessions.map((s: any) =>
-    `- Sessão ${s.session_number}: Locais=[${s.locations?.join(', ')}] | Duração=${s.duration_minutes}min | Dias=[${s.schedule?.join(', ')}] | Turno=${s.time_of_day}${s.notes ? ` | Notas: ${s.notes}` : ''}`
-  ).join('\n        ');
+  return sessions.map((s: any) => {
+    const notesBlock = s.notes
+      ? `\n  NOTAS/RESTRIÇÕES ABSOLUTAS:\n${parseNotesIntoRestrictions(s.notes)}`
+      : '';
+    return `- Sessão ${s.session_number}: Local=[${s.locations?.join(', ')}] | Duração=${s.duration_minutes}min | Dias=[${s.schedule?.join(', ')}] | Turno=${s.time_of_day}${notesBlock}`;
+  }).join('\n  ');
 }
 
 async function sleep(ms: number) {
@@ -344,13 +410,21 @@ serve(async (req) => {
         Baseado na visão macroscópica já definida, distribua os treinos exatos nas datas corretas seguindo a rotina de sessões configuradas do atleta.
         1. visaoSemanal: O calendário detalhado de treinos para TODAS AS ${bloco.duracaoSemanas || 4} SEMANAS.
         ATENÇÃO: É obrigatório que o array visaoSemanal contenha os treinos de TODAS as semanas descritas na Visão Geral, sem deixar nenhum 'focoPrincipal' em branco.
-        
+
         [VISÃO GERAL DO CICLO (Use isso como guia de conteúdo e duração)]
         ${JSON.stringify(resultGeral.visaoGeralCiclo)}
-        
-        [SESSÕES CONFIGURADAS (ROTINA DO ATLETA)]
+
+        [REGRA CRÍTICA — SESSÕES POR DIA]
+        Para cada dia da semana em que uma ou mais sessões estão configuradas, você DEVE gerar UMA entrada no visaoSemanal POR SESSÃO.
+        Exemplo: Se o atleta tem Sessão 1 e Sessão 2 na Segunda-feira, o visaoSemanal deve conter DOIS objetos com "date": "YYYY-MM-DD", sendo "session": 1 e "session": 2 respectivamente.
+        NUNCA omita uma sessão configurada, mesmo que seja uma sessão de Descanso ou Recuperação Ativa.
+
+        [SESSÕES CONFIGURADAS — CONTRATOS IMUTÁVEIS DO ATLETA]
+        As configurações abaixo são CONTRATOS do atleta:
+        - O Local é uma RESTRIÇÃO DE INFRAESTRUTURA obrigatória: o session_type e o focoPrincipal devem ser compatíveis com o(s) local(is) disponível(is).
+        - As Notas são RESTRIÇÕES ABSOLUTAS DE DESIGN: descrevem limitações físicas, preferências e restrições que NÃO PODEM ser ignoradas.
         ${formatTrainingSessions(sessions)}
-        
+
         [BLOCO ATUAL DO MESOCICLO]
         - Nome: ${bloco.mesociclo} | Duração: ${bloco.duracaoSemanas || 4} semanas
 
@@ -360,10 +434,17 @@ serve(async (req) => {
         }
 
         [DIRETRIZES DE RECOVERY]
+        - Importante: Dias de descanso e descanso ativo podem ocorrer em dias que também possuem sessões de treino, se a metodologia julgar pertinente.
         - Lembre-se: Descansos e descansos ativos podem coexistir com sessões de treino no mesmo dia. Se o atleta treina mas também precisa de recuperação ativa, ambos devem ser listados para a mesma data.
       `;
       console.log("[gerar_calendario] Solicitando visão semanal (etapa 2/2)...");
       const resultSemanal = await generateWithProvider(promptSemanal, provider, llmModel, genAI, 'gerar_calendario_semanal', 8000, 0.2);
+
+      // Validação pós-geração: garantir que todas as sessões configuradas foram geradas
+      const calValidation = validateVisaoSemanal(resultSemanal.visaoSemanal || [], sessions);
+      if (!calValidation.valid) {
+        throw new Error(`[gerar_calendario] Sessões omitidas no calendário gerado:\n${calValidation.errors.join('\n')}`);
+      }
 
       const result = {
         visaoGeralCiclo: resultGeral.visaoGeralCiclo,
@@ -395,22 +476,38 @@ serve(async (req) => {
           mapDiasAtivos.get(dia.date).push(dia);
         });
 
+        // Mapa: nome do dia da semana normalizado → true se tem sessão configurada
+        const daysWithSessions = new Set<string>();
+        for (const s of sessions) {
+          for (const schedDay of (s.schedule || [])) {
+            daysWithSessions.add(normalizeDayName(schedDay));
+          }
+        }
+
         const visaoCompleta = [];
         for (let i = 0; i < totalDias; i++) {
           const d = new Date(startD.getTime() + i * 24 * 60 * 60 * 1000);
           const dateStr = d.toISOString().split('T')[0];
           const dayName = diasSemana[d.getUTCDay()];
           const weekNum = Math.floor(i / 7) + 1;
+          const dayHasSessions = daysWithSessions.has(dayName);
 
           if (mapDiasAtivos.has(dateStr)) {
             const itensDoDia = mapDiasAtivos.get(dateStr);
             itensDoDia.forEach((diaObj: any) => {
+              // Se o dia não tem sessão cadastrada, qualquer entrada gerada pelo modelo
+              // é tratada como descanso/recuperação (nunca como treino ativo).
+              const isRestType = diaObj.session_type === "Descanso" || diaObj.session_type === "Recuperação Ativa";
+              const forceRest = !dayHasSessions;
               visaoCompleta.push({
                 ...diaObj,
+                session: forceRest ? 1 : (Number(diaObj.session) || 1),
+                session_type: forceRest && !isRestType ? "Recuperação Ativa" : diaObj.session_type,
+                focoPrincipal: forceRest && !isRestType ? "Recuperação" : diaObj.focoPrincipal,
                 day: dayName,
                 mesocycle: bloco.mesociclo,
                 week: weekNum,
-                isDescansoAtivo: diaObj.session_type === "Descanso" || diaObj.session_type === "Recuperação Ativa"
+                isDescansoAtivo: isRestType || forceRest
               });
             });
           } else {

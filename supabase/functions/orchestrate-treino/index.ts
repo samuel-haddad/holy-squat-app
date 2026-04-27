@@ -23,6 +23,55 @@ const validSessionTypes = new Set([
 const AI_MODEL_OBSERVATIONS = "IMPORTANTE: Um dia pode ter uma ou mais sessões de treino. As análises e gerações de treino devem considerar cada sessão de forma independente, respeitando sua numeração (session_number), turnos e objetivos específicos, mesmo que ocorram na mesma data. Nunca assuma que existe apenas uma sessão por dia.";
 
 // =========================================================
+// Validation helpers
+// =========================================================
+function normalizeDayName(day: string): string {
+  const m: Record<string, string> = {
+    'seg': 'Segunda-feira', 'segunda': 'Segunda-feira', 'segunda-feira': 'Segunda-feira',
+    'ter': 'Terça-feira', 'terca': 'Terça-feira', 'terça': 'Terça-feira', 'terça-feira': 'Terça-feira',
+    'qua': 'Quarta-feira', 'quarta': 'Quarta-feira', 'quarta-feira': 'Quarta-feira',
+    'qui': 'Quinta-feira', 'quinta': 'Quinta-feira', 'quinta-feira': 'Quinta-feira',
+    'sex': 'Sexta-feira', 'sexta': 'Sexta-feira', 'sexta-feira': 'Sexta-feira',
+    'sab': 'Sábado', 'sabado': 'Sábado', 'sábado': 'Sábado',
+    'dom': 'Domingo', 'domingo': 'Domingo',
+  };
+  return m[day.toLowerCase()] || day;
+}
+
+function validateVisaoSemanalOrch(visaoSemanal: any[], sessions: any[]): string[] {
+  const errors: string[] = [];
+  if (!sessions || sessions.length === 0) return errors;
+
+  const dayToExpected: Record<string, number[]> = {};
+  for (const s of sessions) {
+    for (const day of (s.schedule || [])) {
+      const norm = normalizeDayName(day);
+      if (!dayToExpected[norm]) dayToExpected[norm] = [];
+      dayToExpected[norm].push(Number(s.session_number));
+    }
+  }
+
+  const diasSemanaArr = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+  const dateToGenerated: Record<string, Set<number>> = {};
+  for (const entry of visaoSemanal) {
+    if (entry.session_type === 'Descanso') continue;
+    if (!dateToGenerated[entry.date]) dateToGenerated[entry.date] = new Set();
+    dateToGenerated[entry.date].add(Number(entry.session));
+  }
+
+  for (const [date, generatedSet] of Object.entries(dateToGenerated)) {
+    const d = new Date(date + 'T12:00:00Z');
+    const dayName = diasSemanaArr[d.getUTCDay()];
+    for (const expSession of (dayToExpected[dayName] || [])) {
+      if (!generatedSet.has(expSession)) {
+        errors.push(`${date} (${dayName}): Sessão ${expSession} foi omitida`);
+      }
+    }
+  }
+  return errors;
+}
+
+// =========================================================
 // Main handler
 // =========================================================
 serve(async (req) => {
@@ -272,16 +321,40 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     console.log(`[orch] generate_cycle step 2: gerar_calendario`);
     const p = job.input_params;
     const cicloResult = job.step_1_result || {};
-    
-    const result = await callGerarTreino({
-      acao: 'gerar_calendario',
-      user_id: job.user_id,
-      email_utilizador: p.email_utilizador,
-      bloco_atual: cicloResult._blocoAtual,
-      data_inicio_meso: cicloResult._blocoAtual?.dataInicioMeso || p.data_inicio_macro,
-      training_sessions: cicloResult._trainingSessions || p.training_sessions || [],
-      ai_coach_name: p.ai_coach_name,
-    }, 'gerar-analise-ciclo');
+    const calendarSessions = cicloResult._trainingSessions || p.training_sessions || [];
+    const MAX_CAL_RETRIES = 2;
+    let result: any = null;
+
+    for (let attempt = 1; attempt <= MAX_CAL_RETRIES; attempt++) {
+      try {
+        result = await callGerarTreino({
+          acao: 'gerar_calendario',
+          user_id: job.user_id,
+          email_utilizador: p.email_utilizador,
+          bloco_atual: cicloResult._blocoAtual,
+          data_inicio_meso: cicloResult._blocoAtual?.dataInicioMeso || p.data_inicio_macro,
+          training_sessions: calendarSessions,
+          ai_coach_name: p.ai_coach_name,
+        }, 'gerar-analise-ciclo');
+
+        // Valida se todas as sessões foram geradas no calendário
+        const calErrors = validateVisaoSemanalOrch(result.visaoSemanal || [], calendarSessions);
+        if (calErrors.length > 0) {
+          if (attempt < MAX_CAL_RETRIES) {
+            console.warn(`[orch][validate] Calendário inválido (tentativa ${attempt}/${MAX_CAL_RETRIES}). Sessões omitidas:`, calErrors);
+            continue;
+          }
+          throw new Error(`Calendário inválido após ${MAX_CAL_RETRIES} tentativas. Sessões omitidas:\n${calErrors.join('\n')}`);
+        }
+        break; // success
+      } catch (err: any) {
+        if (attempt < MAX_CAL_RETRIES) {
+          console.warn(`[orch] Erro gerar_calendario (tentativa ${attempt}/${MAX_CAL_RETRIES}):`, err.message?.substring(0, 200));
+          continue;
+        }
+        throw err;
+      }
+    }
 
     job.step_1_result = {
       ...cicloResult,
@@ -326,27 +399,57 @@ async function handleGenerateWorkoutsStep(job: any, admin: any) {
   if (dayIndex < activeDays.length) {
     const dia = activeDays[dayIndex];
     const weekNum = dia.week || 1;
-    console.log(`[orch] Processando exercícios dia ${dia.date} (Step: ${step} / Total: ${activeDays.length})`);
+    // Normaliza session: 0 é inválido (modelo às vezes retorna 0), trata como 1
+    const expectedSession = Number(dia.session) || 1;
+    console.log(`[orch] Processando exercícios dia ${dia.date} sessão ${expectedSession} (Step: ${step} / Total: ${activeDays.length})`);
 
     const accumulatedExercicios = job.step_1_result?.exerciciosDetalhados || [];
     const exerciciosDaSemana = accumulatedExercicios.filter((ex: any) => ex.week === weekNum);
 
-    const result = await callGerarTreino({
-      acao: 'gerar_detalhamento',
-      user_id: job.user_id,
-      email_utilizador: p.email_utilizador,
-      visao_diaria: [dia],
-      exercicios_da_semana: exerciciosDaSemana,
-      meso_context: {
-        nome: blocoAtual.mesociclo || 'Próximo Meso',
-        objetivo: planSummary.objetivoPrincipal || '',
-        semanaNum: weekNum,
-        totalSemanas: 4,
-        focoSemana: blocoAtual.foco || '',
-        trainingSessions: trainingSessions,
-      },
-      ai_coach_name: p.ai_coach_name,
-    }, 'gerar-exercicios');
+    // Garante que o dia enviado ao gerar-exercicios tem session normalizada
+    const diaNormalizado = { ...dia, session: expectedSession };
+
+    const MAX_EX_RETRIES = 2;
+    let result: any = null;
+
+    for (let attempt = 1; attempt <= MAX_EX_RETRIES; attempt++) {
+      try {
+        result = await callGerarTreino({
+          acao: 'gerar_detalhamento',
+          user_id: job.user_id,
+          email_utilizador: p.email_utilizador,
+          visao_diaria: [diaNormalizado],
+          exercicios_da_semana: exerciciosDaSemana,
+          meso_context: {
+            nome: blocoAtual.mesociclo || 'Próximo Meso',
+            objetivo: planSummary.objetivoPrincipal || '',
+            semanaNum: weekNum,
+            totalSemanas: 4,
+            focoSemana: blocoAtual.foco || '',
+            trainingSessions: trainingSessions,
+          },
+          ai_coach_name: p.ai_coach_name,
+        }, 'gerar-exercicios');
+
+        // Valida se o campo session dos exercícios gerados corresponde ao dia alvo
+        const newExercicios = result.exerciciosDetalhados || [];
+        const wrongSession = newExercicios.filter((ex: any) => Number(ex.session) !== expectedSession);
+        if (wrongSession.length > 0) {
+          if (attempt < MAX_EX_RETRIES) {
+            console.warn(`[orch][validate] ${wrongSession.length} exercício(s) com sessão errada para ${dia.date} sessão ${expectedSession} (tentativa ${attempt}/${MAX_EX_RETRIES}). Sessões geradas: ${[...new Set(wrongSession.map((e: any) => e.session))].join(', ')}`);
+            continue;
+          }
+          throw new Error(`Exercícios com sessão incorreta após ${MAX_EX_RETRIES} tentativas para ${dia.date} (esperado: ${expectedSession}).`);
+        }
+        break; // success
+      } catch (err: any) {
+        if (attempt < MAX_EX_RETRIES) {
+          console.warn(`[orch] Erro gerar_detalhamento (tentativa ${attempt}/${MAX_EX_RETRIES}):`, err.message?.substring(0, 200));
+          continue;
+        }
+        throw err;
+      }
+    }
 
     const newExercicios = result.exerciciosDetalhados || [];
     const allExercicios = [...accumulatedExercicios, ...newExercicios];
