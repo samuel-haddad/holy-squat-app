@@ -246,11 +246,13 @@ class WorkoutController extends ChangeNotifier {
       Map<String, dynamic> planSummary = {};
       try { planSummary = jsonDecode(plan?['actual_plan_summary'] ?? '{}'); } catch (_) {}
 
-      final activeDaysCount = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
+      final activeDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).toList();
+      final int totalChunks = (activeDays.length / 2).ceil();
+      final totalSteps = totalChunks > 0 ? totalChunks : 1;
 
       final jobId = await _repository.criarJobGeracao(
         jobType: 'generate_workouts',
-        totalSteps: activeDaysCount,
+        totalSteps: totalSteps,
         aiCoachName: aiCoachName,
         inputParams: {
           'email_utilizador': emailUtilizador,
@@ -263,7 +265,7 @@ class WorkoutController extends ChangeNotifier {
         },
       );
 
-      _loadingMessage = '⚡ Gerando treino do dia 1/$activeDaysCount...';
+      _loadingMessage = '⚡ Gerando lote de treinos 1/$totalSteps...';
       notifyListeners();
 
       await _subscribeAndWait(jobId, {}, isGenerateWorkouts: true);
@@ -345,15 +347,16 @@ class WorkoutController extends ChangeNotifier {
             final status = newData['status'] as String? ?? 'processing';
 
             if (isGenerateWorkouts) {
-              int totalDays = 1;
+              int totalSteps = 1;
               try {
                 final input = newData['input_params'] as Map<String, dynamic>? ?? {};
                 final visaoSemanal = input['visao_semanal'] as List<dynamic>? ?? [];
-                totalDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
-                if (totalDays == 0) totalDays = 1;
+                final activeDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).toList();
+                totalSteps = (activeDays.length / 2).ceil();
+                if (totalSteps == 0) totalSteps = 1;
               } catch (_) {}
               
-              _loadingMessage = '⚡ Gerando treino do dia $step/$totalDays...';
+              _loadingMessage = '⚡ Gerando lote de treinos $step/$totalSteps...';
               notifyListeners();
             } else if (stepMessages.containsKey(step)) {
               _loadingMessage = stepMessages[step]!;
@@ -382,15 +385,16 @@ class WorkoutController extends ChangeNotifier {
         final step   = job['current_step'] as int? ?? 1;
 
         if (isGenerateWorkouts) {
-          int totalDays = 1;
+          int totalSteps = 1;
           try {
             final input = job['input_params'] as Map<String, dynamic>? ?? {};
             final visaoSemanal = input['visao_semanal'] as List<dynamic>? ?? [];
-            totalDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).length;
-            if (totalDays == 0) totalDays = 1;
+            final activeDays = visaoSemanal.where((d) => d['isDescansoAtivo'] != true).toList();
+            totalSteps = (activeDays.length / 2).ceil();
+            if (totalSteps == 0) totalSteps = 1;
           } catch (_) {}
           
-          _loadingMessage = '⚡ Gerando treino do dia $step/$totalDays...';
+          _loadingMessage = '⚡ Gerando lote de treinos $step/$totalSteps...';
           notifyListeners();
         } else if (stepMessages.containsKey(step)) {
           _loadingMessage = stepMessages[step]!;

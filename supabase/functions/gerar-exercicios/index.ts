@@ -175,7 +175,7 @@ async function generateWithProvider(
             systemInstruction: { role: "system", parts: [{ text: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble." }] },
             generationConfig: {
               temperature: targetTemperature,
-              maxOutputTokens: 4000
+              maxOutputTokens: 8192
             },
             safetySettings: [
               { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -205,7 +205,7 @@ async function generateWithProvider(
           },
           body: JSON.stringify({
             model: llmModel,
-            max_tokens: 5000,
+            max_tokens: 4096,
             temperature: targetTemperature,
             system: "You are an AI CrossFit Coach. ALWAYS respond with PURE VALID JSON ONLY. No markdown, no pre-amble, no post-amble. Prohibited: Trailing commas in arrays/objects. Keys must be double-quoted.",
             messages: [{ role: 'user', content: prompt }],
@@ -516,7 +516,7 @@ serve(async (req) => {
       const knowledgeContext = await queryKnowledgeBase(ragQuery, genAI, adminClient);
 
       const prompt = `
-        ${COACH_PERSONA} Gere os exercícios para o dia especificado abaixo, pertencente à Semana ${ctx.semanaNum} do mesociclo "${ctx.nome}".
+        ${COACH_PERSONA} Gere os exercícios para os dias especificados abaixo, pertencentes à Semana ${ctx.semanaNum} do mesociclo "${ctx.nome}".
         [DATA DE HOJE: ${today}]
         [CONTEXTO CIENTÍFICO (RAG)]
         ${knowledgeContext}
@@ -527,11 +527,12 @@ serve(async (req) => {
         [SESSÕES CONFIGURADAS]
         ${formatTrainingSessions(ctx.trainingSessions || [])}
         
-        [EXERCÍCIOS JÁ GERADOS NESTA SEMANA (CONTEXTO)]
-        ${exsStr || "Nenhum exercício gerado ainda nesta semana."}
+        [EXERCÍCIOS GERADOS RECENTEMENTE (CONTEXTO)]
+        ${exsStr || "Não há histórico recente no contexto."}
         
-        [DIA ALVO PARA GERAÇÃO]
+        [SESSÕES ALVO PARA GERAÇÃO NESTE LOTE]
 ${diasStr}
+        IMPORTANTE: Você deve obrigatoriamente gerar exercícios para TODAS as datas e sessões listadas acima.
 
         [FORMATO — JSON COMPACTO]
         { "exs": [{ "dt": "YYYY-MM-DD", "dy": "Dia", "se": 1, "st": "tipo", "du": 60, "idx": 1, "ex": "nome", "et": "titulo", "eg": "grupo", "ey": "tipo_ex", "ts": 3, "de": "detalhes", "te": 0, "eu": "min", "re": 60, "ru": "seg", "tt": 0, "un": 0, "lo": "box", "sg": "workout", "al": "" }] }
@@ -541,6 +542,7 @@ ${diasStr}
         2. Certifique-se de que TODAS as chaves de propriedades tenham aspas duplas ("chave").
         3. SEJA EXTREMAMENTE OBJETIVO. Não inclua NENHUM texto conversacional, explicação ou markdown fora do JSON.
         4. Detalhes ("de") e Títulos ("et") devem ser curtos, diretos e objetivos.
+        5. PROIBIDO INCLUIR COMENTÁRIOS NO JSON (ex: // Dia 1). O JSON deve ser estritamente parseável nativamente.
       `;
 
       const responseData = await generateWithProvider(prompt, provider, llmModel, genAI, `detalhamento_s${ctx.semanaNum}`, 16000, 0.2);

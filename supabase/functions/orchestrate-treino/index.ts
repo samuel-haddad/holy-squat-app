@@ -408,20 +408,27 @@ async function handleGenerateWorkoutsStep(job: any, admin: any) {
   const planSummary = p.plan_summary || {};
 
   const activeDays = visaoSemanal.filter((d: any) => !d.isDescansoAtivo);
-  const dayIndex = step - 1; // Inicia no step 1
+  
+  // Agrupa dias ativos em lotes (chunks) de 2 sessões para estabilidade máxima do LLM
+  const chunkSize = 2;
+  const chunks: any[][] = [];
+  for (let i = 0; i < activeDays.length; i += chunkSize) {
+    chunks.push(activeDays.slice(i, i + chunkSize));
+  }
+  const chunkIndex = step - 1; // Inicia no step 1
 
-  if (dayIndex < activeDays.length) {
-    const dia = activeDays[dayIndex];
-    const weekNum = dia.week || 1;
-    // Normaliza session: 0 é inválido (modelo às vezes retorna 0), trata como 1
-    const expectedSession = Number(dia.session) || 1;
-    console.log(`[orch] Processando exercícios dia ${dia.date} sessão ${expectedSession} (Step: ${step} / Total: ${activeDays.length})`);
+  if (chunkIndex < chunks.length) {
+    const currentChunk = chunks[chunkIndex];
+    const weekNum = currentChunk[0].week || 1;
+    
+    // Normaliza sessions para o lote atual
+    const diasNormalizados = currentChunk.map((dia: any) => ({ ...dia, session: Number(dia.session) || 1 }));
+
+    console.log(`[orch] Processando Lote ${chunkIndex + 1} de ${chunks.length} (${currentChunk.length} sessões) (Step: ${step})`);
 
     const accumulatedExercicios = job.step_1_result?.exerciciosDetalhados || [];
-    const exerciciosDaSemana = accumulatedExercicios.filter((ex: any) => ex.week === weekNum);
-
-    // Garante que o dia enviado ao gerar-exercicios tem session normalizada
-    const diaNormalizado = { ...dia, session: expectedSession };
+    // Contexto: envia exercícios recém gerados do mesmo mesociclo
+    const exerciciosRecentes = accumulatedExercicios.slice(-15); // manda os últimos 15 gerados como contexto
 
     const MAX_EX_RETRIES = 2;
     let result: any = null;
@@ -432,8 +439,8 @@ async function handleGenerateWorkoutsStep(job: any, admin: any) {
           acao: 'gerar_detalhamento',
           user_id: job.user_id,
           email_utilizador: p.email_utilizador,
-          visao_diaria: [diaNormalizado],
-          exercicios_da_semana: exerciciosDaSemana,
+          visao_diaria: diasNormalizados,
+          exercicios_da_semana: exerciciosRecentes,
           meso_context: {
             nome: blocoAtual.mesociclo || 'Próximo Meso',
             objetivo: planSummary.objetivoPrincipal || '',
@@ -445,15 +452,21 @@ async function handleGenerateWorkoutsStep(job: any, admin: any) {
           ai_coach_name: p.ai_coach_name,
         }, 'gerar-exercicios');
 
-        // Valida se o campo session dos exercícios gerados corresponde ao dia alvo
         const newExercicios = result.exerciciosDetalhados || [];
-        const wrongSession = newExercicios.filter((ex: any) => Number(ex.session) !== expectedSession);
-        if (wrongSession.length > 0) {
+        
+        // Valida se todos os dias solicitados retornaram exercícios
+        const missingDays: string[] = [];
+        for (const reqDay of diasNormalizados) {
+          const hasEx = newExercicios.some((ex: any) => ex.date === reqDay.date && Number(ex.session) === reqDay.session);
+          if (!hasEx) missingDays.push(`${reqDay.date} (session ${reqDay.session})`);
+        }
+
+        if (missingDays.length > 0) {
           if (attempt < MAX_EX_RETRIES) {
-            console.warn(`[orch][validate] ${wrongSession.length} exercício(s) com sessão errada para ${dia.date} sessão ${expectedSession} (tentativa ${attempt}/${MAX_EX_RETRIES}). Sessões geradas: ${[...new Set(wrongSession.map((e: any) => e.session))].join(', ')}`);
+            console.warn(`[orch][validate] Falta de exercícios para os dias: ${missingDays.join(', ')} (tentativa ${attempt}/${MAX_EX_RETRIES}).`);
             continue;
           }
-          throw new Error(`Exercícios com sessão incorreta após ${MAX_EX_RETRIES} tentativas para ${dia.date} (esperado: ${expectedSession}).`);
+          throw new Error(`O LLM não gerou exercícios para os seguintes dias após ${MAX_EX_RETRIES} tentativas: ${missingDays.join(', ')}`);
         }
         break; // success
       } catch (err: any) {
@@ -466,12 +479,14 @@ async function handleGenerateWorkoutsStep(job: any, admin: any) {
     }
 
     const newExercicios = result.exerciciosDetalhados || [];
+    
+    // PERSISTÊNCIA INCREMENTAL: Salva apenas os novos exercícios gerados neste lote
+    await persistExercicios(newExercicios, p.email_utilizador, p.plano_id, p.ai_coach_name, admin);
+    
     const allExercicios = [...accumulatedExercicios, ...newExercicios];
 
-    if (dayIndex === activeDays.length - 1) {
-      // Último dia: persiste e finaliza
-      await persistExercicios(allExercicios, p.email_utilizador, p.plano_id, p.ai_coach_name, admin);
-
+    if (chunkIndex === chunks.length - 1) {
+      // Último lote: finaliza job
       await admin.from('ai_generation_jobs').update({
         step_1_result: { exerciciosDetalhados: allExercicios },
         status: 'completed', updated_at: new Date().toISOString(),
@@ -479,7 +494,7 @@ async function handleGenerateWorkoutsStep(job: any, admin: any) {
 
       console.log(`[orch] generate_workouts COMPLETED. total exercises=${allExercicios.length}`);
     } else {
-      // Próximo dia
+      // Próximo lote
       await admin.from('ai_generation_jobs').update({
         step_1_result: { exerciciosDetalhados: allExercicios },
         current_step: step + 1, updated_at: new Date().toISOString(),
