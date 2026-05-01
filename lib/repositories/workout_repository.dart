@@ -169,7 +169,6 @@ class WorkoutRepository {
       final response = await _supabase
           .from('workouts')
           .select('wod_exercise_id')
-          .eq('plan_id', planId)
           .eq('mesocycle', mesocycleName)
           .limit(1);
       return (response as List).isNotEmpty;

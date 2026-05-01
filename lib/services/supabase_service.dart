@@ -881,4 +881,25 @@ class SupabaseService {
       return [];
     }
   }
+
+  static Future<bool> deleteTechniqueFeedback(dynamic id, {String? videoPath}) async {
+    try {
+      // 1. Delete from database
+      await client.from('technique_feedbacks').delete().eq('id', id);
+      
+      // 2. Delete from storage if path is provided
+      if (videoPath != null && videoPath.isNotEmpty) {
+        try {
+          await client.storage.from('technique_videos').remove([videoPath]);
+          debugPrint("Technique: Deleted video file from storage: $videoPath");
+        } catch (storageError) {
+          debugPrint("Error deleting video from storage: $storageError (ignoring to finish DB deletion)");
+        }
+      }
+      return true;
+    } catch (e) {
+      debugPrint("Error deleting technique feedback: $e");
+      return false;
+    }
+  }
 }

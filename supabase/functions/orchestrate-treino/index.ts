@@ -325,6 +325,20 @@ async function handleGenerateCycleStep(job: any, admin: any) {
     const MAX_CAL_RETRIES = 2;
     let result: any = null;
 
+    const currentTable = p.current_workouts_table || [];
+    
+    // O Restore deve ser "puro": usamos a data de início do plano (data_inicio_macro)
+    // Se for o primeiro mesociclo, a data é exatamente essa.
+    let calculatedStartDate = p.data_inicio_macro || p.diretrizes_plano?.data_inicio;
+    
+    // Se não tivermos data de início macro, usamos hoje como último recurso (não desejado)
+    if (!calculatedStartDate) {
+      calculatedStartDate = new Date().toISOString().split('T')[0];
+    }
+
+    const dataInicioFinal = cicloResult._blocoAtual?.dataInicioMeso || calculatedStartDate;
+    console.log(`[ORCH] Restore Puro. Usando data de início âncora: ${dataInicioFinal}`);
+
     for (let attempt = 1; attempt <= MAX_CAL_RETRIES; attempt++) {
       try {
         result = await callGerarTreino({
@@ -332,7 +346,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
           user_id: job.user_id,
           email_utilizador: p.email_utilizador,
           bloco_atual: cicloResult._blocoAtual,
-          data_inicio_meso: cicloResult._blocoAtual?.dataInicioMeso || p.data_inicio_macro,
+          data_inicio_meso: dataInicioFinal,
           training_sessions: calendarSessions,
           ai_coach_name: p.ai_coach_name,
         }, 'gerar-analise-ciclo');

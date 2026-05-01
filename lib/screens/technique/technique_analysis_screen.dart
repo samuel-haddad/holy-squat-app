@@ -64,6 +64,47 @@ class _TechniqueAnalysisScreenState extends State<TechniqueAnalysisScreen> {
     super.dispose();
   }
 
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.cardColor,
+        title: const Text('Delete Analysis', style: TextStyle(color: Colors.white)),
+        content: const Text('Are you sure you want to delete this analysis? This action cannot be undone.', style: TextStyle(color: AppTheme.secondaryTextColor)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCEL', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('DELETE', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && feedbackData != null) {
+      final id = feedbackData!['id'];
+      final videoPath = feedbackData!['video_path'];
+      
+      final success = await SupabaseService.deleteTechniqueFeedback(id, videoPath: videoPath);
+      
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Analysis deleted successfully.'))
+          );
+          Navigator.pop(context); // Back to list
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to delete analysis.'), backgroundColor: Colors.redAccent)
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -186,12 +227,28 @@ class _TechniqueAnalysisScreenState extends State<TechniqueAnalysisScreen> {
                       ],
                     ),
                   );
-                }),
+                }).toList(),
+              const SizedBox(height: 32),
+              
+              if (feedbackData != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24.0),
+                  child: OutlinedButton.icon(
+                    onPressed: _confirmDelete,
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    label: const Text('Delete Analysis', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.redAccent),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
             ] else if (feedbackData?['status'] == 'failed')
               const Center(
                 child: Text('Analysis failed. Please try again.', style: TextStyle(color: Colors.red)),
               ),
-          ]
+          ],
         ),
       ),
     );

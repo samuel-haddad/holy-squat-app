@@ -41,7 +41,7 @@ function formatHistorySummary(summary: any): string {
   const lines: string[] = [];
 
   if (summary.monthly_profile?.length) {
-    lines.push('[HISTÓRICO MENSAL — 12 MESES]');
+    lines.push('[HISTÓRICO MENSAL — 6 MESES]');
     for (const m of summary.monthly_profile) {
       const groups = Object.entries(m.group_pct || {})
         .sort(([, a]: any, [, b]: any) => b - a)
@@ -488,7 +488,7 @@ serve(async (req) => {
           ? prMaxPerExercise.map((r: any) => `- ${r.exercise}: ${r.pr} ${r.pr_unit || 'kg'} (${r.date})`).join('\n        ')
           : 'Nenhum PR registrado.'}
 
-        [HISTÓRICO AGREGADO — 12 MESES]
+        [HISTÓRICO AGREGADO — 6 MESES]
         ${historySummaryText || 'Nenhum dado de treino encontrado nos últimos 6 meses.'}
 
         [FORMATO — JSON PURO SEM MARKDOWN]
@@ -565,6 +565,32 @@ serve(async (req) => {
       `;
 
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'criar_plano', 8000);
+      
+      // CÁLCULO PROGRAMÁTICO DE DATAS PARA OS BLOCOS
+      if (result.visaoGeralPlano && result.visaoGeralPlano.blocos) {
+        let currentStartDate = new Date((diretrizes_plano?.data_inicio || today) + 'T12:00:00Z');
+        
+        result.visaoGeralPlano.blocos = result.visaoGeralPlano.blocos.map((bloco: any) => {
+          const duracaoDias = (Number(bloco.duracaoSemanas) || 4) * 7;
+          
+          const dataInicio = currentStartDate.toISOString().split('T')[0];
+          
+          // Calcula a data de fim (start + duração - 1 dia)
+          const endDate = new Date(currentStartDate.getTime());
+          endDate.setUTCDate(endDate.getUTCDate() + duracaoDias - 1);
+          const dataFim = endDate.toISOString().split('T')[0];
+          
+          // Atualiza o cursor para o início do próximo bloco
+          currentStartDate.setUTCDate(currentStartDate.getUTCDate() + duracaoDias);
+          
+          return {
+            ...bloco,
+            dataInicio,
+            dataFim
+          };
+        });
+      }
+
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
