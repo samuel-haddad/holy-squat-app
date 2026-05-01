@@ -101,197 +101,199 @@ class _WorkoutResultFormScreenState extends State<WorkoutResultFormScreen> {
       ),
       body: _isFetching 
         ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryTeal))
-        : SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildLabel('workout date', required: true),
-              GestureDetector(
-                onTap: _selectDate,
-                child: Container(
-                  height: 50,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.cardColor,
-                    borderRadius: BorderRadius.circular(8),
+        : SelectionArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildLabel('workout date', required: true),
+                  GestureDetector(
+                    onTap: _selectDate,
+                    child: Container(
+                      height: 50,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_today, color: Colors.grey, size: 20),
+                          const SizedBox(width: 12),
+                          Text(DateFormat('dd/MM/yyyy').format(_workoutDate), style: const TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: Row(
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('exercise'),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.cardColor,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(widget.title, style: const TextStyle(color: Colors.white)),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('location'),
+                  Wrap(
+                    spacing: 8,
+                    children: ['Academia', 'Box', 'Casa'].map((loc) {
+                      final isSelected = _location == loc;
+                      return ChoiceChip(
+                        label: Text(loc),
+                        selected: isSelected,
+                        onSelected: (val) {
+                          if (val) setState(() => _location = loc);
+                        },
+                        backgroundColor: Colors.transparent,
+                        selectedColor: Colors.transparent,
+                        labelStyle: TextStyle(color: isSelected ? AppTheme.primaryTeal : Colors.white),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(color: isSelected ? AppTheme.primaryTeal : Colors.grey.withOpacity(0.5)),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('duration'),
+                  _buildTextInput(_durationController),
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('PSE'),
+                  _buildTextInput(_pseController),
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('reps'),
+                  _buildTextInput(_repsController),
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('weight'),
+                  _buildTextInput(_weightController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('weight_unit'),
+                  Wrap(
+                    spacing: 8,
+                    children: ['lb', 'kg'].map((unit) {
+                      final isSelected = _weightUnit == unit;
+                      return ChoiceChip(
+                        label: Text(unit),
+                        selected: isSelected,
+                        onSelected: (val) {
+                          if (val) setState(() => _weightUnit = unit);
+                        },
+                        backgroundColor: Colors.transparent,
+                        selectedColor: Colors.transparent,
+                        labelStyle: TextStyle(color: isSelected ? AppTheme.primaryTeal : Colors.white),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(color: isSelected ? AppTheme.primaryTeal : Colors.grey.withOpacity(0.5)),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('cardio_result'),
+                  _buildTextInput(_cardioResultController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('cardio_unit'),
+                  Wrap(
+                    spacing: 8,
+                    children: ['km', 'miles', 'cal'].map((unit) {
+                      final isSelected = _cardioUnit == unit;
+                      return ChoiceChip(
+                        label: Text(unit),
+                        selected: isSelected,
+                        onSelected: (val) {
+                          if (val) setState(() => _cardioUnit = unit);
+                        },
+                        backgroundColor: Colors.transparent,
+                        selectedColor: Colors.transparent,
+                        labelStyle: TextStyle(color: isSelected ? AppTheme.primaryTeal : Colors.white),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(color: isSelected ? AppTheme.primaryTeal : Colors.grey.withOpacity(0.5)),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  _buildLabel('annotations'),
+                  _buildTextInput(_annotationsController, maxLines: 3),
+                  const SizedBox(height: 32),
+                  
+                  Row(
                     children: [
-                      const Icon(Icons.calendar_today, color: Colors.grey, size: 20),
-                      const SizedBox(width: 12),
-                      Text(DateFormat('dd/MM/yyyy').format(_workoutDate), style: const TextStyle(color: Colors.white)),
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            side: const BorderSide(color: Colors.grey),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancelar', style: TextStyle(color: Colors.white, fontSize: 16)),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryTeal,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: _isLoading ? null : () async {
+                            setState(() => _isLoading = true);
+                            try {
+                              await SupabaseService.saveWorkoutResult(
+                                wodExerciseId: widget.wodExerciseId, 
+                                workoutDate: _workoutDate,
+                                location: _location,
+                                duration: _durationController.text.trim(),
+                                pse: _pseController.text.trim(),
+                                reps: _repsController.text.trim(),
+                                weight: double.tryParse(_weightController.text.trim().replaceAll(',', '.')),
+                                weightUnit: _weightUnit,
+                                cardioResult: double.tryParse(_cardioResultController.text.trim().replaceAll(',', '.')),
+                                cardioUnit: _cardioUnit,
+                                annotations: _annotationsController.text.trim(),
+                              );
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (e) {
+                               if (context.mounted) {
+                                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                               }
+                            } finally {
+                              if (mounted) setState(() => _isLoading = false);
+                            }
+                          },
+                          child: _isLoading 
+                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2)) 
+                            : const Text('Enviar', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
                     ],
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              _buildLabel('exercise'),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.cardColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(widget.title, style: const TextStyle(color: Colors.white)),
-              ),
-              const SizedBox(height: 16),
-              
-              _buildLabel('location'),
-              Wrap(
-                spacing: 8,
-                children: ['Academia', 'Box', 'Casa'].map((loc) {
-                  final isSelected = _location == loc;
-                  return ChoiceChip(
-                    label: Text(loc),
-                    selected: isSelected,
-                    onSelected: (val) {
-                      if (val) setState(() => _location = loc);
-                    },
-                    backgroundColor: Colors.transparent,
-                    selectedColor: Colors.transparent,
-                    labelStyle: TextStyle(color: isSelected ? AppTheme.primaryTeal : Colors.white),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(color: isSelected ? AppTheme.primaryTeal : Colors.grey.withOpacity(0.5)),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-              
-              _buildLabel('duration'),
-              _buildTextInput(_durationController),
-              const SizedBox(height: 16),
-              
-              _buildLabel('PSE'),
-              _buildTextInput(_pseController),
-              const SizedBox(height: 16),
-              
-              _buildLabel('reps'),
-              _buildTextInput(_repsController),
-              const SizedBox(height: 16),
-              
-              _buildLabel('weight'),
-              _buildTextInput(_weightController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-              const SizedBox(height: 16),
-              
-              _buildLabel('weight_unit'),
-              Wrap(
-                spacing: 8,
-                children: ['lb', 'kg'].map((unit) {
-                  final isSelected = _weightUnit == unit;
-                  return ChoiceChip(
-                    label: Text(unit),
-                    selected: isSelected,
-                    onSelected: (val) {
-                      if (val) setState(() => _weightUnit = unit);
-                    },
-                    backgroundColor: Colors.transparent,
-                    selectedColor: Colors.transparent,
-                    labelStyle: TextStyle(color: isSelected ? AppTheme.primaryTeal : Colors.white),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(color: isSelected ? AppTheme.primaryTeal : Colors.grey.withOpacity(0.5)),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-              
-              _buildLabel('cardio_result'),
-              _buildTextInput(_cardioResultController, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-              const SizedBox(height: 16),
-              
-              _buildLabel('cardio_unit'),
-              Wrap(
-                spacing: 8,
-                children: ['km', 'miles', 'cal'].map((unit) {
-                  final isSelected = _cardioUnit == unit;
-                  return ChoiceChip(
-                    label: Text(unit),
-                    selected: isSelected,
-                    onSelected: (val) {
-                      if (val) setState(() => _cardioUnit = unit);
-                    },
-                    backgroundColor: Colors.transparent,
-                    selectedColor: Colors.transparent,
-                    labelStyle: TextStyle(color: isSelected ? AppTheme.primaryTeal : Colors.white),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(color: isSelected ? AppTheme.primaryTeal : Colors.grey.withOpacity(0.5)),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-              
-              _buildLabel('annotations'),
-              _buildTextInput(_annotationsController, maxLines: 3),
-              const SizedBox(height: 32),
-              
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        side: const BorderSide(color: Colors.grey),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar', style: TextStyle(color: Colors.white, fontSize: 16)),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryTeal,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: _isLoading ? null : () async {
-                        setState(() => _isLoading = true);
-                        try {
-                          await SupabaseService.saveWorkoutResult(
-                            wodExerciseId: widget.wodExerciseId, 
-                            workoutDate: _workoutDate,
-                            location: _location,
-                            duration: _durationController.text.trim(),
-                            pse: _pseController.text.trim(),
-                            reps: _repsController.text.trim(),
-                            weight: double.tryParse(_weightController.text.trim().replaceAll(',', '.')),
-                            weightUnit: _weightUnit,
-                            cardioResult: double.tryParse(_cardioResultController.text.trim().replaceAll(',', '.')),
-                            cardioUnit: _cardioUnit,
-                            annotations: _annotationsController.text.trim(),
-                          );
-                          if (context.mounted) Navigator.pop(context);
-                        } catch (e) {
-                           if (context.mounted) {
-                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-                           }
-                        } finally {
-                          if (mounted) setState(() => _isLoading = false);
-                        }
-                      },
-                      child: _isLoading 
-                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2)) 
-                        : const Text('Enviar', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
-                    ),
-                  ),
+                  const SizedBox(height: 32),
                 ],
               ),
-              const SizedBox(height: 32),
-            ],
+            ),
           ),
         ),
-      ),
     );
   }
 

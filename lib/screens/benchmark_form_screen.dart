@@ -121,207 +121,209 @@ class _BenchmarkFormScreenState extends State<BenchmarkFormScreen> {
       ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryTeal))
-        : SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (widget.exerciseName.isNotEmpty)
-                    Text(
-                      widget.exerciseName,
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-                    )
-                  else
-                    Autocomplete<String>(
-                      optionsBuilder: (TextEditingValue textEditingValue) {
-                        if (textEditingValue.text.isEmpty) {
-                          return _exerciseSuggestions;
-                        }
-                        return _exerciseSuggestions.where((String option) {
-                          return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
-                        });
-                      },
-                      onSelected: (String selection) {
-                        _exerciseController.text = selection;
-                      },
-                      fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
-                        // Sincronizar o controller do Autocomplete com o nosso _exerciseController
-                        if (controller.text != _exerciseController.text && _exerciseController.text.isNotEmpty) {
-                           controller.text = _exerciseController.text;
-                        }
-                        controller.addListener(() {
-                           _exerciseController.text = controller.text;
-                        });
-                        
-                        return TextFormField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          onEditingComplete: onEditingComplete,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            labelText: 'Exercise',
-                            labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: AppTheme.cardColor),
-                              borderRadius: BorderRadius.circular(8),
+        : SelectionArea(
+          child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (widget.exerciseName.isNotEmpty)
+                      Text(
+                        widget.exerciseName,
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                      )
+                    else
+                      Autocomplete<String>(
+                        optionsBuilder: (TextEditingValue textEditingValue) {
+                          if (textEditingValue.text.isEmpty) {
+                            return _exerciseSuggestions;
+                          }
+                          return _exerciseSuggestions.where((String option) {
+                            return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                          });
+                        },
+                        onSelected: (String selection) {
+                          _exerciseController.text = selection;
+                        },
+                        fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
+                          // Sincronizar o controller do Autocomplete com o nosso _exerciseController
+                          if (controller.text != _exerciseController.text && _exerciseController.text.isNotEmpty) {
+                             controller.text = _exerciseController.text;
+                          }
+                          controller.addListener(() {
+                             _exerciseController.text = controller.text;
+                          });
+                          
+                          return TextFormField(
+                            controller: controller,
+                            focusNode: focusNode,
+                            onEditingComplete: onEditingComplete,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              labelText: 'Exercise',
+                              labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(color: AppTheme.cardColor),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(color: AppTheme.primaryTeal),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              filled: true,
+                              fillColor: AppTheme.cardColor,
                             ),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: AppTheme.primaryTeal),
+                            validator: (val) => (val == null || val.isEmpty) ? 'Required' : null,
+                          );
+                        },
+                        optionsViewBuilder: (context, onSelected, options) {
+                          return Align(
+                            alignment: Alignment.topLeft,
+                            child: Material(
+                              elevation: 4.0,
+                              color: AppTheme.cardColor,
                               borderRadius: BorderRadius.circular(8),
-                            ),
-                            filled: true,
-                            fillColor: AppTheme.cardColor,
-                          ),
-                          validator: (val) => (val == null || val.isEmpty) ? 'Required' : null,
-                        );
-                      },
-                      optionsViewBuilder: (context, onSelected, options) {
-                        return Align(
-                          alignment: Alignment.topLeft,
-                          child: Material(
-                            elevation: 4.0,
-                            color: AppTheme.cardColor,
-                            borderRadius: BorderRadius.circular(8),
-                            child: SizedBox(
-                              width: MediaQuery.of(context).size.width - 32,
-                              child: ListView.builder(
-                                padding: EdgeInsets.zero,
-                                shrinkWrap: true,
-                                itemCount: options.length,
-                                itemBuilder: (BuildContext context, int index) {
-                                  final String option = options.elementAt(index);
-                                  return ListTile(
-                                    title: Text(option, style: const TextStyle(color: Colors.white)),
-                                    onTap: () => onSelected(option),
-                                  );
-                                },
+                              child: SizedBox(
+                                width: MediaQuery.of(context).size.width - 32,
+                                child: ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  itemCount: options.length,
+                                  itemBuilder: (BuildContext context, int index) {
+                                    final String option = options.elementAt(index);
+                                    return ListTile(
+                                      title: Text(option, style: const TextStyle(color: Colors.white)),
+                                      onTap: () => onSelected(option),
+                                    );
+                                  },
+                                ),
                               ),
                             ),
+                          );
+                        },
+                      ),
+                    const SizedBox(height: 32),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: TextFormField(
+                            controller: _resultController,
+                            style: const TextStyle(color: Colors.white),
+                            keyboardType: TextInputType.text, // Mudado de number para text para suportar ":"
+                            decoration: InputDecoration(
+                              labelText: 'Result (Record)',
+                              labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(color: AppTheme.cardColor),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(color: AppTheme.primaryTeal),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              filled: true,
+                              fillColor: AppTheme.cardColor,
+                            ),
+                            validator: (val) => (val == null || val.isEmpty) ? 'Required' : null,
                           ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          flex: 1,
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedUnit,
+                            dropdownColor: AppTheme.cardColor,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              labelText: 'Unit',
+                              labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(color: AppTheme.cardColor),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(color: AppTheme.primaryTeal),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              filled: true,
+                              fillColor: AppTheme.cardColor,
+                            ),
+                            items: _unitOptions.map((String value) {
+                              return DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value),
+                              );
+                            }).toList(),
+                            onChanged: (newValue) {
+                              if (newValue != null) {
+                                setState(() {
+                                  _selectedUnit = newValue;
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _dateController,
+                      readOnly: true,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Data (DD/MM/YYYY)',
+                        labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: const BorderSide(color: AppTheme.cardColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: const BorderSide(color: AppTheme.primaryTeal),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        filled: true,
+                        fillColor: AppTheme.cardColor,
+                        suffixIcon: const Icon(Icons.calendar_today, color: AppTheme.primaryTeal),
+                      ),
+                      onTap: () async {
+                        DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
                         );
+                        if (picked != null) {
+                          setState(() {
+                            _dateController.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+                          });
+                        }
                       },
+                      validator: (val) => (val == null || val.isEmpty) ? 'Required' : null,
                     ),
-                  const SizedBox(height: 32),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: TextFormField(
-                          controller: _resultController,
-                          style: const TextStyle(color: Colors.white),
-                          keyboardType: TextInputType.text, // Mudado de number para text para suportar ":"
-                          decoration: InputDecoration(
-                            labelText: 'Result (Record)',
-                            labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: AppTheme.cardColor),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: AppTheme.primaryTeal),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            filled: true,
-                            fillColor: AppTheme.cardColor,
-                          ),
-                          validator: (val) => (val == null || val.isEmpty) ? 'Required' : null,
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryTeal,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
+                        onPressed: _isSaving ? null : _saveBenchmark,
+                        child: _isSaving 
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                          : const Text('Save Benchmark', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        flex: 1,
-                        child: DropdownButtonFormField<String>(
-                          value: _selectedUnit,
-                          dropdownColor: AppTheme.cardColor,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            labelText: 'Unit',
-                            labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: AppTheme.cardColor),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: AppTheme.primaryTeal),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            filled: true,
-                            fillColor: AppTheme.cardColor,
-                          ),
-                          items: _unitOptions.map((String value) {
-                            return DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(value),
-                            );
-                          }).toList(),
-                          onChanged: (newValue) {
-                            if (newValue != null) {
-                              setState(() {
-                                _selectedUnit = newValue;
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _dateController,
-                    readOnly: true,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      labelText: 'Data (DD/MM/YYYY)',
-                      labelStyle: const TextStyle(color: AppTheme.secondaryTextColor),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(color: AppTheme.cardColor),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(color: AppTheme.primaryTeal),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: AppTheme.cardColor,
-                      suffixIcon: const Icon(Icons.calendar_today, color: AppTheme.primaryTeal),
                     ),
-                    onTap: () async {
-                      DateTime? picked = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setState(() {
-                          _dateController.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
-                        });
-                      }
-                    },
-                    validator: (val) => (val == null || val.isEmpty) ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryTeal,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: _isSaving ? null : _saveBenchmark,
-                      child: _isSaving 
-                        ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
-                        : const Text('Save Benchmark', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
+        ),
     );
   }
 }

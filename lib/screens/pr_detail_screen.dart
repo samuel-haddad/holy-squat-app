@@ -43,63 +43,65 @@ class _PrDetailScreenState extends State<PrDetailScreen> {
           }
 
           final logs = snapshot.data ?? [];
-          return SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 16),
-                  Text(
-                    widget.exerciseName,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  if (logs.isNotEmpty) _buildChart(logs),
-                  const SizedBox(height: 24),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => PrFormScreen(exerciseName: widget.exerciseName)));
-                        if (result == true) {
-                          setState(() { _logsFuture = SupabaseService.getPrLogsForExercise(widget.exerciseName); });
-                        }
-                      },
-                      icon: const Icon(Icons.add, color: AppTheme.backgroundColor),
-                      label: const Text('Add', style: TextStyle(color: AppTheme.backgroundColor, fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryTeal,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          return SelectionArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 16),
+                    Text(
+                      widget.exerciseName,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-                    child: Row(
-                      children: [
-                        Expanded(flex: 3, child: Text('WORKOUT', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 12, fontWeight: FontWeight.bold))),
-                        Expanded(flex: 1, child: Text('PR', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 12, fontWeight: FontWeight.bold))),
-                        Expanded(flex: 1, child: Text('UNIT', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 12, fontWeight: FontWeight.bold))),
-                        Expanded(flex: 2, child: Text('DATE', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 12, fontWeight: FontWeight.bold))),
-                      ],
+                    const SizedBox(height: 24),
+                    if (logs.isNotEmpty) _buildChart(logs),
+                    const SizedBox(height: 24),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => PrFormScreen(exerciseName: widget.exerciseName)));
+                          if (result == true) {
+                            setState(() { _logsFuture = SupabaseService.getPrLogsForExercise(widget.exerciseName); });
+                          }
+                        },
+                        icon: const Icon(Icons.add, color: AppTheme.backgroundColor),
+                        label: const Text('Add', style: TextStyle(color: AppTheme.backgroundColor, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryTeal,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                      ),
                     ),
-                  ),
-                  const Divider(color: AppTheme.cardColor, height: 1),
-                  
-                  if (logs.isEmpty)
+                    const SizedBox(height: 24),
                     const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Text('Nenhum histórico encontrado.', style: TextStyle(color: AppTheme.secondaryTextColor)),
-                    )
-                  else
-                    ...logs.reversed.map((log) => _buildListEntry(log)),
-                ],
+                      padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                      child: Row(
+                        children: [
+                          Expanded(flex: 3, child: Text('WORKOUT', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 12, fontWeight: FontWeight.bold))),
+                          Expanded(flex: 1, child: Text('PR', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 12, fontWeight: FontWeight.bold))),
+                          Expanded(flex: 1, child: Text('UNIT', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 12, fontWeight: FontWeight.bold))),
+                          Expanded(flex: 2, child: Text('DATE', style: TextStyle(color: AppTheme.secondaryTextColor, fontSize: 12, fontWeight: FontWeight.bold))),
+                        ],
+                      ),
+                    ),
+                    const Divider(color: AppTheme.cardColor, height: 1),
+                    
+                    if (logs.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text('Nenhum histórico encontrado.', style: TextStyle(color: AppTheme.secondaryTextColor)),
+                      )
+                    else
+                      ...logs.reversed.map((log) => _buildListEntry(log)),
+                  ],
+                ),
               ),
             ),
           );

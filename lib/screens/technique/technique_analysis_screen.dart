@@ -124,131 +124,133 @@ class _TechniqueAnalysisScreenState extends State<TechniqueAnalysisScreen> {
           )
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // CV Player Render
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.primaryTeal),
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: _controller != null && _controller!.value.isInitialized
-                  ? AspectRatio(
-                      aspectRatio: _controller!.value.aspectRatio,
-                      child: VideoPlayer(_controller!),
-                    )
-                  : Container(
-                      height: 250, 
-                      alignment: Alignment.center, 
-                      child: feedbackData?['status'] == 'failed'
-                        ? Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.error_outline, size: 60, color: Colors.red[300]),
-                              const SizedBox(height: 16),
-                              const Text("Analysis failed.", style: TextStyle(color: Colors.white, fontSize: 18)),
-                            ],
-                          )
-                        : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const CircularProgressIndicator(color: AppTheme.primaryTeal),
-                              const SizedBox(height: 16),
-                              Text(
-                                isProcessing ? 'AI is analyzing your movement...' : 'Loading video...',
-                                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)
-                              ),
-                              const SizedBox(height: 8),
-                              if (isProcessing)
-                                const Text(
-                                  "You can leave this screen and return later\nvia 'My Library' on the previous screen.",
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.grey, fontSize: 13),
-                                ),
-                            ],
-                          )
-                    ),
-            ),
-            const SizedBox(height: 24),
-            
-            if (feedbackData != null && !isProcessing) ...[
-              // Resume Section
-              const Text(
-                "Technical Resume",
-                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
+      body: SelectionArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // CV Player Render
               Container(
-                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppTheme.cardColor,
-                  borderRadius: BorderRadius.circular(12)
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.primaryTeal),
                 ),
-                child: Text(
-                  feedbackData?['resume_text'] ?? 'No analysis available.',
-                  style: const TextStyle(color: Colors.white, height: 1.5),
-                ),
+                clipBehavior: Clip.hardEdge,
+                child: _controller != null && _controller!.value.isInitialized
+                    ? AspectRatio(
+                        aspectRatio: _controller!.value.aspectRatio,
+                        child: VideoPlayer(_controller!),
+                      )
+                    : Container(
+                        height: 250, 
+                        alignment: Alignment.center, 
+                        child: feedbackData?['status'] == 'failed'
+                          ? Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.error_outline, size: 60, color: Colors.red[300]),
+                                const SizedBox(height: 16),
+                                const Text("Analysis failed.", style: TextStyle(color: Colors.white, fontSize: 18)),
+                              ],
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const CircularProgressIndicator(color: AppTheme.primaryTeal),
+                                const SizedBox(height: 16),
+                                Text(
+                                  isProcessing ? 'AI is analyzing your movement...' : 'Loading video...',
+                                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)
+                                ),
+                                const SizedBox(height: 8),
+                                if (isProcessing)
+                                  const Text(
+                                    "You can leave this screen and return later\nvia 'My Library' on the previous screen.",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                                  ),
+                              ],
+                            )
+                      ),
               ),
               const SizedBox(height: 24),
               
-              // Improve Section
-              const Text(
-                "How to Improve",
-                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              if (feedbackData?['improve_exercises'] != null)
-                ...(feedbackData!['improve_exercises'] as List).map((ex) {
-                  return Card(
+              if (feedbackData != null && !isProcessing) ...[
+                // Resume Section
+                const Text(
+                  "Technical Resume",
+                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
                     color: AppTheme.cardColor,
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ExpansionTile(
-                      iconColor: AppTheme.primaryTeal,
-                      collapsedIconColor: Colors.white,
-                      title: Text(ex["name"] ?? 'Exercise', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Icon(Icons.lightbulb, color: AppTheme.primaryTeal, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(ex["reason"] ?? '', style: const TextStyle(color: AppTheme.secondaryTextColor)),
-                              ),
-                            ],
-                          ),
-                        )
-                      ],
-                    ),
-                  );
-                }).toList(),
-              const SizedBox(height: 32),
-              
-              if (feedbackData != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 24.0),
-                  child: OutlinedButton.icon(
-                    onPressed: _confirmDelete,
-                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                    label: const Text('Delete Analysis', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.redAccent),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
+                    borderRadius: BorderRadius.circular(12)
+                  ),
+                  child: Text(
+                    feedbackData?['resume_text'] ?? 'No analysis available.',
+                    style: const TextStyle(color: Colors.white, height: 1.5),
                   ),
                 ),
-            ] else if (feedbackData?['status'] == 'failed')
-              const Center(
-                child: Text('Analysis failed. Please try again.', style: TextStyle(color: Colors.red)),
-              ),
-          ],
+                const SizedBox(height: 24),
+                
+                // Improve Section
+                const Text(
+                  "How to Improve",
+                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                if (feedbackData?['improve_exercises'] != null)
+                  ...(feedbackData!['improve_exercises'] as List).map((ex) {
+                    return Card(
+                      color: AppTheme.cardColor,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ExpansionTile(
+                        iconColor: AppTheme.primaryTeal,
+                        collapsedIconColor: Colors.white,
+                        title: Text(ex["name"] ?? 'Exercise', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.lightbulb, color: AppTheme.primaryTeal, size: 20),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(ex["reason"] ?? '', style: const TextStyle(color: AppTheme.secondaryTextColor)),
+                                ),
+                              ],
+                            ),
+                          )
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                const SizedBox(height: 32),
+                
+                if (feedbackData != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 24.0),
+                    child: OutlinedButton.icon(
+                      onPressed: _confirmDelete,
+                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                      label: const Text('Delete Analysis', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.redAccent),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+              ] else if (feedbackData?['status'] == 'failed')
+                const Center(
+                  child: Text('Analysis failed. Please try again.', style: TextStyle(color: Colors.red)),
+                ),
+            ],
+          ),
         ),
       ),
     );

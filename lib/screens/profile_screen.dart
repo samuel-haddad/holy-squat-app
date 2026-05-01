@@ -64,58 +64,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            _buildProfileHeader(),
-            const SizedBox(height: 24),
-            _buildExpandableSection(
-              title: 'About',
-              icon: Icons.person_outline,
-              children: [
-                _buildInfoRow('Birthdate', UserState.birthdate.value),
-                _buildInfoRow('Weight', '${UserState.weight.value} ${UserState.weightUnit.value}'),
-                _buildInfoRow('Sport', UserState.sport.value),
-                _buildInfoRow('Goal', UserState.goal.value),
-                const Divider(color: Colors.white10),
-                _buildLongTextRow('Anamnesis', UserState.anamnesis.value),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildExpandableSection(
-              title: 'Training Sessions',
-              icon: Icons.fitness_center,
-              children: [
-                if (_trainingSessions.isNotEmpty) ...[
-                  const Text('My Weekly Schedule', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 15)),
-                  const SizedBox(height: 8),
-                  ..._trainingSessions.map((s) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      s.summary,
-                      style: const TextStyle(color: Colors.white70, fontSize: 13),
-                    ),
-                  )),
-                ] else ...[
-                  const Text('No training sessions configured.', style: TextStyle(color: Colors.white38, fontSize: 13)),
+      body: SelectionArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              _buildProfileHeader(),
+              const SizedBox(height: 24),
+              _buildExpandableSection(
+                title: 'About',
+                icon: Icons.person_outline,
+                children: [
+                  _buildInfoRow('Birthdate', UserState.birthdate.value),
+                  _buildInfoRow('Weight', '${UserState.weight.value} ${UserState.weightUnit.value}'),
+                  _buildInfoRow('Sport', UserState.sport.value),
+                  _buildInfoRow('Goal', UserState.goal.value),
+                  const Divider(color: Colors.white10),
+                  _buildLongTextRow('Anamnesis', UserState.anamnesis.value),
                 ],
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildExpandableSection(
-              title: 'Connections',
-              icon: Icons.link,
-              children: [
-                _buildStravaRow(),
-                const SizedBox(height: 12),
-                _buildGarminRow(),
-              ],
-            ),
-            const SizedBox(height: 32),
-            _buildSignOutButton(),
-            const SizedBox(height: 48),
-          ],
+              ),
+              const SizedBox(height: 12),
+              _buildExpandableSection(
+                title: 'Training Sessions',
+                icon: Icons.fitness_center,
+                children: [
+                  if (_trainingSessions.isNotEmpty) ...[
+                    const Text('My Weekly Schedule', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 15)),
+                    const SizedBox(height: 8),
+                    ..._trainingSessions.map((s) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        s.summary,
+                        style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                    )),
+                  ] else ...[
+                    const Text('No training sessions configured.', style: TextStyle(color: Colors.white38, fontSize: 13)),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 12),
+              _buildExpandableSection(
+                title: 'Connections',
+                icon: Icons.link,
+                children: [
+                  _buildStravaRow(),
+                  const SizedBox(height: 12),
+                  _buildGarminRow(),
+                ],
+              ),
+              const SizedBox(height: 32),
+              _buildSignOutButton(),
+              const SizedBox(height: 48),
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: const AppBottomNav(activeIndex: null),

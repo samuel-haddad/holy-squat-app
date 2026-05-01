@@ -137,15 +137,17 @@ class _PlanningScreenState extends State<PlanningScreen> {
                     )
                   : const CircularProgressIndicator(color: AppTheme.primaryTeal),
             )
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16.0),
-                itemCount: _aiCoaches.length,
-                itemBuilder: (context, index) {
-                  final coach = _aiCoaches[index];
-                  return _buildCoachSection(coach);
-                },
+          : SelectionArea(
+              child: RefreshIndicator(
+                onRefresh: _loadData,
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16.0),
+                  itemCount: _aiCoaches.length,
+                  itemBuilder: (context, index) {
+                    final coach = _aiCoaches[index];
+                    return _buildCoachSection(coach);
+                  },
+                ),
               ),
             ),
       bottomNavigationBar: const AppBottomNav(),
@@ -1296,40 +1298,45 @@ class _PlanningScreenState extends State<PlanningScreen> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          collapsedIconColor: AppTheme.primaryTeal,
+          iconColor: AppTheme.primaryTeal,
           title: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 title,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
               ),
-              IconButton(
-                icon: const Icon(Icons.share, size: 20, color: AppTheme.primaryTeal),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () {
-                  Share.share(shareText);
-                },
-              )
+              if (shareText.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.share, size: 18, color: AppTheme.primaryTeal),
+                  onPressed: () => Share.share(shareText),
+                ),
             ],
           ),
-          childrenPadding: const EdgeInsets.all(16.0),
-          iconColor: AppTheme.primaryTeal,
-          collapsedIconColor: Colors.white,
-          children: children,
+          children: [
+            SelectionArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildRichText(String label, String value) {
-    return RichText(
-      text: TextSpan(
-        style: const TextStyle(fontSize: 14, color: AppTheme.secondaryTextColor),
-        children: [
-          TextSpan(text: label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-          TextSpan(text: value),
-        ],
+    return SelectionArea(
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(fontSize: 14, color: AppTheme.secondaryTextColor),
+          children: [
+            TextSpan(text: label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+            TextSpan(text: value),
+          ],
+        ),
       ),
     );
   }

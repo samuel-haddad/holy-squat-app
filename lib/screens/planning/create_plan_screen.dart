@@ -368,233 +368,235 @@ class _CreatePlanScreenState extends State<CreatePlanScreen> {
       ),
       body: Form(
         key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-
-              // ── Coach Dropdown ──────────────────────────────────────
-              const Text(
-                'Coach *',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              _loadingCoaches
-                  ? Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppTheme.cardColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
-                        children: [
-                          SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryTeal)),
-                          SizedBox(width: 12),
-                          Text('Carregando coaches...', style: TextStyle(color: Colors.white54)),
-                        ],
-                      ),
-                    )
-                  : _buildCoachDropdown(),
-              const SizedBox(height: 20),
-
-              // ── Objetivo ────────────────────────────────────────────
-              const Text(
-                'Objetivo do Macrociclo *',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _objetivoController,
-                maxLines: 3,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Ex: Ganho de força e condicionamento focado no Open...',
-                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-                  fillColor: AppTheme.cardColor,
-                  filled: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        child: SelectionArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+  
+                // ── Coach Dropdown ──────────────────────────────────────
+                const Text(
+                  'Coach *',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                 ),
-                validator: (value) => value == null || value.isEmpty ? 'Campo obrigatório' : null,
-              ),
-              const SizedBox(height: 20),
-              _buildDatePicker('Start date *', _startDate, () => _selectDate(context, true), true),
-              const SizedBox(height: 20),
-              _buildDatePicker('End date', _endDate, () => _selectDate(context, false), false),
-              const SizedBox(height: 32),
-
-              // ── Training Sessions Context ─────────────────────────
-              _loadingSessions
-                  ? Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppTheme.cardColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
+                const SizedBox(height: 8),
+                _loadingCoaches
+                    ? Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cardColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          children: [
+                            SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryTeal)),
+                            SizedBox(width: 12),
+                            Text('Carregando coaches...', style: TextStyle(color: Colors.white54)),
+                          ],
+                        ),
+                      )
+                    : _buildCoachDropdown(),
+                const SizedBox(height: 20),
+  
+                // ── Objetivo ────────────────────────────────────────────
+                const Text(
+                  'Objetivo do Macrociclo *',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _objetivoController,
+                  maxLines: 3,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Ex: Ganho de força e condicionamento focado no Open...',
+                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                    fillColor: AppTheme.cardColor,
+                    filled: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  ),
+                  validator: (value) => value == null || value.isEmpty ? 'Campo obrigatório' : null,
+                ),
+                const SizedBox(height: 20),
+                _buildDatePicker('Start date *', _startDate, () => _selectDate(context, true), true),
+                const SizedBox(height: 20),
+                _buildDatePicker('End date', _endDate, () => _selectDate(context, false), false),
+                const SizedBox(height: 32),
+  
+                // ── Training Sessions Context ─────────────────────────
+                _loadingSessions
+                    ? Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cardColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          children: [
+                            SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryTeal)),
+                            SizedBox(width: 12),
+                            Text('Carregando sessões...', style: TextStyle(color: Colors.white54)),
+                          ],
+                        ),
+                      )
+                    : Column(
                         children: [
-                          SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryTeal)),
-                          SizedBox(width: 12),
-                          Text('Carregando sessões...', style: TextStyle(color: Colors.white54)),
+                          TrainingSessionsEditor(
+                            sessions: _trainingSessions,
+                            onChanged: (sessions) => _trainingSessions = sessions,
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: TextButton.icon(
+                              onPressed: _isSavingSessions ? null : _persistSessions,
+                              icon: _isSavingSessions
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryTeal),
+                                    )
+                                  : const Icon(Icons.save, color: AppTheme.primaryTeal),
+                              label: Text(
+                                _isSavingSessions ? 'Salvando...' : 'Salvar Configurações de Treino',
+                                style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold),
+                              ),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                backgroundColor: AppTheme.primaryTeal.withOpacity(0.1),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
-                    )
-                  : Column(
+                const SizedBox(height: 32),
+  
+                // ── Competitions ────────────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Competitions',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle, color: AppTheme.primaryTeal, size: 30),
+                      onPressed: _addCompetition,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ..._competitions.asMap().entries.map((entry) => _buildCompetitionItem(entry.key)).toList(),
+                const SizedBox(height: 32),
+  
+                // ── Vacations ───────────────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Vacations',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle, color: AppTheme.primaryTeal, size: 30),
+                      onPressed: _addVacation,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ..._vacations.asMap().entries.map((entry) => _buildVacationItem(entry.key)).toList(),
+                const SizedBox(height: 32),
+  
+                // ── Injuries ────────────────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Injuries',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle, color: AppTheme.primaryTeal, size: 30),
+                      onPressed: _addInjury,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ..._injuries.asMap().entries.map((entry) => _buildInjuryItem(entry.key)).toList(),
+                const SizedBox(height: 32),
+                const SizedBox(height: 32),
+  
+                // ── Notes ───────────────────────────────────────────────
+                const Text(
+                  'Notes',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _notesController,
+                  maxLines: 5,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Add some details about your plan...',
+                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                    fillColor: AppTheme.cardColor,
+                    filled: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 32),
+  
+                // ── Submit Button ────────────────────────────────────────
+                Consumer<WorkoutController>(
+                  builder: (context, controller, child) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        TrainingSessionsEditor(
-                          sessions: _trainingSessions,
-                          onChanged: (sessions) => _trainingSessions = sessions,
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: TextButton.icon(
-                            onPressed: _isSavingSessions ? null : _persistSessions,
-                            icon: _isSavingSessions
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryTeal),
-                                  )
-                                : const Icon(Icons.save, color: AppTheme.primaryTeal),
-                            label: Text(
-                              _isSavingSessions ? 'Salvando...' : 'Salvar Configurações de Treino',
+                        if (controller.isLoading && controller.loadingMessage.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0),
+                            child: Text(
+                              controller.loadingMessage,
+                              textAlign: TextAlign.center,
                               style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold),
                             ),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              backgroundColor: AppTheme.primaryTeal.withOpacity(0.1),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
                           ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _selectedCoach != null
+                                ? _hexToColor(_selectedCoach!['color_hex'] as String?)
+                                : AppTheme.primaryTeal,
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: controller.isLoading ? null : _savePlan,
+                          child: controller.isLoading
+                              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (_selectedCoach != null) ...[
+                                      Text(
+                                        _selectedCoach!['icon_emoji'] as String? ?? '🤖',
+                                        style: const TextStyle(fontSize: 18),
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    const Text(
+                                      '3, 2, 1... GO!',
+                                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+                                    ),
+                                  ],
+                                ),
                         ),
                       ],
-                    ),
-              const SizedBox(height: 32),
-
-              // ── Competitions ────────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Competitions',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle, color: AppTheme.primaryTeal, size: 30),
-                    onPressed: _addCompetition,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ..._competitions.asMap().entries.map((entry) => _buildCompetitionItem(entry.key)).toList(),
-              const SizedBox(height: 32),
-
-              // ── Vacations ───────────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Vacations',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle, color: AppTheme.primaryTeal, size: 30),
-                    onPressed: _addVacation,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ..._vacations.asMap().entries.map((entry) => _buildVacationItem(entry.key)).toList(),
-              const SizedBox(height: 32),
-
-              // ── Injuries ────────────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Injuries',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle, color: AppTheme.primaryTeal, size: 30),
-                    onPressed: _addInjury,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ..._injuries.asMap().entries.map((entry) => _buildInjuryItem(entry.key)).toList(),
-              const SizedBox(height: 32),
-              const SizedBox(height: 32),
-
-              // ── Notes ───────────────────────────────────────────────
-              const Text(
-                'Notes',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _notesController,
-                maxLines: 5,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Add some details about your plan...',
-                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-                  fillColor: AppTheme.cardColor,
-                  filled: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    );
+                  },
                 ),
-              ),
-              const SizedBox(height: 32),
-
-              // ── Submit Button ────────────────────────────────────────
-              Consumer<WorkoutController>(
-                builder: (context, controller, child) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (controller.isLoading && controller.loadingMessage.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16.0),
-                          child: Text(
-                            controller.loadingMessage,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _selectedCoach != null
-                              ? _hexToColor(_selectedCoach!['color_hex'] as String?)
-                              : AppTheme.primaryTeal,
-                          padding: const EdgeInsets.symmetric(vertical: 18),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        onPressed: controller.isLoading ? null : _savePlan,
-                        child: controller.isLoading
-                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (_selectedCoach != null) ...[
-                                    Text(
-                                      _selectedCoach!['icon_emoji'] as String? ?? '🤖',
-                                      style: const TextStyle(fontSize: 18),
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  const Text(
-                                    '3, 2, 1... GO!',
-                                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

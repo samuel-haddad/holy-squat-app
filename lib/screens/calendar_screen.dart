@@ -33,90 +33,92 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ),
       ),
-      body: Column(
-        children: [
-          TableCalendar(
-            firstDay: DateTime.utc(2020, 10, 16),
-            lastDay: DateTime.utc(2030, 3, 14),
-            focusedDay: _focusedDay,
-            selectedDayPredicate: (day) {
-              return isSameDay(_selectedDay, day);
-            },
-            onDaySelected: (selectedDay, focusedDay) {
-              setState(() {
-                _selectedDay = selectedDay;
-                _focusedDay = focusedDay;
-              });
-              
-              AppState.selectedWodDate.value = selectedDay;
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 0)),
-                (route) => false,
-              );
-            },
-            onHeaderTapped: (focusedDay) async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: focusedDay,
-                initialDatePickerMode: DatePickerMode.year,
-                firstDate: DateTime(2000),
-                lastDate: DateTime(2050),
-                builder: (context, child) {
-                  return Theme(
-                    data: ThemeData.dark().copyWith(
-                      colorScheme: const ColorScheme.dark(
-                        primary: AppTheme.primaryTeal,
-                        onPrimary: Colors.black,
-                        surface: AppTheme.cardColor,
-                        onSurface: Colors.white,
-                      ),
-                    ),
-                    child: child!,
-                  );
-                },
-              );
-              if (picked != null) {
+      body: SelectionArea(
+        child: Column(
+          children: [
+            TableCalendar(
+              firstDay: DateTime.utc(2020, 10, 16),
+              lastDay: DateTime.utc(2030, 3, 14),
+              focusedDay: _focusedDay,
+              selectedDayPredicate: (day) {
+                return isSameDay(_selectedDay, day);
+              },
+              onDaySelected: (selectedDay, focusedDay) {
                 setState(() {
-                  _focusedDay = picked;
+                  _selectedDay = selectedDay;
+                  _focusedDay = focusedDay;
                 });
-              }
-            },
-            calendarStyle: const CalendarStyle(
-              todayDecoration: BoxDecoration(
-                color: AppTheme.cardColor,
-                shape: BoxShape.circle,
+                
+                AppState.selectedWodDate.value = selectedDay;
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MainScreen(initialIndex: 0)),
+                  (route) => false,
+                );
+              },
+              onHeaderTapped: (focusedDay) async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: focusedDay,
+                  initialDatePickerMode: DatePickerMode.year,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2050),
+                  builder: (context, child) {
+                    return Theme(
+                      data: ThemeData.dark().copyWith(
+                        colorScheme: const ColorScheme.dark(
+                          primary: AppTheme.primaryTeal,
+                          onPrimary: Colors.black,
+                          surface: AppTheme.cardColor,
+                          onSurface: Colors.white,
+                        ),
+                      ),
+                      child: child!,
+                    );
+                  },
+                );
+                if (picked != null) {
+                  setState(() {
+                    _focusedDay = picked;
+                  });
+                }
+              },
+              calendarStyle: const CalendarStyle(
+                todayDecoration: BoxDecoration(
+                  color: AppTheme.cardColor,
+                  shape: BoxShape.circle,
+                ),
+                selectedDecoration: BoxDecoration(
+                  color: AppTheme.primaryTeal,
+                  shape: BoxShape.circle,
+                ),
+                defaultTextStyle: TextStyle(color: Colors.white),
+                weekendTextStyle: TextStyle(color: AppTheme.secondaryTextColor),
+                outsideTextStyle: TextStyle(color: Colors.grey),
               ),
-              selectedDecoration: BoxDecoration(
-                color: AppTheme.primaryTeal,
-                shape: BoxShape.circle,
+              headerStyle: const HeaderStyle(
+                formatButtonVisible: false,
+                titleCentered: true,
+                titleTextStyle: TextStyle(color: Colors.white, fontSize: 18),
+                leftChevronIcon: Icon(Icons.chevron_left, color: AppTheme.primaryTeal),
+                rightChevronIcon: Icon(Icons.chevron_right, color: AppTheme.primaryTeal),
               ),
-              defaultTextStyle: TextStyle(color: Colors.white),
-              weekendTextStyle: TextStyle(color: AppTheme.secondaryTextColor),
-              outsideTextStyle: TextStyle(color: Colors.grey),
-            ),
-            headerStyle: const HeaderStyle(
-              formatButtonVisible: false,
-              titleCentered: true,
-              titleTextStyle: TextStyle(color: Colors.white, fontSize: 18),
-              leftChevronIcon: Icon(Icons.chevron_left, color: AppTheme.primaryTeal),
-              rightChevronIcon: Icon(Icons.chevron_right, color: AppTheme.primaryTeal),
-            ),
-            daysOfWeekStyle: const DaysOfWeekStyle(
-              weekdayStyle: TextStyle(color: AppTheme.secondaryTextColor),
-              weekendStyle: TextStyle(color: AppTheme.secondaryTextColor),
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Expanded(
-            child: Center(
-              child: Text(
-                'No events for this day.',
-                style: TextStyle(color: AppTheme.secondaryTextColor),
+              daysOfWeekStyle: const DaysOfWeekStyle(
+                weekdayStyle: TextStyle(color: AppTheme.secondaryTextColor),
+                weekendStyle: TextStyle(color: AppTheme.secondaryTextColor),
               ),
             ),
-          )
-        ],
+            const SizedBox(height: 24),
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'No events for this day.',
+                  style: TextStyle(color: AppTheme.secondaryTextColor),
+                ),
+              ),
+            )
+          ],
+        ),
       ),
       bottomNavigationBar: const AppBottomNav(activeIndex: null),
     );

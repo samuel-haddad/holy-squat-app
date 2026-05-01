@@ -21,9 +21,10 @@ class _WodScreenState extends State<WodScreen> {
       drawer: const AppDrawer(),
       body: SafeArea(
         child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          child: SelectionArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               _buildHeader(context),
               const SizedBox(height: 40),
               Center(
@@ -117,6 +118,7 @@ class _WodScreenState extends State<WodScreen> {
                 ),
               ),
             ],
+            ),
           ),
         ),
       ),
@@ -217,64 +219,62 @@ class _WodScreenState extends State<WodScreen> {
           color: AppTheme.cardColor,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.asset(
-                          imgSrc,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.fitness_center, size: 60, color: Colors.grey),
-                        ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.asset(
+                    imgSrc,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.fitness_center, size: 60, color: Colors.grey),
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                '$dayName | $formattedDate',
-                style: const TextStyle(color: AppTheme.primaryTeal, fontSize: 10, fontWeight: FontWeight.bold),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$dayName | $formattedDate',
+              style: const TextStyle(color: AppTheme.primaryTeal, fontSize: 10, fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              sessionType,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
-              const SizedBox(height: 4),
-              Text(
-                sessionType,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              'Session: $sessionNum',
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppTheme.secondaryTextColor,
               ),
-              Text(
-                'Session: $sessionNum',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.secondaryTextColor,
+            ),
+            if (aiCoachName != null && aiCoachName.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _coachColor(aiCoachName).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _coachColor(aiCoachName).withOpacity(0.5), width: 1),
+                ),
+                child: Text(
+                  aiCoachName.contains('Gemini') ? '🔵 Gemini' : aiCoachName.contains('Claude') ? '🟣 Claude' : '🤖 AI',
+                  style: TextStyle(color: _coachColor(aiCoachName), fontSize: 9, fontWeight: FontWeight.bold),
                 ),
               ),
-              if (aiCoachName != null && aiCoachName.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(top: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _coachColor(aiCoachName).withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: _coachColor(aiCoachName).withOpacity(0.5), width: 1),
-                  ),
-                  child: Text(
-                    aiCoachName.contains('Gemini') ? '🔵 Gemini' : aiCoachName.contains('Claude') ? '🟣 Claude' : '🤖 AI',
-                    style: TextStyle(color: _coachColor(aiCoachName), fontSize: 9, fontWeight: FontWeight.bold),
-                  ),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );

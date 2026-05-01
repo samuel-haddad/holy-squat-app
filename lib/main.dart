@@ -104,16 +104,21 @@ class _AuthGateState extends State<AuthGate> {
   @override
   Widget build(BuildContext context) {
     final session = Supabase.instance.client.auth.currentSession;
+    Widget currentWidget;
+    
     if (session != null) {
       SupabaseService.getProfile();
-      return ValueListenableBuilder<bool>(
+      currentWidget = ValueListenableBuilder<bool>(
         valueListenable: UserState.isProfileComplete,
         builder: (context, isComplete, _) {
           if (!isComplete) return const OnboardingScreen();
           return const MainScreen();
         },
       );
+    } else {
+      currentWidget = const LoginScreen();
     }
-    return const LoginScreen();
+
+    return currentWidget;
   }
 }

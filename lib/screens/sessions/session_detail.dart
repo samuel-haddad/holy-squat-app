@@ -83,12 +83,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      body: SelectionArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -330,6 +331,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             ],
           ),
         ),
+      ),
       ),
       bottomNavigationBar: const AppBottomNav(activeIndex: 0),
     );

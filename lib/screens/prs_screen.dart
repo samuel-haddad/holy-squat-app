@@ -36,10 +36,11 @@ class _PrsScreenState extends State<PrsScreen> {
           ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        child: Column(
-          children: [
+      body: SelectionArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Column(
+            children: [
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
@@ -139,6 +140,7 @@ class _PrsScreenState extends State<PrsScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

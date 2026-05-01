@@ -38,11 +38,12 @@ class _SessionsScreenState extends State<SessionsScreen> {
           ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: SelectionArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             const SizedBox(height: 16),
             const Text('date start', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -98,6 +99,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

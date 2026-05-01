@@ -142,34 +142,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryTeal))
-        : RefreshIndicator(
-            onRefresh: _fetchAnalytics,
-            color: AppTheme.primaryTeal,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildBigNumbersGrid(_athleteStats?['kpis']),
-                  const SizedBox(height: 32),
-                  _buildCapabilitiesRadar(_athleteStats?['radar']),
-                  const SizedBox(height: 32),
-                  _buildActivityHeatmap(_athleteStats?['heatmap']),
-                  const SizedBox(height: 32),
-                  const Divider(color: Colors.white10),
-                  const SizedBox(height: 32),
-                  _buildBigNumbers(),
-                  const SizedBox(height: 32),
-                  _buildWeeklyLineChart(),
-                  const SizedBox(height: 32),
-                  _buildFrequencyMatrix(),
-                  const SizedBox(height: 32),
-                  _buildMonthlyBarChart(),
-                  const SizedBox(height: 48), // Padding bottom
-                ],
+        : SelectionArea(
+            child: RefreshIndicator(
+                onRefresh: _fetchAnalytics,
+                color: AppTheme.primaryTeal,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildBigNumbersGrid(_athleteStats?['kpis']),
+                      const SizedBox(height: 32),
+                      _buildCapabilitiesRadar(_athleteStats?['radar']),
+                      const SizedBox(height: 32),
+                      _buildActivityHeatmap(_athleteStats?['heatmap']),
+                      const SizedBox(height: 32),
+                      const Divider(color: Colors.white10),
+                      const SizedBox(height: 32),
+                      _buildBigNumbers(),
+                      const SizedBox(height: 32),
+                      _buildWeeklyLineChart(),
+                      const SizedBox(height: 32),
+                      _buildFrequencyMatrix(),
+                      const SizedBox(height: 32),
+                      _buildMonthlyBarChart(),
+                      const SizedBox(height: 48), // Padding bottom
+                    ],
+                  ),
+                ),
               ),
-            ),
           ),
     );
   }

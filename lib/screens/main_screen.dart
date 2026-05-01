@@ -38,7 +38,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: const AppDrawer(),
-      body: _screens[_currentIndex],
+      body: SelectionArea(child: _screens[_currentIndex]),
       bottomNavigationBar: AppBottomNav(activeIndex: _currentIndex),
     );
   }

@@ -83,92 +83,94 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.fitness_center, size: 80, color: AppTheme.primaryTeal),
-                const SizedBox(height: 32),
-                Text(
-                  _isSignUp ? 'Create an Account' : 'Welcome Back',
-                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 32),
-                
-                TextField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Email',
-                    hintStyle: const TextStyle(color: AppTheme.secondaryTextColor),
-                    filled: true,
-                    fillColor: AppTheme.cardColor,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            child: SelectionArea(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.fitness_center, size: 80, color: AppTheme.primaryTeal),
+                  const SizedBox(height: 32),
+                  Text(
+                    _isSignUp ? 'Create an Account' : 'Welcome Back',
+                    style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                   ),
-                ),
-                const SizedBox(height: 16),
-                
-                TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Password',
-                    hintStyle: const TextStyle(color: AppTheme.secondaryTextColor),
-                    filled: true,
-                    fillColor: AppTheme.cardColor,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _handleEmailAuth,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryTeal,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  const SizedBox(height: 32),
+                  
+                  TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Email',
+                      hintStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+                      filled: true,
+                      fillColor: AppTheme.cardColor,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.black)
-                        : Text(
-                            _isSignUp ? 'Sign Up' : 'Log In',
-                            style: const TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
                   ),
-                ),
-                
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _isSignUp = !_isSignUp;
-                    });
-                  },
-                  child: Text(
-                    _isSignUp ? 'Already have an account? Log In' : 'Need an account? Sign Up',
-                    style: const TextStyle(color: AppTheme.secondaryTextColor),
+                  const SizedBox(height: 16),
+                  
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Password',
+                      hintStyle: const TextStyle(color: AppTheme.secondaryTextColor),
+                      filled: true,
+                      fillColor: AppTheme.cardColor,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
                   ),
-                ),
-                
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24.0),
-                  child: Row(
-                    children: [
-                      Expanded(child: Divider(color: AppTheme.cardColor)),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: Text('OR', style: TextStyle(color: AppTheme.secondaryTextColor)),
+                  const SizedBox(height: 24),
+                  
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _handleEmailAuth,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryTeal,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      Expanded(child: Divider(color: AppTheme.cardColor)),
-                    ],
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.black)
+                          : Text(
+                              _isSignUp ? 'Sign Up' : 'Log In',
+                              style: const TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                    ),
                   ),
-                ),
-                
-                _buildSocialButton(Icons.g_mobiledata, 'Continue with Google', Colors.white, Colors.black, () => _handleOAuth(OAuthProvider.google)),
-                const SizedBox(height: 32),
-              ],
+                  
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _isSignUp = !_isSignUp;
+                      });
+                    },
+                    child: Text(
+                      _isSignUp ? 'Already have an account? Log In' : 'Need an account? Sign Up',
+                      style: const TextStyle(color: AppTheme.secondaryTextColor),
+                    ),
+                  ),
+                  
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24.0),
+                    child: Row(
+                      children: [
+                        Expanded(child: Divider(color: AppTheme.cardColor)),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('OR', style: TextStyle(color: AppTheme.secondaryTextColor)),
+                        ),
+                        Expanded(child: Divider(color: AppTheme.cardColor)),
+                      ],
+                    ),
+                  ),
+                  
+                  _buildSocialButton(Icons.g_mobiledata, 'Continue with Google', Colors.white, Colors.black, () => _handleOAuth(OAuthProvider.google)),
+                  const SizedBox(height: 32),
+                ],
+              ),
             ),
           ),
         ),
