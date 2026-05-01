@@ -293,8 +293,10 @@ serve(async (req) => {
     // ACTION 1: gerar_analise_historica
     // =========================================================
     if (acao === 'gerar_analise_historica') {
-      const { email_utilizador, user_id } = payload;
+      const { email_utilizador, user_id, diretrizes_plano } = payload;
       if (!email_utilizador && !user_id) throw new Error("Parâmetros email_utilizador ou user_id ausentes.");
+      const lesoesArray = diretrizes_plano?.lesoes || [];
+      const lesoesStr = lesoesArray.length > 0 ? lesoesArray.join(', ') : 'Nenhuma lesão informada';
       console.log(`[Action 1] Iniciando para ${email_utilizador || user_id}`);
 
       const profileQuery = user_id 
@@ -490,6 +492,28 @@ serve(async (req) => {
 
         [HISTÓRICO AGREGADO — 6 MESES]
         ${historySummaryText || 'Nenhum dado de treino encontrado nos últimos 6 meses.'}
+
+        [DIRETRIZES DE FORMATAÇÃO DO HISTÓRICO]
+        A string no campo "historico.texto" deve ser obrigatoriamente formatada usando Markdown, dividida exatamente nos seguintes blocos (títulos).
+        IMPORTANTE: Se não houver dados para fundamentar a análise de um bloco, você NÃO deve gerar o título correspondente (omita o bloco inteiro).
+        
+        ### Análise da Anamnese do Atleta
+        (Faça a análise baseada na anamnese, objetivos e sessões de treino disponíveis)
+
+        ### Análise das Lesões do Atleta
+        (Faça a análise baseada nas lesões atuais: ${lesoesStr})
+
+        ### Análise dos Movimentos Técnicos
+        (Faça a análise dos feedbacks de técnica e pontos de melhoria)
+
+        ### Análise dos PRs e Benchmarks
+        (Faça a análise baseada nas marcas de força absoluta)
+
+        ### Análise do Histórico Recente e KPIs
+        (Faça a análise dos dados agregados, aderência, volume e esforço dos últimos meses)
+
+        ### Conclusão e Recomendações Estratégicas
+        (Apresente a sua conclusão geral como treinador)
 
         [FORMATO — JSON PURO SEM MARKDOWN]
         {

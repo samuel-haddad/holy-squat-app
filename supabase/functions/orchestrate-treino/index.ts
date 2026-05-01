@@ -188,6 +188,7 @@ async function handleCreatePlanStep(job: any, admin: any) {
       email_utilizador: p.email_utilizador,
       ai_coach_name: p.ai_coach_name,
       training_sessions: p.training_sessions || [],
+      diretrizes_plano: p.diretrizes_plano,
       model_observations: AI_MODEL_OBSERVATIONS,
     }, 'gerar-plano');
     await admin.from('ai_generation_jobs').update({

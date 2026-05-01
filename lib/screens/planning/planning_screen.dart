@@ -344,7 +344,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
           title: 'Visão Geral',
           shareText: _formatActualPlanForShare(summaryJson ?? {}, ""),
           children: [
-            _buildVisaoGeralContent(summaryJson),
+            _buildVisaoGeralContent(summaryJson, plan),
             const SizedBox(height: 16),
             _buildPDFExportButton(macroJson, summaryJson, plan['progress_analysis'], snapshotStats),
           ],
@@ -386,7 +386,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
       shareText: "📈 *Análise de Progresso*\n\n${data['texto'] ?? ''}",
       children: [
         if (data['texto'] != null)
-          Text(data['texto'], style: const TextStyle(color: AppTheme.secondaryTextColor)),
+          ..._parseMarkdownText(data['texto']),
         
         const SizedBox(height: 24),
         
@@ -798,6 +798,50 @@ class _PlanningScreenState extends State<PlanningScreen> {
     );
   }
 
+  List<Widget> _parseMarkdownText(String text) {
+    final List<Widget> widgets = [];
+    final paragraphs = text.split('\n');
+
+    for (String line in paragraphs) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+
+      if (trimmed.startsWith('### ')) {
+        final title = trimmed.substring(4).replaceAll('*', '').trim();
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+        ));
+      } else {
+        final spans = <TextSpan>[];
+        final parts = trimmed.split('**');
+        for (int i = 0; i < parts.length; i++) {
+          spans.add(TextSpan(
+            text: parts[i],
+            style: TextStyle(
+              color: AppTheme.secondaryTextColor,
+              fontWeight: i % 2 == 1 ? FontWeight.bold : FontWeight.normal,
+            ),
+          ));
+        }
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: RichText(
+            text: TextSpan(children: spans),
+          ),
+        ));
+      }
+    }
+    return widgets;
+  }
+
   Widget _buildHistoricoContent(Map<String, dynamic>? json) {
     if (json == null) return const Text('Dados de histórico não disponíveis.', style: TextStyle(color: AppTheme.secondaryTextColor));
     
@@ -807,7 +851,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(historico['texto'] ?? '', style: const TextStyle(color: AppTheme.secondaryTextColor)),
+        ..._parseMarkdownText(historico['texto'] ?? ''),
         const SizedBox(height: 20),
         if (historico['graficos'] is List)
           ...((historico['graficos'] as List).map((g) => _buildChartSection(g)).toList()),
@@ -867,14 +911,35 @@ class _PlanningScreenState extends State<PlanningScreen> {
     );
   }
 
-  Widget _buildVisaoGeralContent(Map<String, dynamic>? json) {
+  Widget _buildVisaoGeralContent(Map<String, dynamic>? json, Map<String, dynamic> plan) {
     if (json == null) return const Text('Plano não disponível.', style: TextStyle(color: AppTheme.secondaryTextColor));
+
+    String? formatData(String? dateStr) {
+      if (dateStr == null || dateStr.isEmpty) return null;
+      try {
+        final d = DateTime.parse(dateStr);
+        return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+      } catch (_) {
+        return dateStr;
+      }
+    }
+
+    final String? startDate = formatData(plan['start_date']?.toString());
+    final String? endDate = formatData(plan['end_date']?.toString());
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (json['objetivoPrincipal'] != null)
           _buildRichText('Objetivo Principal: ', json['objetivoPrincipal'].toString()),
+        if (startDate != null) ...[
+          const SizedBox(height: 8),
+          _buildRichText('Data Início: ', startDate),
+        ],
+        if (endDate != null) ...[
+          const SizedBox(height: 8),
+          _buildRichText('Data Fim: ', endDate),
+        ],
         const SizedBox(height: 8),
         if (json['duracaoSemanas'] != null)
           _buildRichText('Duração: ', '${json['duracaoSemanas']} semanas'),
