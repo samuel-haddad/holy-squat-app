@@ -425,7 +425,7 @@ serve(async (req) => {
       `;
 
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'gerar_analise', 4000, 0.7);
-      
+
 
 
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
@@ -435,6 +435,34 @@ serve(async (req) => {
       const { bloco_atual, visao_geral, data_inicio_meso, training_sessions } = payload;
       const bloco = bloco_atual || {};
       const sessions = training_sessions || [];
+
+      const mapSessoesPorDia = new Map<string, number>();
+      let totalSessoesConfiguradas = 0;
+      sessions.forEach((s: any) => {
+        (s.schedule || []).forEach((d: string) => {
+          const lower = String(d).toLowerCase();
+          let key = "";
+          if (lower.includes('seg')) key = 'seg';
+          else if (lower.includes('ter')) key = 'ter';
+          else if (lower.includes('qua')) key = 'qua';
+          else if (lower.includes('qui')) key = 'qui';
+          else if (lower.includes('sex')) key = 'sex';
+          else if (lower.includes('sab')) key = 'sab';
+          else if (lower.includes('dom')) key = 'dom';
+
+          if (key) {
+            if (!mapSessoesPorDia.has(key)) mapSessoesPorDia.set(key, 0);
+            mapSessoesPorDia.set(key, mapSessoesPorDia.get(key)! + 1);
+            totalSessoesConfiguradas++;
+          }
+        });
+      });
+
+      let mapaTexto = "";
+      mapSessoesPorDia.forEach((qty, day) => {
+        mapaTexto += `        - ${day.toUpperCase()}: ${qty} sessão(ões) configurada(s)\n`;
+      });
+      const diasAtivosExtenso = Array.from(mapSessoesPorDia.keys()).join(', ').toUpperCase();
 
       const promptGeral = `
         ${COACH_PERSONA}
@@ -448,14 +476,22 @@ serve(async (req) => {
         [BLOCO ATUAL DO MESOCICLO]
         - Nome: ${bloco.mesociclo} | Foco: ${bloco.foco} | Duração: ${bloco.duracaoSemanas || 4} semanas
 
+        [SESSÕES CONFIGURADAS - DIAS DISPONÍVEIS]
+        ${formatTrainingSessions(sessions)}
+
         [FORMATO — JSON]
         {
           "visaoGeralCiclo": [{ "semana": 1, "foco": "string", "seg": "string", "ter": "string", "qua": "string", "qui": "string", "sex": "string", "sab": "string", "dom": "string" }],
           "resumoMesociclo": "string"
         }
 
-        [DIRETRIZES DE RECOVERY]
-        - Importante: Dias de descanso e descanso ativo podem ocorrer em dias que também possuem sessões de treino, se a metodologia julgar pertinente.
+        [MAPA EXATO DE DISPONIBILIDADE DO ATLETA]
+        O atleta possui EXATAMENTE ${totalSessoesConfiguradas} sessões na semana, distribuídas da seguinte forma:
+${mapaTexto}
+        
+        [DIRETRIZES DE TREINO E DESCANSO - CUMPRIMENTO OBRIGATÓRIO]
+        1. Você DEVE preencher as chaves JSON dos dias ativos (${diasAtivosExtenso}) com a descrição dos TREINOS ATIVOS. Se o dia tiver 2 sessões, descreva as DUAS.
+        2. Os dias que não constam no Mapa Exato são os verdadeiros dias de descanso do atleta. Nesses, você deve escrever "Descanso".
       `;
       console.log("[gerar_calendario] Solicitando visão geral (etapa 1/2)...");
       const resultGeral = await generateWithProvider(promptGeral, provider, llmModel, genAI, 'gerar_calendario_geral', 8000, 0.2);
@@ -492,12 +528,15 @@ serve(async (req) => {
         [REQUISITO DE RESUMO — CRÍTICO]
         Cada 'focoPrincipal' DEVE ser um resumo técnico extremamente conciso (MÁXIMO 30 PALAVRAS).
         Foque no QUE será feito, eliminando descrições verbosas.
-        
-        BOM EXEMPLO (CURTO E TÉCNICO):
-        "Agachamento 5x5 (70%) + Metcon 15min (Burpees/Saltos). Foco em força e potência explosiva."
 
-        MAU EXEMPLO (LONGO):
-        "Mobilidade de ombro por 15 minutos com elásticos e rotações, seguido de prehab versão reduzida com dead bugs e face pulls para estabilizar..."
+        [MAPA EXATO DE SESSÕES DO ATLETA]
+        O atleta possui EXATAMENTE ${totalSessoesConfiguradas} sessões na semana, distribuídas da seguinte forma:
+${mapaTexto}
+
+        [OBRIGAÇÃO MATEMÁTICA DE VOLUME]
+        1. O array visaoSemanal que você vai gerar DEVE preencher rigorosamente os treinos para as sessões configuradas.
+        2. É PROIBIDO suprimir os treinos e escrever "Descanso" como \`focoPrincipal\` para as sessões listadas acima, independente de lesão ou fadiga (adapte o treino se necessário, mas mantenha-o ativo).
+        3. Para os dias onde o atleta não tem sessão, gere um \`session_type\` de "Descanso".
 
         [LISTA OBRIGATÓRIA DE ENTRADAS — GERE EXATAMENTE ESTAS]
         O array visaoSemanal DEVE conter pelo menos uma entrada para cada linha abaixo.
@@ -508,6 +547,8 @@ serve(async (req) => {
         As configurações abaixo são CONTRATOS do atleta:
         - O Local é uma RESTRIÇÃO DE INFRAESTRUTURA obrigatória: o session_type e o focoPrincipal devem ser compatíveis com o(s) local(is) disponível(is).
         - As Notas são RESTRIÇÕES ABSOLUTAS DE DESIGN: descrevem limitações físicas, preferências e restrições que NÃO PODEM ser ignoradas.
+        - OBRIGAÇÃO DE TREINO: Para os dias que aparecem na lista abaixo, você DEVE gerar um "session_type" de treino ativo (ex: Força, Metcon, etc) e NÃO de Descanso. Se o atleta estiver lesionado ou fatigado, prescreva "Prehab", "Mobilidade" ou adapte os grupamentos musculares, mas NUNCA prescreva "Descanso" para as sessões contratuais abaixo.
+        - DIAS NÃO CONFIGURADOS SÃO DESCANSO TOTAL: Os dias que NÃO aparecem abaixo não precisam de sessões geradas, mas caso gere algo para eles, deve ser "Descanso".
         ${formatTrainingSessions(sessions)}
 
         [BLOCO ATUAL DO MESOCICLO]
@@ -595,19 +636,25 @@ serve(async (req) => {
               const isRestType = diaObj.session_type === "Descanso" || diaObj.session_type === "Recuperação Ativa";
               const forceRest = !dayHasSessions;
               const rawFoco = (diaObj.focoPrincipal || diaObj.workout || diaObj.treino || '');
-              
-              // Se o dia deveria ter treino mas a IA mandou descanso, forçamos um texto de treino
+
+              // Corrige inconsistências geradas pela IA
               let finalFocoText = rawFoco;
+              let finalSessionType = diaObj.session_type;
+
               if (!forceRest && isRestType) {
+                // Dia de TREINO, mas IA gerou descanso
                 finalFocoText = "Sessão de treino: foco em desenvolvimento";
+                finalSessionType = "Crossfit"; // Fallback para treino genérico ao invés de 'Descanso'
               } else if (forceRest && !isRestType) {
+                // Dia de DESCANSO, mas IA gerou treino
                 finalFocoText = "Recuperação";
+                finalSessionType = "Recuperação Ativa";
               }
 
               visaoCompleta.push({
                 ...diaObj,
                 session: forceRest ? 1 : (Number(diaObj.session) || 1),
-                session_type: forceRest && isRestType ? diaObj.session_type : (forceRest ? "Recuperação Ativa" : "Treino"),
+                session_type: finalSessionType,
                 focoPrincipal: finalFocoText,
                 day: diasSemana[d.getUTCDay()],
                 mesocycle: bloco.mesociclo,

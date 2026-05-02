@@ -30,7 +30,7 @@ function formatTrainingSessions(sessions: any[]): string {
   if (!sessions || sessions.length === 0) {
     throw new Error("Nenhuma sessão de treino configurada. Por favor, configure suas sessões no perfil ou no onboarding antes de prosseguir.");
   }
-  return sessions.map((s: any) => 
+  return sessions.map((s: any) =>
     `- Sessão ${s.session_number}: Locais=[${s.locations?.join(', ')}] | Duração=${s.duration_minutes}min | Dias=[${s.schedule?.join(', ')}] | Turno=${s.time_of_day}${s.notes ? ` | Notas: ${s.notes}` : ''}`
   ).join('\n        ');
 }
@@ -131,7 +131,7 @@ async function generateWithProvider(
         const result = await model.generateContent([prompt]);
         const usage = result.response.usageMetadata;
         console.log(`[TOKENS] ${actionLabel} | model: ${llmModel} | input: ${usage?.promptTokenCount ?? '?'} | output: ${usage?.candidatesTokenCount ?? '?'}`);
-        
+
         let rawText = result.response.text();
         if (rawText.startsWith('```')) {
           rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
@@ -157,7 +157,7 @@ async function generateWithProvider(
           },
           body: JSON.stringify(anthropicBody),
         });
-        
+
         const data = await response.json();
         if (!response.ok) {
           if (response.status === 429) {
@@ -189,7 +189,7 @@ async function generateWithProvider(
     } catch (err: any) {
       const errorText = err.message || '';
       const isRateLimit = errorText.includes('429') || errorText.toLowerCase().includes('quota') || errorText.toLowerCase().includes('limit');
-      
+
       if (isRateLimit && attempt < maxRetries) {
         const delay = attempt * 3500;
         console.warn(`[RETRY] Rate limit (429) detectado em ${actionLabel}. Tentativa ${attempt}/${maxRetries}. Aguardando ${delay}ms...`);
@@ -299,7 +299,7 @@ serve(async (req) => {
       const lesoesStr = lesoesArray.length > 0 ? lesoesArray.join(', ') : 'Nenhuma lesão informada';
       console.log(`[Action 1] Iniciando para ${email_utilizador || user_id}`);
 
-      const profileQuery = user_id 
+      const profileQuery = user_id
         ? adminClient.from('profiles').select('*').eq('id', user_id).single()
         : adminClient.from('profiles').select('*').eq('email', email_utilizador).single();
 
@@ -319,7 +319,7 @@ serve(async (req) => {
       // Garante que p_user_weight está sempre em kg, independente da unidade do perfil
       const userWeight = isLbs ? rawWeight * 0.453592 : rawWeight;
 
-      const athleteStatsRes = await adminClient.rpc('get_athlete_planning_stats', { 
+      const athleteStatsRes = await adminClient.rpc('get_athlete_planning_stats', {
         p_email: email_utilizador,
         p_user_weight: userWeight
       });
@@ -538,7 +538,7 @@ serve(async (req) => {
     // =========================================================
     else if (acao === 'criar_plano') {
       const { email_utilizador, user_id, analise_historica, diretrizes_plano, training_sessions } = payload;
-      const profileQuery = user_id 
+      const profileQuery = user_id
         ? adminClient.from('profiles').select('*').eq('id', user_id).single()
         : adminClient.from('profiles').select('*').eq('email', email_utilizador).single();
 
@@ -568,6 +568,10 @@ serve(async (req) => {
         [SESSÕES DE TREINO DISPONÍVEIS]
         ${formatTrainingSessions(sessions)}
 
+        [DIRETRIZES DE TREINO E DESCANSO]
+        - REGRA DE OURO: O atleta deve PREFERENCIALMENTE treinar ativamente nos dias listados em "SESSÕES DE TREINO DISPONÍVEIS". Preencha esses dias com treinos reais (ex: Força, Metcon, Hipertrofia, LPO).
+        - Os dias que NÃO constam nas "SESSÕES DE TREINO DISPONÍVEIS" serão automaticamente tratados como dias de descanso.
+
         [DIRETRIZES DO PLANO]
         - Objetivo: ${diretrizes_plano?.objetivo}
         - Início: ${diretrizes_plano?.data_inicio} | Fim: ${diretrizes_plano?.data_fim}
@@ -589,24 +593,24 @@ serve(async (req) => {
       `;
 
       const result = await generateWithProvider(prompt, provider, llmModel, genAI, 'criar_plano', 8000);
-      
+
       // CÁLCULO PROGRAMÁTICO DE DATAS PARA OS BLOCOS
       if (result.visaoGeralPlano && result.visaoGeralPlano.blocos) {
         let currentStartDate = new Date((diretrizes_plano?.data_inicio || today) + 'T12:00:00Z');
-        
+
         result.visaoGeralPlano.blocos = result.visaoGeralPlano.blocos.map((bloco: any) => {
           const duracaoDias = (Number(bloco.duracaoSemanas) || 4) * 7;
-          
+
           const dataInicio = currentStartDate.toISOString().split('T')[0];
-          
+
           // Calcula a data de fim (start + duração - 1 dia)
           const endDate = new Date(currentStartDate.getTime());
           endDate.setUTCDate(endDate.getUTCDate() + duracaoDias - 1);
           const dataFim = endDate.toISOString().split('T')[0];
-          
+
           // Atualiza o cursor para o início do próximo bloco
           currentStartDate.setUTCDate(currentStartDate.getUTCDate() + duracaoDias);
-          
+
           return {
             ...bloco,
             dataInicio,

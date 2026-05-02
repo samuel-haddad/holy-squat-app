@@ -1210,23 +1210,15 @@ class _PlanningScreenState extends State<PlanningScreen> {
         return w != null && (w is int ? w > 0 : int.tryParse(w.toString(), radix: 10) != null && int.parse(w.toString()) > 0);
       });
 
-      final Map<int, Map<String, Map<String, dynamic>>> byWeekByDate = {};
+      final Map<int, Map<String, List<Map<String, dynamic>>>> byWeekByDate = {};
 
       if (hasWeekField) {
         for (final row in mesoRows) {
           final week = (row['week'] as num?)?.toInt() ?? 1;
           final dateKey = row['date']?.toString() ?? '';
           byWeekByDate.putIfAbsent(week, () => {});
-          if (byWeekByDate[week]!.containsKey(dateKey)) {
-            final existing = byWeekByDate[week]![dateKey]!;
-            final existingFoco = existing['focoPrincipal']?.toString() ?? existing['workout']?.toString() ?? '';
-            final newFoco = (row['focoPrincipal'] ?? row['workout'])?.toString() ?? '';
-            if (newFoco.isNotEmpty && !existingFoco.contains(newFoco)) {
-              existing['focoPrincipal'] = '$existingFoco / $newFoco';
-            }
-          } else {
-            byWeekByDate[week]![dateKey] = Map<String, dynamic>.from(row);
-          }
+          byWeekByDate[week]!.putIfAbsent(dateKey, () => []);
+          byWeekByDate[week]![dateKey]!.add(Map<String, dynamic>.from(row));
         }
       } else {
         DateTime? firstDate;
@@ -1249,14 +1241,9 @@ class _PlanningScreenState extends State<PlanningScreen> {
             final week = (d.difference(firstDate).inDays ~/ 7) + 1;
             byWeekByDate.putIfAbsent(week, () => {});
             if (byWeekByDate[week]!.containsKey(ds)) {
-              final existing = byWeekByDate[week]![ds]!;
-              final existingFoco = existing['focoPrincipal']?.toString() ?? existing['workout']?.toString() ?? '';
-              final newFoco = (row['focoPrincipal'] ?? row['workout'])?.toString() ?? '';
-              if (newFoco.isNotEmpty && !existingFoco.contains(newFoco)) {
-                existing['focoPrincipal'] = '$existingFoco / $newFoco';
-              }
+              byWeekByDate[week]![ds]!.add(Map<String, dynamic>.from(row));
             } else {
-              byWeekByDate[week]![ds] = Map<String, dynamic>.from(row);
+              byWeekByDate[week]![ds] = [Map<String, dynamic>.from(row)];
             }
           } catch (_) {}
         }
@@ -1292,34 +1279,8 @@ class _PlanningScreenState extends State<PlanningScreen> {
         List<Map<String, dynamic>> weekRows = [];
 
         if (sortedDates.isNotEmpty) {
-          DateTime? firstOfWeek;
-          try {
-            firstOfWeek = DateTime.parse(sortedDates.first);
-            while (firstOfWeek!.weekday != DateTime.monday) {
-              firstOfWeek = firstOfWeek.subtract(const Duration(days: 1));
-            }
-          } catch (_) {}
-
-          if (firstOfWeek != null) {
-            const dayNames = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
-            for (int i = 0; i < 7; i++) {
-              final dayDate = firstOfWeek.add(Duration(days: i));
-              final dateStr = '${dayDate.year}-${dayDate.month.toString().padLeft(2, '0')}-${dayDate.day.toString().padLeft(2, '0')}';
-              if (dateMap.containsKey(dateStr)) {
-                weekRows.add(dateMap[dateStr]!);
-              } else {
-                weekRows.add({
-                  'date': dateStr,
-                  'day': dayNames[i],
-                  'focoPrincipal': 'Descanso',
-                  'isDescansoAtivo': true,
-                  'mesocycle': mesoName,
-                  'week': weekNum,
-                });
-              }
-            }
-          } else {
-            weekRows = dateMap.values.toList();
+          for (final dateStr in sortedDates) {
+            weekRows.addAll(dateMap[dateStr]!);
           }
         }
 
@@ -1518,36 +1479,26 @@ class _PlanningScreenState extends State<PlanningScreen> {
     for (var row in weekData) {
       if (row is Map) {
         String day = row['day']?.toString() ?? 'N/A';
-        // Supports both the new 'focoPrincipal' field and the old 'workout' field
-        String workout = (row['focoPrincipal'] ?? row['workout'])?.toString() ?? '';
+        String foco = (row['focoPrincipal'] ?? row['workout'])?.toString() ?? '';
+        String sessionLabel = row['session'] != null ? 'Sessão ${row['session']}: ' : '';
+        String workout = '$sessionLabel$foco';
+        
         if (!sessionsByDay.containsKey(day)) sessionsByDay[day] = [];
         sessionsByDay[day]!.add(workout);
       }
     }
 
-    // 2. Find the maximum number of sessions in a single day to build the columns
-    int maxSessions = 0;
-    for (var sessions in sessionsByDay.values) {
-      if (sessions.length > maxSessions) maxSessions = sessions.length;
-    }
-    if (maxSessions == 0) maxSessions = 1;
-
-    // Headers (Day, Workout 1, Workout 2...)
+    // 2. Fixed headers (Day, Workout)
     List<Widget> headerCells = [
       const Padding(padding: EdgeInsets.all(8), child: Text('Dia', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold))),
+      const Padding(padding: EdgeInsets.all(8), child: Text('Treino', style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold))),
     ];
-    for (int s = 1; s <= maxSessions; s++) {
-      headerCells.add(Padding(
-        padding: const EdgeInsets.all(8), 
-        child: Text(maxSessions > 1 ? 'Treino $s' : 'Treino', style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold))
-      ));
-    }
 
     return Table(
       border: TableBorder.all(color: Colors.white.withOpacity(0.1), width: 1),
-      columnWidths: {
-        0: const IntrinsicColumnWidth(),
-        for (int s = 1; s <= maxSessions; s++) s: const FlexColumnWidth(),
+      columnWidths: const {
+        0: IntrinsicColumnWidth(),
+        1: FlexColumnWidth(),
       },
       children: [
         TableRow(
@@ -1558,17 +1509,15 @@ class _PlanningScreenState extends State<PlanningScreen> {
           final day = entry.key;
           final workouts = entry.value;
 
-          List<Widget> rowCells = [
-            Padding(padding: const EdgeInsets.all(8), child: Text(day, style: const TextStyle(color: Colors.white))),
-          ];
+          String mergedWorkouts = workouts.join('\n\n');
 
-          for (int s = 0; s < maxSessions; s++) {
-            String text = s < workouts.length ? workouts[s] : '-';
-            rowCells.add(Padding(padding: const EdgeInsets.all(8), child: Text(text, style: const TextStyle(color: AppTheme.secondaryTextColor))));
-          }
-
-          return TableRow(children: rowCells);
-        }).toList(),
+          return TableRow(
+            children: [
+              Padding(padding: const EdgeInsets.all(8), child: Text(day, style: const TextStyle(color: Colors.white))),
+              Padding(padding: const EdgeInsets.all(8), child: Text(mergedWorkouts, style: const TextStyle(color: AppTheme.secondaryTextColor))),
+            ],
+          );
+        }),
       ],
     );
   }

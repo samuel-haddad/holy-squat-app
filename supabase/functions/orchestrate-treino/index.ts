@@ -337,7 +337,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       calculatedStartDate = new Date().toISOString().split('T')[0];
     }
 
-    const dataInicioFinal = cicloResult._blocoAtual?.dataInicioMeso || calculatedStartDate;
+    const dataInicioFinal = cicloResult._blocoAtual?.dataInicioMeso || cicloResult._blocoAtual?.dataInicio || calculatedStartDate;
     console.log(`[ORCH] Restore Puro. Usando data de início âncora: ${dataInicioFinal}`);
 
     for (let attempt = 1; attempt <= MAX_CAL_RETRIES; attempt++) {
