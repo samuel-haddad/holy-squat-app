@@ -138,6 +138,7 @@ class WorkoutController extends ChangeNotifier {
     required List currentWorkoutsTable,
     List<TrainingSession>? trainingSessions,
     String? aiCoachName,
+    String? orientacaoExtra,
   }) async {
     _state = WorkoutState.loading;
     _loadingMessage = '🚀 Iniciando análise e calendário do ciclo...';
@@ -162,6 +163,7 @@ class WorkoutController extends ChangeNotifier {
           'mesos_ja_gerados': mesosJaGerados,
           'current_workouts_table': currentWorkoutsTable,
           'training_sessions': (trainingSessions ?? []).map((s) => s.toJson()).toList(),
+          if (orientacaoExtra != null && orientacaoExtra.trim().isNotEmpty) 'orientacao_extra': orientacaoExtra,
         },
       );
 
@@ -197,6 +199,7 @@ class WorkoutController extends ChangeNotifier {
     required List currentWorkoutsTable,
     List<TrainingSession>? trainingSessions,
     String? aiCoachName,
+    String? orientacaoExtra,
   }) async {
     try {
       await _repository.removeLastMeso(planoId);
@@ -218,6 +221,7 @@ class WorkoutController extends ChangeNotifier {
         currentWorkoutsTable: newTable,
         trainingSessions: trainingSessions,
         aiCoachName: aiCoachName,
+        orientacaoExtra: orientacaoExtra,
       );
     } catch (e) {
       _errorMessage = 'Falha ao restaurar ciclo: ${e.toString()}';

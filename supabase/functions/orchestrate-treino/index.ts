@@ -303,6 +303,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
       contexto_macrociclo: contextoMacrociclo,
       training_sessions: trainingSessions,
       ai_coach_name: p.ai_coach_name,
+      orientacao_extra: p.orientacao_extra,
       model_observations: AI_MODEL_OBSERVATIONS,
     }, 'gerar-analise-ciclo');
 
@@ -350,6 +351,7 @@ async function handleGenerateCycleStep(job: any, admin: any) {
           data_inicio_meso: dataInicioFinal,
           training_sessions: calendarSessions,
           ai_coach_name: p.ai_coach_name,
+          orientacao_extra: p.orientacao_extra,
         }, 'gerar-analise-ciclo');
 
         // Valida se todas as sessões foram geradas no calendário

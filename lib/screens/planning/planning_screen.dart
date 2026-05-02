@@ -1652,19 +1652,47 @@ class _PlanningScreenState extends State<PlanningScreen> {
   }
 
   Future<void> _handleRestoreMeso(Map<String, dynamic> plan) async {
-    final confirmed = await showDialog<bool>(
+    final TextEditingController extraInfoController = TextEditingController();
+
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Restaurar Ciclo'),
-        content: const Text('Isso removerá a análise atual e permitirá gerar este mesociclo novamente. Deseja continuar?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Isso removerá a análise atual e permitirá gerar este mesociclo novamente. Deseja continuar?'),
+            const SizedBox(height: 16),
+            const Text('Orientação Extra para a IA (Opcional):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: extraInfoController,
+              decoration: InputDecoration(
+                hintText: 'Ex: Focar mais em hipertrofia de pernas...',
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                border: const OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
+                focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: AppTheme.primaryTeal)),
+              ),
+              maxLines: 3,
+              style: const TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sim, Restaurar', style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, {'confirmed': true, 'extraInfo': extraInfoController.text}),
+            child: const Text('Sim, Restaurar', style: TextStyle(color: Colors.red))
+          ),
         ],
       ),
     );
 
-    if (confirmed != true) return;
+    if (result == null || result['confirmed'] != true) return;
+    
+    final orientacaoExtra = result['extraInfo'] as String? ?? '';
 
     final userEmail = SupabaseService.client.auth.currentUser?.email ?? UserState.email.value;
     final controller = WorkoutController(WorkoutRepository());
@@ -1684,6 +1712,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
         currentWorkoutsTable: plan['workouts_plan_table'] ?? [],
         trainingSessions: sessions,
         aiCoachName: plan['ai_coach_name'],
+        orientacaoExtra: orientacaoExtra,
       );
 
       if (controller.state == WorkoutState.success) {

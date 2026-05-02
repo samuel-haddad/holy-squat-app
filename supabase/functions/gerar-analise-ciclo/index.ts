@@ -393,10 +393,12 @@ serve(async (req) => {
         if (tfData && tfData.length > 0) techniqueFeedbacksStr = tfData.map((tf: any) => `- Exercício: ${tf.exercise_name}\n  Análise: ${tf.resume_text}`).join('\n');
       }
 
+      const orientacaoExtraStr = payload.orientacao_extra ? `\n        [ORIENTAÇÃO EXTRA DO USUÁRIO PARA ESTE CICLO]\n        ${payload.orientacao_extra}\n        INSTRUÇÃO CRÍTICA: Você DEVE considerar esta orientação ao fazer a análise e planejar os próximos passos.\n` : '';
+
       const prompt = `
         ${COACH_PERSONA}
         [MISSÃO — ANÁLISE E PLANEJAMENTO DO MESOCICLO]
-        ${payload.model_observations ? `\n        [OBSERVAÇÕES DO MODELO]\n        ${payload.model_observations}\n` : ''}
+        ${payload.model_observations ? `\n        [OBSERVAÇÕES DO MODELO]\n        ${payload.model_observations}\n` : ''}${orientacaoExtraStr}
         Gere apenas 1 componente essencial:
         1. analiseCicloAnterior: Avaliação do progresso.
 
@@ -464,11 +466,13 @@ serve(async (req) => {
       });
       const diasAtivosExtenso = Array.from(mapSessoesPorDia.keys()).join(', ').toUpperCase();
 
+      const orientacaoExtraStr = payload.orientacao_extra ? `\n        [ORIENTAÇÃO EXTRA DO USUÁRIO PARA ESTE CICLO]\n        ${payload.orientacao_extra}\n        INSTRUÇÃO CRÍTICA: Você DEVE considerar e priorizar esta orientação no planejamento das sessões.\n` : '';
+
       const promptGeral = `
         ${COACH_PERSONA}
         [DATA DE HOJE: ${today}]
         [DATA DE INÍCIO DO MESOCICLO: ${data_inicio_meso || today}]
-        [MISSÃO — GERAR VISÃO GERAL DO MESOCICLO]
+        [MISSÃO — GERAR VISÃO GERAL DO MESOCICLO]${orientacaoExtraStr}
         Gere a visão macroscópica de cada semana do ciclo.
         1. visaoGeralCiclo: A lista de objetos deve ter EXATAMENTE ${bloco.duracaoSemanas || 4} semanas de duração. Cada objeto deve conter o foco da semana e uma descrição detalhada do que deve ser feito em cada dia (seg a dom).
         2. resumoMesociclo: Apenas repita a definição do foco deste bloco.
@@ -512,7 +516,7 @@ ${mapaTexto}
         ${COACH_PERSONA}
         [DATA DE HOJE: ${today}]
         [DATA DE INÍCIO DO MESOCICLO: ${dataInicio}]
-        [MISSÃO — GERAR VISÃO SEMANAL DETALHADA]
+        [MISSÃO — GERAR VISÃO SEMANAL DETALHADA]${orientacaoExtraStr}
         Baseado na visão macroscópica já definida, distribua os treinos exatos nas datas corretas seguindo a rotina de sessões configuradas do atleta.
         1. visaoSemanal: O calendário detalhado de treinos para TODAS AS ${duracaoSemanas} SEMANAS.
         ATENÇÃO: É obrigatório que o array visaoSemanal contenha os treinos de TODAS as semanas descritas na Visão Geral, sem deixar nenhum 'focoPrincipal' em branco.
