@@ -27,11 +27,14 @@ const DATA_CONTRACT = `
 [RESTRIÇÃO DE NOMENCLATURA]
 - session_type: Escolha obrigatoriamente um valor desta lista: [${allowedSessionTypes}]. Proibido inventar termos.
 
-[REGRAS DE OURO DO TEMPO (BUDGETING)]
+[REGRAS DE OURO DO TEMPO E PRIORIDADE]
 1. Respeite a Duração (du): Se a sessão tem 60min, a soma de todos os 'tt' deve totalizar ~54min (90% do tempo). 
 2. Margem de Erro: Os 10% restantes (6min para uma sessão de 60min) são reservados para transições entre blocos.
-3. Distribuição Sugerida: 
-   - Warmup: 10% | Skill/Strength: 40% | Workout: 40% | Cooldown: 10%.
+3. Distribuição Sugerida: Warmup: 10% | Skill/Strength: 40% | Workout: 40% | Cooldown: 10%.
+4. pr (Priority): Nível de importância do exercício na sessão (1 a 3):
+   - 1 (Core/Main Lift): Exercício principal da sessão (Ex: LPO pesado, Força principal, WOD principal). Intocável pelo sistema.
+   - 2 (Secondary): Exercícios de base, complementares ou WODs secundários.
+   - 3 (Accessory/Cooldown/Warmup): Exercícios acessórios, isoladores, warmup, mobilidade final ou prehab leve.
 
 [CONTRATO DE CAMPOS - CÁLCULO DE TT]
 - ts (Sets): Número de séries/rounds. Nunca null.
@@ -52,8 +55,8 @@ const DATA_CONTRACT = `
 
 const FEW_SHOT_EXAMPLES = `
 [EXEMPLO DE ALTA PRECISÃO - SESSÃO 60MIN]
-{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":1,"ex":"Back Squat","ts":4,"de":"4x8 @70% 1RM (Estimativa: 40s on / 90s off)","te":40,"eu":"seg","re":90,"ru":"seg","tt":10,"sg":"strength","al":""}
-{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":2,"ex":"Burpee Over Bar","ts":1,"de":"AMRAP 12min","te":12,"eu":"min","re":0,"ru":"seg","tt":13,"sg":"workout","al":""}
+{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":1,"ex":"Back Squat","ts":4,"de":"4x8 @70% 1RM (Estimativa: 40s on / 90s off)","te":40,"eu":"seg","re":90,"ru":"seg","tt":10,"pr":1,"sg":"strength","al":""}
+{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":2,"ex":"Burpee Over Bar","ts":1,"de":"AMRAP 12min","te":12,"eu":"min","re":0,"ru":"seg","tt":13,"pr":2,"sg":"workout","al":""}
 `;
 // ============================================================================
 // AUTO-HEALER: Reconstrói JSONs truncados usando Pilha (Stack)
@@ -517,7 +520,7 @@ ${diasStr}
         IMPORTANTE: Você deve obrigatoriamente gerar exercícios para TODAS as datas e sessões listadas acima.
 
         [FORMATO — JSON COMPACTO]
-        { "exs": [{ "dt": "YYYY-MM-DD", "dy": "Dia", "se": 1, "st": "tipo", "du": 60, "idx": 1, "ex": "nome", "ts": 3, "de": "detalhes", "te": 0, "eu": "min", "re": 60, "ru": "seg", "tt": 0, "un": 0, "sg": "workout", "al": "" }] }
+        { "exs": [{ "dt": "YYYY-MM-DD", "dy": "Dia", "se": 1, "st": "tipo", "du": 60, "idx": 1, "ex": "nome", "ts": 3, "de": "detalhes", "te": 0, "eu": "min", "re": 60, "ru": "seg", "tt": 0, "un": 0, "pr": 1, "sg": "workout", "al": "" }] }
         
         [REGRAS RESTRITAS DE JSON E OBJETIVIDADE]
         1. NUNCA coloque vírgulas finais (trailing commas) no último elemento de objetos ou arrays.
@@ -559,13 +562,78 @@ ${diasStr}
           rest_unit: short.ru || "seg",
           total_time: tt_final,
           is_unilateral: un === 1,
+          priority: Number(short.pr) || 2, // DEFAULT priority 2 se omitido pela IA
           stage: short.sg || "workout",
           workout_link: "", // Link lookup desativado para performance
           adaptacaoLesao: short.al || ""
         };
       });
 
-      return new Response(JSON.stringify({ "exerciciosDetalhados": fullExercicios }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
+      // =========================================================
+      // ALGORITMO DE PODA DE VOLUME (Time Budgeting Otimizado - Guloso)
+      // =========================================================
+      const sessionsMap = new Map<string, any[]>();
+      fullExercicios.forEach((ex: any) => {
+        const key = `${ex.date}_${ex.session}`;
+        if (!sessionsMap.has(key)) sessionsMap.set(key, []);
+        sessionsMap.get(key)!.push(ex);
+      });
+      
+      const prunedExercicios: any[] = [];
+      for (const [key, sessionExs] of sessionsMap.entries()) {
+        const sessionDuration = sessionExs.length > 0 ? (sessionExs[0].duration || 60) : 60;
+        
+        let currentTotal = sessionExs.reduce((sum: number, e: any) => sum + (Number(e.total_time) || 0), 0);
+    
+        const pruneByPriority = (priorityLevel: number) => {
+          while (currentTotal > sessionDuration) {
+            const deficit = currentTotal - sessionDuration;
+            
+            // Filtra os índices dos exercícios com a prioridade atual
+            const candidateIndices: number[] = [];
+            for (let i = 0; i < sessionExs.length; i++) {
+              if (sessionExs[i].priority === priorityLevel) {
+                candidateIndices.push(i);
+              }
+            }
+            
+            if (candidateIndices.length === 0) break; // Sem mais exercícios desta prioridade
+            
+            // Procura candidatos que sozinhos resolvem o deficit
+            const resolvers = candidateIndices.filter(i => sessionExs[i].total_time >= deficit);
+            
+            let indexToRemove = -1;
+            
+            if (resolvers.length > 0) {
+              // Pega o que resolve o deficit mas "machuca" menos o treino (o menor dentre os maiores que o deficit)
+              indexToRemove = resolvers.reduce((minIdx, i) => 
+                sessionExs[i].total_time < sessionExs[minIdx].total_time ? i : minIdx
+              , resolvers[0]);
+            } else {
+              // Nenhum resolve sozinho. Remove o maior para minimizar a quantidade total de exercícios removidos.
+              indexToRemove = candidateIndices.reduce((maxIdx, i) => 
+                sessionExs[i].total_time > sessionExs[maxIdx].total_time ? i : maxIdx
+              , candidateIndices[0]);
+            }
+            
+            sessionExs.splice(indexToRemove, 1);
+            currentTotal = sessionExs.reduce((sum: number, e: any) => sum + (Number(e.total_time) || 0), 0);
+          }
+        };
+
+        // Aplica a poda focando na menor quantidade de remoções possível
+        pruneByPriority(3);
+        pruneByPriority(2);
+    
+        // Re-indexa os exercícios restantes para manter a ordem sequencial correta (1, 2, 3...)
+        sessionExs.forEach((ex: any, idx: number) => {
+          ex.workout_idx = idx + 1;
+        });
+    
+        prunedExercicios.push(...sessionExs);
+      }
+
+      return new Response(JSON.stringify({ "exerciciosDetalhados": prunedExercicios }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }
 
     else return new Response(JSON.stringify({ error: `Ação desconhecida: ${acao}` }), { headers: corsHeaders, status: 400 })
