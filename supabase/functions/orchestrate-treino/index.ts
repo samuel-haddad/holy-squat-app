@@ -430,8 +430,8 @@ async function handleGenerateWorkoutsStep(job: any, admin: any) {
     console.log(`[orch] Processando Lote ${chunkIndex + 1} de ${chunks.length} (${currentChunk.length} sessões) (Step: ${step})`);
 
     const accumulatedExercicios = job.step_1_result?.exerciciosDetalhados || [];
-    // Contexto: envia exercícios recém gerados do mesmo mesociclo
-    const exerciciosRecentes = accumulatedExercicios.slice(-15); // manda os últimos 15 gerados como contexto
+    // Contexto: envia exercícios recém gerados do mesmo mesociclo (aumentado para cobrir a última semana inteira)
+    const exerciciosRecentes = accumulatedExercicios.slice(-100); // manda os últimos 50 gerados para permitir continuidade
 
     const MAX_EX_RETRIES = 2;
     let result: any = null;

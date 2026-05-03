@@ -515,6 +515,10 @@ serve(async (req) => {
         [EXERCÍCIOS GERADOS RECENTEMENTE (CONTEXTO)]
         ${exsStr || "Não há histórico recente no contexto."}
         
+        [DIRETRIZ DE PROGRESSÃO E CONTINUIDADE]
+        Para garantir a evolução técnica e a progressão de carga, você DEVE buscar REPETIR os exercícios principais (Prioridade 1 e 2) que foram executados nas semanas anteriores NOS MESMOS DIAS DA SEMANA (disponíveis no contexto acima), variando a carga, as repetições, ou a técnica de execução se necessário.
+        A prioridade máxima absoluta é sempre respeitar o 'focoPrincipal' e o 'session_type' definidos para a sessão alvo. Se o foco mudar, adapte; se for similar, repita a base para criar um ciclo claro de evolução.
+        
         [SESSÕES ALVO PARA GERAÇÃO NESTE LOTE]
 ${diasStr}
         IMPORTANTE: Você deve obrigatoriamente gerar exercícios para TODAS as datas e sessões listadas acima.
