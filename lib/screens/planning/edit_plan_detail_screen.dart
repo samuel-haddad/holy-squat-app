@@ -58,8 +58,8 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
 
   void _initWodControllers() {
     final textFields = [
-      'exercise_title', 'sets', 'details', 'time_exercise', 
-      'rest', 'total_time', 'location'
+      'sets', 'details', 'time_exercise', 
+      'rest', 'total_time'
     ];
     for (var field in textFields) {
       _wodControllers[field] = TextEditingController(text: _fields[field]?.toString() ?? '');
@@ -95,13 +95,11 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
           'day': _fields['day'],
           'ex_unit': _fields['ex_unit'],
           'rest_unit': _fields['rest_unit'],
-          'exercise_title': _wodControllers['exercise_title']!.text,
           'sets': int.tryParse(_wodControllers['sets']!.text) ?? 0,
           'details': _wodControllers['details']!.text,
           'time_exercise': double.tryParse(_wodControllers['time_exercise']!.text) ?? 0,
           'rest': double.tryParse(_wodControllers['rest']!.text) ?? 0,
           'total_time': double.tryParse(_wodControllers['total_time']!.text) ?? 0,
-          'location': _wodControllers['location']!.text,
           'stage': _fields['stage'],
         };
         await SupabaseService.updateWorkoutsBatch(
@@ -215,12 +213,8 @@ class _EditPlanDetailScreenState extends State<EditPlanDetailScreen> {
       ),
       const SizedBox(height: 16),
       
-      // 3. exercise_title
-      _buildTextField('Exercise Title', 'exercise_title'),
-      const SizedBox(height: 16),
-      
-      // 4. location
-      _buildTextField('Location', 'location'),
+      // 3. exercise
+      _buildReadOnlyField('Exercise', _fields['exercise']?.toString() ?? '-'),
       const SizedBox(height: 16),
       
       // 5. stage

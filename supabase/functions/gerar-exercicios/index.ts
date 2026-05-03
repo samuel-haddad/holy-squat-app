@@ -23,24 +23,6 @@ Reintrodução-FBB, Skill, Skill-Metcon`;
 
 const COACH_PERSONA = `Você é o AI Coach do Holy Squat App. Seu perfil: Coach Level de Crossfit, com grande conhecimento sobre reabilitação de lesões, em especial de ombro e joelho, especializado na integração do treinamento de força tradicional, com ênfase em isolamento, bodybuilding funcional e protocolos de Prehab para CrossFit. Seu foco são protocolos de Concurrent Training que buscam mitigar o "efeito de interferência" entre eles.`;
 
-const METRICS_DEFINITIONS = `
-[DICIONÁRIO E INTERPRETAÇÃO DE MÉTRICAS (KPIs)]
-1. Adherence (Taxa de Adesão): % de exercícios planejados concluídos nos últimos 30 dias. 
-   - Interpretação: > 90% (Alta disciplina); < 70% (Necessário reduzir volume ou ajustar rotina).
-2. IFR (Índice de Força Relativa): Soma dos melhores PRs em Back Squat, Deadlift e Press dividida pelo peso corporal.
-   - Interpretação: Exprime a força bruta em relação ao peso do atleta. > 5.0 (Excelente); 3.0-4.0 (Intermediário).
-3. Avg_PSE (Média de Esforço Percebido): Média da escala 1-10 nos últimos 90 dias.
-   - Interpretação: 8-9 (Limite/Risco de burnout); 5-6 (Manutenção/Base aeróbica).
-4. Current_Workload (IEA): Volume total * Intensidade nos últimos 30 dias.
-   - Interpretação: "Carga Aguda". Use para evitar aumentos bruscos que causem lesões.
-5. Best_Evolution: Comparação % entre Workload atual e baseline de 6 meses.
-   - Interpretação: Positivo (Overload progressivo); Negativo (Deload ou perda de consistência).
-6. Weekly_Freq: Média de dias únicos treinados por semana nos últimos 30 dias.
-   - Interpretação: Mede o ritmo biológico e a capacidade de recuperação (recovery).
-7. Streak: Semanas consecutivas com pelo menos 3 treinos realizados.
-   - Interpretação: Mede resiliência e formação de hábito. Mais valioso que o streak diário.
-`;
-
 const DATA_CONTRACT = `
 [RESTRIÇÃO DE NOMENCLATURA]
 - session_type: Escolha obrigatoriamente um valor desta lista: [${allowedSessionTypes}]. Proibido inventar termos.
@@ -57,21 +39,21 @@ const DATA_CONTRACT = `
 - te/tu (Time Exercise/Unit): Tempo de execução de 1 série. Dê preferência a "seg" para séries de força (ex: 45) e "min" para cardios longos.
 - un (Unilateral): 1 se o exercício for executado um lado de cada vez (ex: Single Leg RDL), 0 caso contrário. Se 1, o 'te' refere-se a apenas UM lado.
 - tt (Total Time): Cálculo rigoroso em minutos:
-  Fórmula: tt = (((time_exercise * (1 + un)) + rest) * sets) * 1.15 / 60.
+  Fórmula: tt = (((time_exercise * (1 + un)) + rest) * sets) * 1.2 / 60.
   *Se o exercício for por tempo fixo (ex: Corrida 10min), tt = 10.*
 
 [HEURÍSTICA DE EXECUÇÃO (Para estimar 'te')]
 - Força (LPO): 6 seg por repetição. (Ex: 10 reps = 60 seg).
 - Ginástica/Agachamentos: 6 seg por repetição. (Ex: 10 reps = 60 seg).
 - Explosivos/Burpees: 4 seg por repetição. (Ex: 10 reps = 40 seg).
-- Mobilidade/Acessórios: 8 seg por repetição. (Ex: 10 reps = 80 seg).
+- Mobilidade/Acessórios: 10 seg por repetição. (Ex: 10 reps = 100 seg).
 - SEMPRE preencha 'te' e 're'. Nunca retorne 0 se houver trabalho sendo feito.
 `;
 
 const FEW_SHOT_EXAMPLES = `
 [EXEMPLO DE ALTA PRECISÃO - SESSÃO 60MIN]
-{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":1,"ex":"Back Squat","et":"Força de Pernas","eg":"Lower Body","ey":"Força","ts":4,"de":"4x8 @70% 1RM (Estimativa: 40s on / 90s off)","te":40,"eu":"seg","re":90,"ru":"seg","tt":10,"lo":"Box","sg":"strength","al":""}
-{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":2,"ex":"Burpee Over Bar","et":"Metcon","eg":"Full Body","ey":"Condicionamento","ts":1,"de":"AMRAP 12min","te":12,"eu":"min","re":0,"ru":"seg","tt":13,"lo":"Box","sg":"workout","al":""}
+{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":1,"ex":"Back Squat","ts":4,"de":"4x8 @70% 1RM (Estimativa: 40s on / 90s off)","te":40,"eu":"seg","re":90,"ru":"seg","tt":10,"sg":"strength","al":""}
+{"dt":"2025-05-19","dy":"Segunda","se":1,"st":"Força-Skill","du":60,"idx":2,"ex":"Burpee Over Bar","ts":1,"de":"AMRAP 12min","te":12,"eu":"min","re":0,"ru":"seg","tt":13,"sg":"workout","al":""}
 `;
 // ============================================================================
 // AUTO-HEALER: Reconstrói JSONs truncados usando Pilha (Stack)
@@ -535,7 +517,7 @@ ${diasStr}
         IMPORTANTE: Você deve obrigatoriamente gerar exercícios para TODAS as datas e sessões listadas acima.
 
         [FORMATO — JSON COMPACTO]
-        { "exs": [{ "dt": "YYYY-MM-DD", "dy": "Dia", "se": 1, "st": "tipo", "du": 60, "idx": 1, "ex": "nome", "et": "titulo", "eg": "grupo", "ey": "tipo_ex", "ts": 3, "de": "detalhes", "te": 0, "eu": "min", "re": 60, "ru": "seg", "tt": 0, "un": 0, "lo": "box", "sg": "workout", "al": "" }] }
+        { "exs": [{ "dt": "YYYY-MM-DD", "dy": "Dia", "se": 1, "st": "tipo", "du": 60, "idx": 1, "ex": "nome", "ts": 3, "de": "detalhes", "te": 0, "eu": "min", "re": 60, "ru": "seg", "tt": 0, "un": 0, "sg": "workout", "al": "" }] }
         
         [REGRAS RESTRITAS DE JSON E OBJETIVIDADE]
         1. NUNCA coloque vírgulas finais (trailing commas) no último elemento de objetos ou arrays.
@@ -547,8 +529,7 @@ ${diasStr}
 
       const responseData = await generateWithProvider(prompt, provider, llmModel, genAI, `detalhamento_s${ctx.semanaNum}`, 16000, 0.2);
 
-      const fullExercicios = await Promise.all((responseData.exs || []).map(async (short: any) => {
-        const { data: link } = await adminClient.rpc('get_closest_exercise_link', { search_name: short.et || short.ex });
+      const fullExercicios = (responseData.exs || []).map((short: any) => {
         const ts = Number(short.ts) || 1;
         const te = Number(short.te) || 0;
         const re = Number(short.re) || 0;
@@ -556,38 +537,33 @@ ${diasStr}
         const ai_tt = Number(short.tt) || 0;
         const teMin = (short.eu === "seg") ? te / 60 : te;
         const reMin = (short.ru === "seg") ? re / 60 : re;
-        
+
         // Se unilateral, dobra o tempo de execução antes de somar o descanso
-        const calc_tt = (((teMin * (1 + un)) + reMin) * ts) * 1.15;
+        const calc_tt = (((teMin * (1 + un)) + reMin) * ts) * 1.2;
         const tt_final = (ai_tt === 0 || Math.abs(ai_tt - calc_tt) > 0.1) ? Number(calc_tt.toFixed(1)) : ai_tt;
 
         return {
-          date: short.dt || today, 
-          week: Number(ctx.semanaNum) || 1, 
-          mesocycle: ctx.nome, 
-          day: short.dy || "", 
-          session: Number(short.se) || 1, 
-          session_type: short.st || "Metcon", 
-          duration: Number(short.du) || 60, 
-          workout_idx: Number(short.idx) || 1, 
-          exercise: short.ex || "Exercício não especificado", 
-          exercise_title: short.et || short.ex || "", 
-          exercise_group: short.eg || "Geral", 
-          exercise_type: short.ey || "Acessório", 
-          sets: ts, 
-          details: short.de || "", 
-          time_exercise: te, 
-          ex_unit: short.eu || "min", 
-          rest: re, 
-          rest_unit: short.ru || "seg", 
-          total_time: tt_final, 
+          date: short.dt || today,
+          mesocycle: ctx.nome,
+          day: short.dy || "",
+          session: Number(short.se) || 1,
+          session_type: short.st || "Metcon",
+          duration: Number(short.du) || 60,
+          workout_idx: Number(short.idx) || 1,
+          exercise: short.ex || "Exercício não especificado",
+          sets: ts,
+          details: short.de || "",
+          time_exercise: te,
+          ex_unit: short.eu || "min",
+          rest: re,
+          rest_unit: short.ru || "seg",
+          total_time: tt_final,
           is_unilateral: un === 1,
-          location: short.lo || "Box", 
-          stage: short.sg || "workout", 
-          workout_link: link || "", 
+          stage: short.sg || "workout",
+          workout_link: "", // Link lookup desativado para performance
           adaptacaoLesao: short.al || ""
         };
-      }));
+      });
 
       return new Response(JSON.stringify({ "exerciciosDetalhados": fullExercicios }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
     }

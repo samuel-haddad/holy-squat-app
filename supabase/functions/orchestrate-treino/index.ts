@@ -629,14 +629,13 @@ async function persistExercicios(
     }
 
     records.push({
-      date: ex.date, week: ex.week, mesocycle: ex.mesocycle, day: ex.day,
+      date: ex.date, mesocycle: ex.mesocycle, day: ex.day,
       session: ex.session, session_type: st,
       workout_idx: ex.workout_idx, exercise: ex.exercise,
-      exercise_title: ex.exercise_title, exercise_group: ex.exercise_group,
-      exercise_type: ex.exercise_type, sets: ex.sets, details: ex.details,
+      sets: ex.sets, details: ex.details,
       time_exercise: ex.time_exercise, ex_unit: ex.ex_unit,
       rest: ex.rest, rest_unit: ex.rest_unit,
-      total_time: ex.total_time, location: ex.location, stage: ex.stage,
+      total_time: ex.total_time, stage: ex.stage,
       workout_link: ex.workout_link || '', adaptacaoLesao: ex.adaptacaoLesao || '',
       user_email: email, date_session_sessiontype_key: sessionKey,
       wod_exercise_id: `${ex.date}_${ex.session}_${ex.workout_idx}_${Date.now() % 100000}_${i}`,

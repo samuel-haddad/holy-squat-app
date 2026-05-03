@@ -105,9 +105,9 @@ class _EditPlanScreenState extends State<EditPlanScreen> {
     final groupKeys = [
       'mesocycle', 'day', 'exercise', 'sets', 'details', 
       'time_exercise', 'ex_unit', 'rest', 'rest_unit',
-      'total_time', 'location', 'stage'
+      'total_time', 'stage'
     ];
-    final allFields = [...groupKeys, 'exercise_title'];
+    final allFields = [...groupKeys];
 
     for (var w in workouts) {
       final keyParts = groupKeys.map((f) => w[f]?.toString() ?? 'null').join('|');
@@ -119,8 +119,7 @@ class _EditPlanScreenState extends State<EditPlanScreen> {
         groups[keyParts] = {
           ...original,
           'count': 0,
-          'original_attributes': Map<String, dynamic>.from(original)..remove('exercise_title'), 
-          // exercise_title is editable but not part of original grouping key
+          'original_attributes': Map<String, dynamic>.from(original), 
         };
       }
       groups[keyParts]!['count']++;

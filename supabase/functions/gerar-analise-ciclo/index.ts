@@ -7,20 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const allowedSessionTypes = `
-Acessório, Acessórios-Blindagem, Calistenia, 
-Cardio, Cardio-Mobilidade, Core, Core Strength, Core-Prep, 
-Crossfit, Descanso, Endurance, EMOM, FBB, 
-Força-Heavy, Força-Metcon, Força-Skill, 
-Full Body Pump, Full Session, Ginástica-Metcon, 
-Hipertrofia, Hipertrofia-Blindagem, 
-LPO, LPO-Força-Metcon, LPO-Metcon, LPO-Potência, Metcon, 
-Mobilidade, Mobilidade-Flow, Mobilidade-Cardio, Mobilidade-Core, 
-Mobilidade-Inferiores, Mobilidade-Prep, Multi, Musculação, 
-Musculação-Cardio, Musculação-Funcional, Musculação-Força, 
-Natação, Prehab, Prehab-Força, Prehab-Mobilidade, Recuperação Ativa, 
-Reintrodução-FBB, Skill, Skill-Metcon`;
-
 const COACH_PERSONA = `Você é o AI Coach do Holy Squat App. Seu perfil: Coach Level de Crossfit, com grande conhecimento sobre reabilitação de lesões, em especial de ombro e joelho, especializado na integração do treinamento de força tradicional, com ênfase em isolamento, bodybuilding funcional e protocolos de Prehab para CrossFit. Seu foco são protocolos de Concurrent Training que buscam mitigar o "efeito de interferência" entre eles.`;
 
 const METRICS_DEFINITIONS = `
@@ -474,8 +460,13 @@ serve(async (req) => {
         [DATA DE INÍCIO DO MESOCICLO: ${data_inicio_meso || today}]
         [MISSÃO — GERAR VISÃO GERAL DO MESOCICLO]${orientacaoExtraStr}
         Gere a visão macroscópica de cada semana do ciclo.
-        1. visaoGeralCiclo: A lista de objetos deve ter EXATAMENTE ${bloco.duracaoSemanas || 4} semanas de duração. Cada objeto deve conter o foco da semana e uma descrição detalhada do que deve ser feito em cada dia (seg a dom).
+        1. visaoGeralCiclo: A lista de objetos deve ter EXATAMENTE ${bloco.duracaoSemanas || 4} semanas de duração. Cada objeto deve conter o foco da semana e os blocos de treino macroscópicos para cada dia (seg a dom).
         2. resumoMesociclo: Apenas repita a definição do foco deste bloco.
+
+        [RESTRIÇÃO DE ESCOPO — VISÃO MACRO E BUDGETING MENTAL]
+        1. PROIBIDO MICRO-PLANEJAMENTO: É ESTRITAMENTE PROIBIDO listar exercícios específicos (ex: Front Squat, Pull-ups, Corrida de 5km, etc), séries, repetições, distâncias ou tempos de execução.
+        2. FOCO EM INTENÇÃO GERAL: Descreva APENAS os grupos musculares, capacidades físicas ou intenções do bloco (Ex: "Força de Membros Inferiores + Ginástica Básica", ou "LPO (Snatch) + Condicionamento Metabólico Curto", ou "Corrida Curta", ou "Longão", ou "METCON")).
+        3. PROIBIDO ESTIMAR O TEMPO DOS EXERCÍCIOS.
         
         [BLOCO ATUAL DO MESOCICLO]
         - Nome: ${bloco.mesociclo} | Foco: ${bloco.foco} | Duração: ${bloco.duracaoSemanas || 4} semanas
@@ -494,7 +485,7 @@ serve(async (req) => {
 ${mapaTexto}
         
         [DIRETRIZES DE TREINO E DESCANSO - CUMPRIMENTO OBRIGATÓRIO]
-        1. Você DEVE preencher as chaves JSON dos dias ativos (${diasAtivosExtenso}) com a descrição dos TREINOS ATIVOS. Se o dia tiver 2 sessões, descreva as DUAS.
+        1. Você DEVE preencher as chaves JSON dos dias ativos (${diasAtivosExtenso}) com a descrição MACROSCÓPICA dos TREINOS ATIVOS. Se o dia tiver 2 sessões, descreva a intenção das DUAS.
         2. Os dias que não constam no Mapa Exato são os verdadeiros dias de descanso do atleta. Nesses, você deve escrever "Descanso".
       `;
       console.log("[gerar_calendario] Solicitando visão geral (etapa 1/2)...");
@@ -532,6 +523,10 @@ ${mapaTexto}
         [REQUISITO DE RESUMO — CRÍTICO]
         Cada 'focoPrincipal' DEVE ser um resumo técnico extremamente conciso (MÁXIMO 30 PALAVRAS).
         Foque no QUE será feito, eliminando descrições verbosas.
+
+        [RESTRIÇÃO DE ESCOPO — VISÃO MACRO E BUDGETING MENTAL]
+        1. PROIBIDO MICRO-PLANEJAMENTO ABSOLUTO: NUNCA cite nomes de exercícios específicos (ex: Back Squat, Snatch, Corrida 5km, etc), distâncias, séries (sets), repetições ou tempos.
+        2. FOCO ESTREITO NA INTENÇÃO: O 'focoPrincipal' DEVE ser genérico, indicando apenas grupos musculares ou padrões de movimento (Ex: "Potência de Membros Inferiores + Resistência Cardiorrespiratória").
 
         [MAPA EXATO DE SESSÕES DO ATLETA]
         O atleta possui EXATAMENTE ${totalSessoesConfiguradas} sessões na semana, distribuídas da seguinte forma:
@@ -662,14 +657,13 @@ ${mapaTexto}
                 focoPrincipal: finalFocoText,
                 day: diasSemana[d.getUTCDay()],
                 mesocycle: bloco.mesociclo,
-                week: weekNum,
                 isDescansoAtivo: forceRest || isRestType
               });
             });
           } else {
             visaoCompleta.push({
               date: dateStr, session: 1, session_type: "Descanso", focoPrincipal: "Recuperação",
-              day: diasSemana[d.getUTCDay()], mesocycle: bloco.mesociclo, week: weekNum, isDescansoAtivo: true
+              day: diasSemana[d.getUTCDay()], mesocycle: bloco.mesociclo, isDescansoAtivo: true
             });
           }
         }

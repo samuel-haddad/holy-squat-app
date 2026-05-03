@@ -710,7 +710,7 @@ class SupabaseService {
     final List<String> groupFields = [
       'mesocycle', 'day', 'exercise', 'sets', 'details', 
       'time_exercise', 'ex_unit', 'rest', 'rest_unit',
-      'total_time', 'location', 'stage'
+      'total_time', 'stage'
     ];
 
     for (var field in groupFields) {

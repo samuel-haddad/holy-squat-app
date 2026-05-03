@@ -1,15 +1,11 @@
 class ExercicioDetalhado {
   final String date;
-  final int week;
   final String mesocycle;
   final String day;
   final int session;
   final String sessionType;
   final int workoutIdx;
   final String exercise;
-  final String exerciseTitle;
-  final String exerciseGroup;
-  final String exerciseType;
   final int sets;
   final String details;
   final num timeExercise;
@@ -17,22 +13,17 @@ class ExercicioDetalhado {
   final num rest;
   final String restUnit;
   final num totalTime;
-  final String location;
   final String stage;
   final String adaptacaoLesao;
 
   ExercicioDetalhado({
     required this.date,
-    required this.week,
     required this.mesocycle,
     required this.day,
     required this.session,
     required this.sessionType,
     required this.workoutIdx,
     required this.exercise,
-    required this.exerciseTitle,
-    required this.exerciseGroup,
-    required this.exerciseType,
     required this.sets,
     required this.details,
     required this.timeExercise,
@@ -40,7 +31,6 @@ class ExercicioDetalhado {
     required this.rest,
     required this.restUnit,
     required this.totalTime,
-    required this.location,
     required this.stage,
     required this.adaptacaoLesao,
   });
@@ -48,16 +38,12 @@ class ExercicioDetalhado {
   factory ExercicioDetalhado.fromJson(Map<String, dynamic> json) {
     return ExercicioDetalhado(
       date: json['date'] ?? '',
-      week: json['week'] ?? 0,
       mesocycle: json['mesocycle'] ?? '',
       day: json['day'] ?? '',
       session: json['session'] ?? 1,
       sessionType: json['session_type'] ?? '',
       workoutIdx: json['workout_idx'] ?? 1,
       exercise: json['exercise'] ?? '',
-      exerciseTitle: json['exercise_title'] ?? '',
-      exerciseGroup: json['exercise_group'] ?? '',
-      exerciseType: json['exercise_type'] ?? '',
       sets: json['sets'] ?? 0,
       details: json['details'] ?? '',
       timeExercise: json['time_exercise'] ?? 0,
@@ -65,7 +51,6 @@ class ExercicioDetalhado {
       rest: json['rest'] ?? 0,
       restUnit: json['rest_unit'] ?? 'seg',
       totalTime: json['total_time'] ?? 0,
-      location: json['location'] ?? 'Academia',
       stage: json['stage'] ?? 'workout',
       adaptacaoLesao: json['adaptacaoLesao'] ?? '',
     );
@@ -76,16 +61,12 @@ class ExercicioDetalhado {
   Map<String, dynamic> toJson() {
     return {
       'date': date,
-      'week': week,
       'mesocycle': mesocycle,
       'day': day,
       'session': session,
       'session_type': sessionType,
       'workout_idx': workoutIdx,
       'exercise': exercise,
-      'exercise_title': exerciseTitle,
-      'exercise_group': exerciseGroup,
-      'exercise_type': exerciseType,
       'sets': sets,
       'details': details,
       'time_exercise': timeExercise,
@@ -93,7 +74,6 @@ class ExercicioDetalhado {
       'rest': rest,
       'rest_unit': restUnit,
       'total_time': totalTime,
-      'location': location,
       'stage': stage,
       'adaptacaoLesao': adaptacaoLesao,
     };
@@ -107,7 +87,6 @@ class VisaoSemanal {
   final String focoPrincipal;
   final bool isDescansoAtivo;
   final String mesocycle; // NEW: Name of the mesocycle
-  final int week;        // NEW: Week number
 
   VisaoSemanal({
     required this.date,
@@ -116,7 +95,6 @@ class VisaoSemanal {
     required this.focoPrincipal,
     required this.isDescansoAtivo,
     required this.mesocycle,
-    required this.week,
   });
 
   factory VisaoSemanal.fromJson(Map<String, dynamic> json) {
@@ -127,7 +105,6 @@ class VisaoSemanal {
       focoPrincipal: json['focoPrincipal'] ?? '',
       isDescansoAtivo: json['isDescansoAtivo'] ?? false,
       mesocycle: json['mesocycle'] ?? '',
-      week: json['week'] ?? 0,
     );
   }
 
@@ -139,7 +116,6 @@ class VisaoSemanal {
       'focoPrincipal': focoPrincipal,
       'isDescansoAtivo': isDescansoAtivo,
       'mesocycle': mesocycle,
-      'week': week,
     };
   }
 }
